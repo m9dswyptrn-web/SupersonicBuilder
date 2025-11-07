@@ -1,57 +1,17 @@
-name: Auto Release
+# --- Supersonic pack & release assets ---
+# Runs after the tag is decided in your current workflow
+- name: Package release bundle
+  run: |
+    VER="${{ github.ref_name }}"
+    [[ "$VER" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || VER="v${VER}"
+    tools/package_release.sh "$VER"
 
-on:
-  push:
-    branches: [ main ]        # Auto-bump on any push to main (defaults to patch)
-  workflow_dispatch:
-    inputs:
-      bump:
-        description: "Version bump"
-        type: choice
-        options: [patch, minor, major]
-        default: patch
-
-permissions:
-  contents: write
-
-jobs:
-  release:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Fetch tags
-        run: git fetch --tags
-
-      - name: Compute next version
-        id: ver
-        run: |
-          BUMP="${{ github.event.inputs.bump || 'patch' }}"
-          NEXT="$(bash tools/semver_next.sh "$BUMP")"
-          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
-          echo "Next version: $NEXT"
-
-      - name: Create tag (idempotent)
-        run: |
-          TAG="${{ steps.ver.outputs.next }}"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists. Skipping tag step."
-          else
-            git tag -a "$TAG" -m "SupersonicBuilder $TAG"
-            git push origin "$TAG"
-          fi
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.ver.outputs.next }}
-          generate_release_notes: true
-          files: |
-            build/*.zip
-            docs/installer/*.pdf
-            docs/status/git_health_snapshot.txt
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+- name: Attach artifacts to GitHub Release
+  uses: softprops/action-gh-release@v2
+  with:
+    files: |
+      build/Supersonic_Release_*.zip
+      build/Supersonic_Release_*.zip.sha256
+      docs/installer/*.pdf
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
