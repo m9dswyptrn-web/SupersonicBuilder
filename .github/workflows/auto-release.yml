@@ -34,3 +34,12 @@
         CHANGELOG.md
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+- name: Publish GitHub Release with changelog body
+  uses: softprops/action-gh-release@v2
+  with:
+    body_path: CHANGELOG.md
+    files: |
+      CHANGELOG.md
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
