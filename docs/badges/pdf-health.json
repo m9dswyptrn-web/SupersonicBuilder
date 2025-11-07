@@ -1,6 +1,1 @@
-{
-  "schemaVersion": 1,
-  "label": "PDF health",
-  "message": "n/a",
-  "color": "lightgrey"
-}
+{ "schemaVersion": 1, "label": "pdf health", "message": "ERR 404", "color": "red" }
