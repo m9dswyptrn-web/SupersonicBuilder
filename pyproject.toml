@@ -30,7 +30,7 @@ classifiers = [
 
 dependencies = [
   "reportlab==4.1.0",
-  "pikepdf==9.2.1",
+  "pikepdf==10.0.0",
   "segno==1.6.1",
   "qrcode[pil]==7.4.2",
   "Pillow==10.4.0",
