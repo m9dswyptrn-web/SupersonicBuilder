@@ -88,3 +88,7 @@ test_*.py
 local_*
 dev_*
 sandbox_*
+
+# build outputs
+build/
+*.zip
