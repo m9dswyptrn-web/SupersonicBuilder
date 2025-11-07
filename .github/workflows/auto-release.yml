@@ -84,3 +84,22 @@
         CHANGELOG.md
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  - name: Generate CHANGELOG for this version
+    run: |
+      VER="${{ github.ref_name }}"
+      [[ "$VER" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || VER="v${VER}"
+      tools/changelog.sh "$VER"
+      git config user.name "github-actions[bot]"
+      git config user.email "github-actions[bot]@users.noreply.github.com"
+      git add CHANGELOG.md
+      git commit -m "docs(changelog): update for $VER" || echo "No changelog changes"
+      git push
+
+  - name: Attach CHANGELOG to GitHub Release
+    uses: softprops/action-gh-release@v2
+    with:
+      files: |
+        CHANGELOG.md
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
