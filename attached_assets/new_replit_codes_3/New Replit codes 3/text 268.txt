@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+"""
+Quick downloader for a small(ish) GGUF model.
+Defaults to Llama 3.1 8B Q4_0 community mirror (example); feel free to change URL.
+"""
+import sys, shutil
+from pathlib import Path
+import urllib.request
+
+URL = "https://huggingface.co/TheBloke/Llama-3.1-8B-GGUF/resolve/main/llama-3.1-8b.Q4_K_M.gguf?download=true"
+DEST = Path("gguf/llama-3.1-8b-q4_0.gguf")
+
+DEST.parent.mkdir(parents=True, exist_ok=True)
+print(f"Downloading to {DEST} ...")
+with urllib.request.urlopen(URL) as r, open(DEST, "wb") as f:
+    shutil.copyfileobj(r, f)
+print("Done.")

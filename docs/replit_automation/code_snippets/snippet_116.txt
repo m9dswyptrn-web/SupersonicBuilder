@@ -1,0 +1,5 @@
+<div class="set-row">
+  <label>Persist last preview</label>
+  <input id="set-persist-last" type="checkbox" checked>
+  <small class="muted">Store last preview details locally so it can auto-restore after reload</small>
+</div>

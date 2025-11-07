@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""
+Fetch last N GitHub releases, sum asset sizes, and render a sparkline SVG.
+
+Outputs:
+  - docs/budgets_sparkline.svg
+  - docs/budgets_history.json  (tag -> total_bytes)
+
+Env (Actions or local):
+  GITHUB_REPOSITORY (owner/repo)
+  GITHUB_TOKEN or GH_TOKEN
+  HISTORY_COUNT (optional, default 20)
+"""
+from __future__ import annotations
+import os, json, math, urllib.request, urllib.error
+from pathlib import Path
+from datetime import datetime
+
+ROOT = Path(__file__).resolve().parents[1]
+DOCS = ROOT / "docs"
+
+def gh_get(url: str, token: str):
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "budgets-history"
+    })
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+def human_mb(n: int) -> str:
+    return f"{n/1024/1024:.2f} MB"
+
+def build_sparkline(points: list[int], width=600, height=90, pad=8) -> str:
+    if not points:
+        return f'<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg"></svg>'
+    lo, hi = min(points), max(points)
+    span = max(1, hi - lo)
+    n = len(points)
+    if n == 1:
+        xs = [pad + (width-2*pad)/2]
+        ys = [height/2]
+    else:
+        xs = [pad + i*(width-2*pad)/(n-1) for i in range(n)]
+        ys = [height-pad - (p - lo) * (height-2*pad)/span for p in points]
+
+    # Build path
+    d = " ".join([f"{'M' if i==0 else 'L'}{xs[i]:.2f},{ys[i]:.2f}" for i in range(n)])
+    # Current point highlight
+    cx, cy = xs[-1], ys[-1]
+
+    # Shaded area
+    area = f"M{xs[0]:.2f},{height-pad:.2f} " + " ".join([f"L{xs[i]:.2f},{ys[i]:.2f}" for i in range(n)]) + f" L{xs[-1]:.2f},{height-pad:.2f} Z"
+
+    return f"""<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="g" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#4ea8ff" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="#4ea8ff" stop-opacity="0.05"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="{width}" height="{height}" fill="#0b0f14"/>
+  <path d="{area}" fill="url(#g)"/>
+  <path d="{d}" fill="none" stroke="#86c5ff" stroke-width="2"/>
+  <circle cx="{cx:.2f}" cy="{cy:.2f}" r="3.5" fill="#86c5ff" stroke="#e6eef8" stroke-width="1"/>
+</svg>"""
+
+def main():
+    repo = os.getenv("GITHUB_REPOSITORY", "")
+    token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN") or ""
+    count = int(os.getenv("HISTORY_COUNT", "20"))
+    if not repo or not token:
+        print("Missing GITHUB_REPOSITORY or token; skipping.")
+        return
+
+    # Get releases (newest first)
+    rels = gh_get(f"https://api.github.com/repos/{repo}/releases?per_page={count}", token)
+    rels.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+
+    # Sum assets per release
+    items = []
+    for r in rels:
+        if r.get("draft") or r.get("prerelease"):
+            continue
+        tag = r.get("tag_name", "")
+        total = sum(int(a.get("size", 0)) for a in r.get("assets", []))
+        items.append((tag, total))
+
+    # Reverse so sparkline flows oldest -> newest
+    items = list(reversed(items))[:count]
+    tags = [t for t, _ in items]
+    totals = [v for _, v in items]
+
+    # Write json + svg
+    DOCS.mkdir(parents=True, exist_ok=True)
+    (DOCS / "budgets_history.json").write_text(json.dumps(dict(items), indent=2), encoding="utf-8")
+    svg = build_sparkline(totals)
+    (DOCS / "budgets_sparkline.svg").write_text(svg, encoding="utf-8")
+    if totals:
+        print(f"History: {len(totals)} releases. Latest {tags[-1]} = {human_mb(totals[-1])}")
+
+if __name__ == "__main__":
+    main()

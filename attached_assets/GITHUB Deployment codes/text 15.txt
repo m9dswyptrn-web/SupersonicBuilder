@@ -1,0 +1,78 @@
+# ----------------------------- Extras (repo assets) -----------------------------
+def add_repo_extras(include_pages_latest=True, dry=False):
+    # .gitignore
+    gitignore = """
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+# Build / Dist
+dist/
+build/
+*.zip
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+# Supersonic artifacts
+docs/latest/
+docs/v*/ 
+assets/audio/voicepacks/_active/
+"""
+    safe_write(ROOT/".gitignore", gitignore.strip()+"\n", dry=dry)
+
+    # .gitattributes (normalize line endings)
+    gitattributes = "* text=auto\n"
+    safe_write(ROOT/".gitattributes", gitattributes, dry=dry)
+
+    # LICENSE (MIT by default)
+    mit = f"""MIT License
+
+Copyright (c) {os.getenv('GIT_AUTHOR_NAME','2025')} {os.getenv('GIT_AUTHOR_EMAIL','')}
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+    safe_write(ROOT/"LICENSE", mit, dry=dry)
+
+    # docs landing + status banner
+    index_html = """
+<!doctype html><html lang="en"><meta charset="utf-8">
+<title>Supersonic — Docs</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/mvp.css">
+<main>
+  <h1>Supersonic — Release <code>${TAG}</code></h1>
+  <p>Welcome! This site is auto-published by GitHub Actions.</p>
+  <p><a href="./status_banner.html">Status Banner</a></p>
+</main>
+</html>
+"""
+    safe_write(ROOT/"docs/index.html", index_html.strip()+"\n", dry=dry)
+
+    status_md = """
+### Project Status Banner
+
+- Build: ✅ Production Ready  
+- Voice Console: ✅ Operational  
+- Pages: ✅ Deployed  
+
+Embed this badge block in your README:

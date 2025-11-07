@@ -1,0 +1,77 @@
+name: Release Budgets & Badges
+on:
+  release:
+    types: [published]
+
+jobs:
+  budgets:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      HISTORY_COUNT: "20"
+      TOTAL_WARN_MB: "900"
+      TOTAL_HARD_MB: "1200"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps (if any)
+        run: |
+          python -m pip install --upgrade pip
+          # pip install -r requirements.txt || true
+
+      - name: Build per-asset history (last 12)
+        env:
+          HISTORY_COUNT: "12"
+        run: python3 tools/budgets_asset_history.py
+
+      - name: Build history sparkline (last 20)
+        env:
+          HISTORY_COUNT: "20"
+        run: python3 tools/budgets_history.py
+
+      - name: Generate HTML dashboard
+        run: python3 tools/budgets_report.py
+
+      - name: Upload dashboard artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: budgets-dashboard
+          path: |
+            docs/budgets.html
+            docs/budgets_sparkline.svg
+            docs/budgets_history.json
+
+      - name: Annotate release with budget status
+        id: totals
+        run: |
+          latest_bytes=$(gh api repos/${GITHUB_REPOSITORY}/releases/latest --jq '.assets | map(.size) | add // 0')
+          latest_mb=$(awk "BEGIN {printf \"%.0f\", $latest_bytes/1024/1024}")
+          warn=${TOTAL_WARN_MB}
+          hard=${TOTAL_HARD_MB}
+          if [ "$latest_mb" -ge "$hard" ]; then emoji="🔴"; msg="HARD limit exceeded"
+          elif [ "$latest_mb" -ge "$warn" ]; then emoji="🟡"; msg="Warning: near limit"
+          else emoji="🟢"; msg="OK"; fi
+          echo "STATUS=$emoji $latest_mb MB — $msg" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update release notes with status + legend
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {owner, repo} = context.repo;
+            const rel = context.payload.release;
+            const status = `${{ steps.totals.outputs.STATUS }}`;
+            const legend = "Legend: 🟢 OK (< 900 MB) • 🟡 Warn (≥ 900 MB) • 🔴 Hard (≥ 1200 MB)";
+            const newBody = `**Release size status:** ${status}\n\n${legend}\n\n${rel.body || ""}`;
+            await github.rest.repos.updateRelease({
+              owner, repo, release_id: rel.id, body: newBody
+            });

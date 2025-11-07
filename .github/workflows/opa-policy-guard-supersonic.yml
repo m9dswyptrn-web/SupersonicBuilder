@@ -1,0 +1,26 @@
+
+name: OPA Policy Guard (Supersonic)
+on: { pull_request: { types: [opened, edited, synchronize, reopened] } }
+permissions: { contents: read, pull-requests: read }
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: open-policy-agent/setup-opa@v2
+        with: { version: latest }
+      - name: Evaluate policies
+        run: |
+          printf '%s' '${{ toJson(github.event.pull_request) }}' > pr.json
+          opa eval --format=json -d policies/supersonic --input pr.json 'data.supersonic.deny' | tee opa.json
+          python - <<'PY'
+import json,sys
+j=json.load(open('opa.json'))
+vals=j.get('result',[{}])[0].get('expressions',[{}])[0].get('value',[])
+if vals:
+  print('POLICY DENIED:')
+  [print(' -',m) for m in vals]
+  sys.exit(2)
+else:
+  print('Policy check passed.')
+PY

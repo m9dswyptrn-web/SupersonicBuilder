@@ -1,0 +1,6 @@
+.venv/
+gguf/
+docs/site/
+dist/
+node_modules/
+**/__pycache__/

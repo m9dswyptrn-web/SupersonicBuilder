@@ -1,0 +1,2 @@
+cd SonicBuilder
+make reset           # purge + clean + rebuild

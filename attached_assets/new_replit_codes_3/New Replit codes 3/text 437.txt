@@ -1,0 +1,14 @@
+<script>
+async function reloadNow(){
+  try{
+    showToast('Reloading…');
+    await fetch('/api/reload', { method: 'POST' });
+    // Process will exit; supervisor relaunches it.
+    // As a UX nicety, if running without supervisor, soft-reload the page after a short delay
+    setTimeout(()=>location.reload(), 2000);
+  }catch(e){
+    console.warn('reloadNow error', e);
+    showToast('Reload failed');
+  }
+}
+</script>

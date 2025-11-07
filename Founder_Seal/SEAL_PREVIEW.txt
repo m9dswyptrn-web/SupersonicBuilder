@@ -1,0 +1,76 @@
+╔═══════════════════════════════════════════════════════════════════╗
+║                   SONICBUILDER OFFICIAL SEAL PREVIEW              ║
+╚═══════════════════════════════════════════════════════════════════╝
+
+                    ╔═════════════════════════╗
+                    ║  ⭕                 ⭕  ║
+                    ║                         ║
+                    ║    S O N I C B U I L D E R    ║
+                    ║    ═══════════════════  ║
+                    ║                         ║
+                    ║          CE             ║
+                    ║        FOUNDER          ║
+                    ║       ┌─────────┐       ║
+                    ║       │ v2.5.0  │       ║
+                    ║       └─────────┘       ║
+                    ║                         ║
+                    ║    O F F I C I A L  S E A L    ║
+                    ╚═════════════════════════╝
+
+───────────────────────────────────────────────────────────────────
+
+SEAL DESIGN ELEMENTS:
+  • Outer double ring with circular text
+  • "SONICBUILDER" on top arc
+  • "OFFICIAL SEAL" on bottom arc
+  • Center: "CE" monogram (Christopher Elgin)
+  • "FOUNDER" label
+  • Version badge: auto-updates from VERSION.txt
+  • Decorative ⭕ symbols (left/right)
+
+AVAILABLE FORMATS:
+  ✓ SonicBuilder_Seal.svg        (Vector - infinite scaling)
+  ✓ SonicBuilder_Seal.png        (2000x2000px - dark on light)
+  ✓ SonicBuilder_Seal_white.png  (2000x2000px - light on dark)
+
+USAGE EXAMPLES:
+
+┌───────────────────────────────────────────────────────────────┐
+│ PDF COVER PAGE                                                │
+│                                                               │
+│   [Large Seal - 100% opacity - Center or Top-Right]          │
+│                                                               │
+│   SONICBUILDER MANUAL                                         │
+│   EOENKK Android 15 + Maestro RR2 GM5                         │
+│   Version v2.5.0                                              │
+└───────────────────────────────────────────────────────────────┘
+
+┌───────────────────────────────────────────────────────────────┐
+│ SIGNATURE BLOCK                                               │
+│                                                               │
+│ ┌───────────────────────────────────────────────────────┐    │
+│ │ [Seal]  Christopher Elgin — SonicBuilder Founder      │    │
+│ │ 25%     EOENKK Android 15 + Maestro RR2 GM5           │    │
+│ │         Date: 2025-10-28                              │    │
+│ │         Signature: _____________________________      │    │
+│ └───────────────────────────────────────────────────────┘    │
+└───────────────────────────────────────────────────────────────┘
+
+┌───────────────────────────────────────────────────────────────┐
+│ PAGE WATERMARK                                                │
+│                                                               │
+│                    [Seal 30% opacity]                         │
+│                   Content overlays here                       │
+│                 Seal visible but not distracting              │
+│                                                               │
+└───────────────────────────────────────────────────────────────┘
+
+REGENERATE SEAL:
+  When version changes, update seal with:
+    make seal
+
+  This reads VERSION.txt and regenerates all seal assets with
+  the updated version badge.
+
+───────────────────────────────────────────────────────────────────
+For complete usage guidelines, see: README_Seal_Usage.txt

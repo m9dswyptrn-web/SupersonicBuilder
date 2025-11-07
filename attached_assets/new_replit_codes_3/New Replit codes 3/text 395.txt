@@ -1,0 +1,11 @@
+# liveness
+curl -I http://127.0.0.1:7860/api/healthz
+curl -I http://127.0.0.1:7860/api/livez
+
+# readiness (simple)
+curl http://127.0.0.1:7860/api/readyz | jq
+
+# readiness (require a fresh bench ≤12h)
+export REQUIRE_RECENT_BENCH=1
+export BENCH_FRESH_SEC=43200   # optional override (12h)
+python scripts/run_offline_llm.py

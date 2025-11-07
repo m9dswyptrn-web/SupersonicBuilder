@@ -1,0 +1,57 @@
+  async function loadPDF(url) {
+    pdfDoc = null; page = 1; pages = 0; scale = 1.25; rotation = 0;
+    pageInfo.textContent = "– / –";
+    // create loading task so we can cancel/destroy
+    pdfLoadingTask = pdfjsLib.getDocument(url);
+    try {
+      const doc = await pdfLoadingTask.promise;
+      if (CANCEL.active) throw new Error("cancelled");
+      pdfDoc = doc;
+      pages = pdfDoc.numPages;
+      pageInfo.textContent = `1 / ${pages}`;
+    } catch (e) {
+      if (e?.name === "RenderingCancelledException" || String(e).includes("cancel")) {
+        // user canceled: just bubble up silently
+        throw e;
+      }
+      console.error(e);
+      status("Failed to load PDF.");
+      throw e;
+    } finally {
+      pdfLoadingTask = null;
+    }
+  }
+
+  async function renderPage() {
+    if (!pdfDoc) return;
+    showSpinner(true);
+    const pdfPage = await pdfDoc.getPage(page);
+
+    const surfaceWidth = canvas.parentElement.clientWidth || 900;
+    const vw = pdfPage.getViewport({ scale: 1, rotation }).width;
+    const fitScale = surfaceWidth / vw;
+    const targetScale = Math.max(0.1, fitScale * scale);
+
+    const viewport = pdfPage.getViewport({ scale: targetScale, rotation });
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+
+    // keep a handle so we can cancel mid-render
+    currentRenderTask = pdfPage.render({ canvasContext: ctx, viewport });
+    try {
+      await currentRenderTask.promise;
+      if (CANCEL.active) throw new Error("cancelled");
+      pageInfo.textContent = `${page} / ${pages}`;
+    } catch (e) {
+      if (e?.name === "RenderingCancelledException" || String(e).includes("cancel")) {
+        // canceled—don’t treat as error
+        return;
+      }
+      console.error(e);
+      status("Render failed.");
+      throw e;
+    } finally {
+      currentRenderTask = null;
+      showSpinner(false);
+    }
+  }

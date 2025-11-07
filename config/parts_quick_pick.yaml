@@ -1,0 +1,25 @@
+parts_quick_pick:
+  passive_stereo_mixer:
+    model: "PAC SNI-35 or equivalent 2-into-1 passive RCA mixer"
+    alt: "2x RCA Y-cable (if chime & AUX levels are balanced)"
+    notes:
+      - "Mount behind HU cavity"
+      - "Bond shield drain at star ground"
+  relay_delay_module:
+    model: "PAC TR4 or similar 12V delay relay (1–3 s)"
+    purpose: "Stage DSP/amp turn-on after RR2 remote"
+    notes:
+      - "Prevents turn-on pop"
+      - "Inline with AMP REM"
+  fuse_block:
+    model: "Stinger SFB or similar mini-ANL distribution"
+    amp_rating: "Size to your amps; eg 60A total / 20A branches"
+    notes:
+      - "Place near battery"
+      - "Protect DSP/amp feeds"
+  star_ground_kit:
+    model: "KnuKonceptz/NVX 4→1 ground block"
+    wire: "4 AWG in / 8 AWG outs"
+    notes:
+      - "Bare-metal bond; torque properly"
+      - "Keep RCA shield away from power return"

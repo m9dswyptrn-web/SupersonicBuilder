@@ -1,0 +1,33 @@
+<script>
+function initSettingsBindings(){
+  // …your existing bindings…
+  const m = document.getElementById('settingsMenu'); if(!m) return;
+  const $ = id => m.querySelector('#'+id);
+
+  // perf auto switch
+  const perfAuto = $('#optPerfAuto');
+  if (perfAuto && !perfAuto._bound){
+    perfAuto.addEventListener('change', e => { SETTINGS.perfAuto = !!e.target.checked; saveSettings(); });
+    perfAuto._bound = true;
+  }
+
+  // helper to bind a slider
+  function bindSlider(id, valId, key){
+    const el = $(id); if (!el || el._bound) return;
+    el.addEventListener('input', e=>{
+      const v = parseInt(e.target.value, 10);
+      SETTINGS.perf[key] = v;
+      m.querySelector('#'+valId).textContent = String(v);
+    });
+    el.addEventListener('change', ()=> { saveSettings(); });
+    el._bound = true;
+  }
+
+  bindSlider('pfFpsMin','pfFpsMinVal','fpsMin');
+  bindSlider('pfFpsRel','pfFpsRelVal','fpsRelease');
+  bindSlider('pfFpsDur','pfFpsDurVal','fpsDurationMs');
+  bindSlider('pfRttMax','pfRttMaxVal','rttMaxMs');
+  bindSlider('pfRttDur','pfRttDurVal','rttDurationMs');
+  bindSlider('pfCool','pfCoolVal','cooldownMs');
+}
+</script>

@@ -1,0 +1,176 @@
+name: Supersonic — Housekeeping (Pages + Releases)
+
+on:
+  schedule:
+    - cron: "11 3 * * 1"   # Every Monday 03:11 UTC
+  workflow_dispatch:
+    inputs:
+      keep:
+        description: "How many latest versions to keep"
+        default: "10"
+        required: false
+      dry_run:
+        description: "Dry run (list actions but do not delete)"
+        default: "true"
+        required: false
+      delete_tags:
+        description: "Also delete git tags for old releases (true/false)"
+        default: "false"
+        required: false
+      include_drafts:
+        description: "Allow pruning draft releases"
+        default: "false"
+        required: false
+      include_prereleases:
+        description: "Allow pruning prereleases"
+        default: "true"
+        required: false
+
+permissions:
+  contents: write
+
+env:
+  KEEP: ${{ github.event.inputs.keep || 10 }}
+  DRY_RUN: ${{ github.event.inputs.dry_run || 'true' }}
+  DELETE_TAGS: ${{ github.event.inputs.delete_tags || 'false' }}
+  INC_DRAFTS: ${{ github.event.inputs.include_drafts || 'false' }}
+  INC_PRE: ${{ github.event.inputs.include_prereleases || 'true' }}
+
+jobs:
+  prune_pages:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: gh-pages
+
+      - name: 🧮 Determine tag folders to keep
+        id: keep
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mapfile -t TAG_DIRS < <(ls -1d v*/ 2>/dev/null | sed 's#/$##' || true)
+          if [ ${#TAG_DIRS[@]} -eq 0 ]; then
+            echo "No tag directories found on gh-pages; nothing to prune."
+            echo "keep_list=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          if command -v gh >/dev/null 2>&1; then
+            LATEST=$(gh release list --limit 300 --json tagName,createdAt \
+              --jq 'sort_by(.createdAt) | reverse | .[].tagName' 2>/dev/null || true)
+            KEEP_LIST=()
+            for t in $LATEST; do
+              if [[ " ${TAG_DIRS[*]} " == *" $t "* ]]; then
+                KEEP_LIST+=("$t")
+                [[ ${#KEEP_LIST[@]} -ge $KEEP ]] && break
+              fi
+            done
+          fi
+
+          if [ -z "${KEEP_LIST+x}" ] || [ ${#KEEP_LIST[@]} -eq 0 ]; then
+            mapfile -t KEEP_LIST < <(printf "%s\n" "${TAG_DIRS[@]}" | sort -Vr | head -n "$KEEP")
+          fi
+
+          echo "Keeping (Pages): ${KEEP_LIST[*]}"
+          printf "keep_list=%s\n" "$(printf "%s " "${KEEP_LIST[@]}")" >> $GITHUB_OUTPUT
+
+      - name: 🧹 Prune older tag folders on gh-pages
+        if: steps.keep.outputs.keep_list != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          declare -A KEEP_SET=()
+          for k in ${KEEP_LIST:=${{ steps.keep.outputs.keep_list }}}; do KEEP_SET["$k"]=1; done
+
+          mapfile -t TAG_DIRS < <(ls -1d v*/ 2>/dev/null | sed 's#/$##' || true)
+          PRUNE_LIST=()
+          for d in "${TAG_DIRS[@]}"; do
+            [[ -z "${KEEP_SET[$d]:-}" ]] && PRUNE_LIST+=("$d")
+          done
+
+          echo "Prune candidates (Pages): ${PRUNE_LIST[*]:-<none>}"
+
+          if [ "${DRY_RUN}" = "true" ] || [ "${#PRUNE_LIST[@]}" -eq 0 ]; then
+            echo "[DRY RUN] No deletions performed on gh-pages."
+            exit 0
+          fi
+
+          for d in "${PRUNE_LIST[@]}"; do
+            rm -rf "$d"
+          done
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "pages: prune old tags (keep latest $KEEP)" || true
+          git push || true
+
+  prune_releases:
+    runs-on: ubuntu-latest
+    needs: prune_pages
+    steps:
+      - name: ⬇️ Checkout repo (default branch)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔎 Compute releases to keep/delete
+        id: rel
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          JSON=$(gh release list --limit 300 --json tagName,isDraft,isPrerelease,createdAt \
+                  --jq 'sort_by(.createdAt) | reverse')
+          echo "$JSON" > releases.json
+
+          jq_query='map(select(
+            (("'"$INC_DRAFTS"'" == "true") or (.isDraft == false)) and
+            (("'"$INC_PRE"'" == "true") or (.isPrerelease == false))
+          ))'
+          FILTERED=$(jq "$jq_query" releases.json)
+          echo "$FILTERED" > releases_filtered.json
+
+          KEEP_JSON=$(jq ".[0:($KEEP)]" releases_filtered.json)
+          DEL_JSON=$(jq ".[$KEEP:]" releases_filtered.json)
+          echo "$KEEP_JSON" > keep.json
+          echo "$DEL_JSON" > delete.json
+
+          echo "Keeping (Releases):"
+          jq -r '.[].tagName' keep.json || true
+          echo "Delete candidates (Releases):"
+          jq -r '.[].tagName' delete.json || true
+
+          DEL_LIST="$(jq -r '.[].tagName' delete.json | tr '\n' ' ' | sed 's/ *$//')"
+          echo "del_list=$DEL_LIST" >> "$GITHUB_OUTPUT"
+
+      - name: 🧹 Delete old releases (+optional tags)
+        if: steps.rel.outputs.del_list != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          DEL_LIST='${{ steps.rel.outputs.del_list }}'
+          echo "Releases to delete: $DEL_LIST"
+
+          if [ "${DRY_RUN}" = "true" ]; then
+            echo "[DRY RUN] No releases/tags deleted."
+            exit 0
+          fi
+
+          for TAG in $DEL_LIST; do
+            echo "Deleting release: $TAG"
+            gh release delete "$TAG" -y || true
+            if [ "${DELETE_TAGS}" = "true" ]; then
+              echo "Deleting tag: $TAG"
+              git tag -d "$TAG" || true
+              git push origin ":refs/tags/$TAG" || true
+            fi
+          done

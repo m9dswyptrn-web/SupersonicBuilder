@@ -1,0 +1,22 @@
+
+{
+  "priority": ["power", "ground", "gmlan", "rca", "mic", "reverse", "camera", "trigger"],
+  "rules": {
+    "power":   { "any": ["power", "12v", "b+"], "arrow_color":"#ff3b30", "box_stroke":"#ff3b30" },
+    "ground":  { "any": ["ground", "gnd", "chassis"], "arrow_color":"#8e8e93", "box_stroke":"#8e8e93" },
+    "gmlan":   { "any": ["gmlan", "can"], "arrow_color":"#34c759", "box_stroke":"#34c759" },
+    "rca":     { "any": ["rca", "line-level", "preout"], "arrow_color":"#0a84ff", "box_stroke":"#0a84ff" },
+    "mic":     { "any": ["mic", "microphone"], "arrow_color":"#d1d1d6", "box_stroke":"#d1d1d6", "text_color":"#ffffff" },
+    "reverse": { "any": ["reverse"], "arrow_color":"#ffd60a", "box_stroke":"#ffd60a" },
+    "camera":  { "any": ["camera", "cam"], "arrow_color":"#ffd60a", "box_stroke":"#ffd60a" },
+    "trigger": { "any": ["trigger"], "arrow_color":"#ff9f0a", "box_stroke":"#ff9f0a" }
+  },
+  "defaults": {
+    "arrow_color":"#f2a527",
+    "box_stroke":"#f2a527",
+    "box_fill":"#00000099",
+    "text_color":"#ffffff",
+    "line_width":1.2,
+    "font_size":9
+  }
+}

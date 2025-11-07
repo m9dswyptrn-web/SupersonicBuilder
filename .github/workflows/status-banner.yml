@@ -1,0 +1,123 @@
+name: Supersonic — Status Banner
+
+on:
+  workflow_run:
+    workflows: ["Supersonic v4 — Build & Release", "Supersonic — Housekeeping (Pages + Releases)"]
+    types: [completed]
+  repository_dispatch:
+    types: [force-status-banner]
+  workflow_dispatch:
+    inputs:
+      state:
+        description: "force state (success/failure/cancelled)"
+        required: false
+
+permissions:
+  contents: write
+
+env:
+  FORCE_STATE: ${{ github.event.client_payload.state || '' }}
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: 📦 Install Pillow (for GIF gen if needed)
+        run: pip install pillow
+
+      - name: 🔎 Derive global pipeline state (worst of latest runs)
+        id: state
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RESULT="success"
+
+          if [ -n "${FORCE_STATE}" ]; then
+            RESULT="${FORCE_STATE}"
+            echo "Force override via repository_dispatch: $RESULT"
+          elif command -v gh >/dev/null 2>&1; then
+            BUILD=$(gh run list --workflow "Supersonic v4 — Build & Release" --json status,conclusion,createdAt -L 1 | jq -r '.[0].conclusion // empty')
+            HOUSE=$(gh run list --workflow "Supersonic — Housekeeping (Pages + Releases)" --json status,conclusion,createdAt -L 1 | jq -r '.[0].conclusion // empty')
+
+            [ -z "$BUILD" ] && BUILD="success"
+            [ -z "$HOUSE" ] && HOUSE="success"
+
+            echo "Latest conclusions → build: $BUILD | housekeeping: $HOUSE"
+
+            case "$BUILD$HOUSE" in
+              *failure*|failure*|*failure) RESULT="failure" ;;
+              *cancelled*|cancelled*|*cancelled) RESULT="cancelled" ;;
+              *) RESULT="success" ;;
+            esac
+          else
+            RESULT="${{ github.event.inputs.state || github.event.workflow_run.conclusion || 'success' }}"
+            echo "gh not available; using workflow_run conclusion: $RESULT"
+          fi
+
+          echo "global_state=$RESULT" >> "$GITHUB_OUTPUT"
+
+      - name: 🟢 Compute Last Known Good (latest release tag)
+        id: lkg
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName' || true)
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+            echo "No releases found; skipping LKG."
+            echo "lkg_tag=" >> "$GITHUB_OUTPUT"
+            echo "lkg_rel_url=" >> "$GITHUB_OUTPUT"
+            echo "lkg_pages_url=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          REPO="${{ github.repository }}"
+          USER="${{ github.repository_owner }}"
+          REL_URL="https://github.com/${REPO}/releases/tag/${TAG}"
+          PAGES_URL="https://${USER}.github.io/${{ github.event.repository.name }}/${TAG}/"
+
+          echo "LKG → $TAG"
+          echo "lkg_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "lkg_rel_url=$REL_URL" >> "$GITHUB_OUTPUT"
+          echo "lkg_pages_url=$PAGES_URL" >> "$GITHUB_OUTPUT"
+
+      - name: 🟢 Ensure LED assets exist
+        run: |
+          python3 - <<'PY'
+from pathlib import Path
+req = [Path('docs/assets/led_online.gif'),
+       Path('docs/assets/led_warn.gif'),
+       Path('docs/assets/led_fail.gif'),
+       Path('docs/assets/system_online.gif')]
+missing = [p for p in req if not p.exists()]
+if missing:
+    import subprocess
+    subprocess.check_call(["python3","scripts/make_led_badge.py"])
+PY
+
+      - name: 📝 Update status banner (red/yellow/green)
+        env:
+          STATE:          ${{ steps.state.outputs.global_state }}
+          LKG_TAG:        ${{ steps.lkg.outputs.lkg_tag }}
+          LKG_RELEASE_URL:${{ steps.lkg.outputs.lkg_rel_url }}
+          LKG_PAGES_URL:  ${{ steps.lkg.outputs.lkg_pages_url }}
+        run: python3 scripts/update_status_banner.py
+
+      - name: 💾 Commit & push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/status_banner.md docs/assets/*.gif || true
+          git commit -m "docs: refresh status banner (${{ steps.state.outputs.global_state }})" || exit 0
+          git push

@@ -1,0 +1,64 @@
+# agent/llm_backend.py
+import os
+from pathlib import Path
+from typing import Iterable, Optional
+
+from dotenv import load_dotenv
+load_dotenv()
+
+LLM_MODEL = os.getenv("AGENT_MODEL", "gguf/llama-3.1-8b-q4_0.gguf")
+
+class LLM:
+    """
+    Thin wrapper around llama.cpp via llama-cpp-python.
+    Works fully offline with a local GGUF model.
+    """
+    def __init__(self, model_path: Optional[str] = None):
+        self.model_path = model_path or LLM_MODEL
+        self._llm = None
+
+    def _ensure_loaded(self):
+        if self._llm is not None:
+            return
+        from llama_cpp import Llama  # lazy import so agent can run even if not installed
+        mp = Path(self.model_path)
+        if not mp.exists():
+            raise FileNotFoundError(
+                f"LLM model not found at {mp}. Set AGENT_MODEL or download a GGUF into {mp}."
+            )
+        self._llm = Llama(
+            model_path=str(mp),
+            n_ctx=4096,
+            n_threads=int(os.getenv("LLM_THREADS", "0")) or None,  # 0 → auto
+            verbose=False,
+        )
+
+    def generate(self, prompt: str, system: str = "", max_tokens: int = 512, temperature: float = 0.7) -> str:
+        self._ensure_loaded()
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        out = self._llm.create_chat_completion(
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        # llama-cpp-python chat API returns dict with choices[0]['message']['content']
+        return out["choices"][0]["message"]["content"].strip()
+
+    def stream(self, prompt: str, system: str = "", max_tokens: int = 512, temperature: float = 0.7) -> Iterable[str]:
+        self._ensure_loaded()
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        for tok in self._llm.create_chat_completion(
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True,
+        ):
+            chunk = tok["choices"][0].get("delta", {}).get("content", "")
+            if chunk:
+                yield chunk

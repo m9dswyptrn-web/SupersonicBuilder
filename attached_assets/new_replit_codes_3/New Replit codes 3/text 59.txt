@@ -1,0 +1,1 @@
+  if (CANCEL.active) return; // add this guard before heavy work if desired

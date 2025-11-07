@@ -1,0 +1,6 @@
+python scripts/auto_tune_env.py
+# Expect:
+# - .env.bak created
+# - .env updated (LLM_CTX / LLM_THREADS / AGENT_MODEL)
+# - printed summary
+# - a short chime (or TTS fallback)

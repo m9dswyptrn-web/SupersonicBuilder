@@ -1,0 +1,15 @@
+
+name: Docs Preview Guard (Supersonic)
+on:
+  pull_request: { paths: [ 'docs/**' ] }
+  workflow_dispatch:
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: python helpers/supersonic_verify_autofix_preview_supersonic.py
+      - uses: actions/upload-artifact@v4
+        with: { name: fixed-docs-preview, path: docs/_fixed_preview/**, if-no-files-found: ignore }

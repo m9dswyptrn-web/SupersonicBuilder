@@ -1,0 +1,10 @@
+unzip SonicBuilderSupersonic_Clean.zip -d SonicBuilderSupersonic
+cd SonicBuilderSupersonic
+
+# if you want the auto GitHub push we set up earlier:
+python3 deploy_to_github.py \
+  --owner ChristopherElgin \
+  --repo SonicBuilderSupersonic \
+  --version v1.0.0 \
+  --public \
+  --fresh

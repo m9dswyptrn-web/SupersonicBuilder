@@ -1,0 +1,14 @@
+cd /mnt/data/SonicBuilder
+
+# Full one-shot build with manifest + nice logs
+./build.sh --render-manifest
+
+# Or via Make
+make all
+
+# Generate CHANGELOG + ADB snapshot
+make changelog
+make adb
+
+# Create/update "latest" symlink to your newest FULL zip
+make latest_symlink

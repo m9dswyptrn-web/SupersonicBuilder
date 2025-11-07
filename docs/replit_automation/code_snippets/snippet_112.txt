@@ -1,0 +1,25 @@
+function rememberState() {
+  // try to find friendly name from the catalog
+  let friendly = LAST?.id || selDiag.value;
+  try {
+    const mk = selMake.value, md = selModel.value, yr = selYear.value, id = selDiag.value;
+    const item = (catalog?.[mk]?.[md]?.[yr] || []).find(d => d.id === id);
+    if (item?.name) friendly = item.name;
+  } catch {}
+
+  LAST = {
+    has: true,
+    fmt: selFmt.value,
+    url: buildURL(),  // no cache-bust
+    make: selMake.value, model: selModel.value, year: selYear.value, id: selDiag.value,
+    name: friendly || selDiag.value,
+    variant: selVar.value,
+    page, scale, rotation,
+    ts: Date.now()
+  };
+
+  // persist
+  saveLastToStorage(LAST);
+
+  showRestart(true);
+}

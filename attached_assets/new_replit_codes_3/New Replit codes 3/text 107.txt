@@ -1,0 +1,2 @@
+body.no-glow #dp-restart.fade-visible,
+body.no-glow #dp-restart-label.fade-visible { box-shadow: none !important; }

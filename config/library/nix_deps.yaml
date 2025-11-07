@@ -1,0 +1,5 @@
+description: Nix package dependencies
+packages:
+- python3
+- python311Packages.reportlab
+source: text 17.txt

@@ -1,0 +1,76 @@
+# Master outline for the Super Sonic Manual (edit freely)
+title: "Chevy Sonic LTZ — Android Head Unit Installer Manual (Super Sonic Edition)"
+author: "Christopher Elgin"
+version: "2.1.0"
+theme: "dark"
+page_size: "LETTER"
+dpi: 300
+
+parts:
+  - name: "Part I — Systems"
+    chapters:
+      - id: audio
+        title: "Audio System"
+        md: "manual/01-Systems/Audio/00_audio_intro.md"
+        images_glob: "manual/01-Systems/Audio/img/*.jpg"
+      - id: camera
+        title: "Camera System"
+        md: "manual/01-Systems/Camera/00_camera_intro.md"
+        images_glob: "manual/01-Systems/Camera/img/*.jpg"
+      - id: can
+        title: "CAN Bus & Integration"
+        md: "manual/01-Systems/CAN_Bus/00_can_intro.md"
+        images_glob: "manual/01-Systems/CAN_Bus/img/*.jpg"
+      - id: power
+        title: "Power, Fusing & Ground"
+        md: "manual/01-Systems/Power/00_power_intro.md"
+        images_glob: "manual/01-Systems/Power/img/*.jpg"
+
+  - name: "Part II — Install Steps"
+    chapters:
+      - id: disassembly
+        title: "Vehicle Disassembly"
+        md: "manual/02-Steps/Disassembly/00_disassembly.md"
+        images_glob: "manual/02-Steps/Disassembly/img/*.jpg"
+      - id: wiring
+        title: "Harness Wiring"
+        md: "manual/02-Steps/Wiring/00_wiring.md"
+        images_glob: "manual/02-Steps/Wiring/img/*.jpg"
+      - id: programming
+        title: "Programming & Setup"
+        md: "manual/02-Steps/Programming/00_programming.md"
+        images_glob: "manual/02-Steps/Programming/img/*.jpg"
+      - id: testing
+        title: "Testing & Validation"
+        md: "manual/02-Steps/Testing/00_testing.md"
+        images_glob: "manual/02-Steps/Testing/img/*.jpg"
+
+  - name: "Part III — iDatalink Maestro RR2 + EOENKK"
+    chapters:
+      - id: maestro_overview
+        title: "System Overview"
+        md: "manual/03-Maestro_RR2_EOENKK/Overview/00_overview.md"
+        images_glob: "manual/03-Maestro_RR2_EOENKK/Overview/img/*.jpg"
+      - id: maestro_wiring
+        title: "Wiring & Integration"
+        md: "manual/03-Maestro_RR2_EOENKK/Wiring/00_wiring.md"
+        images_glob: "manual/03-Maestro_RR2_EOENKK/Wiring/img/*.jpg"
+      - id: maestro_config
+        title: "Configuration & Tips"
+        md: "manual/03-Maestro_RR2_EOENKK/Config/00_config.md"
+        images_glob: "manual/03-Maestro_RR2_EOENKK/Config/img/*.jpg"
+
+  - name: "Appendix"
+    chapters:
+      - id: diagrams
+        title: "Wiring Diagrams"
+        md: "manual/04-Appendix/Wiring_Diagrams/00_index.md"
+        images_glob: "manual/04-Appendix/Wiring_Diagrams/*.png"
+      - id: pinouts
+        title: "Connector Pinouts"
+        md: "manual/04-Appendix/Pinouts/00_pinouts.md"
+        images_glob: "manual/04-Appendix/Pinouts/*.png"
+      - id: specs
+        title: "Specs & References"
+        md: "manual/04-Appendix/Specs/00_specs.md"
+        images_glob: "manual/04-Appendix/Specs/*.png"

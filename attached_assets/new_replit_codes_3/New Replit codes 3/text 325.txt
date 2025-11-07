@@ -1,0 +1,67 @@
+# Top files
+write(ROOT / "README_SUPERSONIC.md", TOP_README, overwrite=False)
+write(ROOT / ".env.sample", ENV_SAMPLE, overwrite=False)
+ensure_line(ROOT / ".gitignore", GITIGNORE.strip())
+
+# scripts/
+write(ROOT / "scripts" / "bench_llm.py", BENCH_LLM, executable=True, overwrite=True)
+write(ROOT / "scripts" / "diagnostic_system.py", DIAGNOSTIC, executable=True, overwrite=True)
+write(ROOT / "scripts" / "update_sync.py", UPDATE_SYNC, executable=True, overwrite=True)
+write(ROOT / "scripts" / "auto_ingest_docs.py", AUTO_INGEST, executable=True, overwrite=True)
+write(ROOT / "scripts" / "optimize_llm.py", OPTIMIZE_LLM, executable=True, overwrite=True)
+write(ROOT / "scripts" / "deploy_to_tauri.py", DEPLOY_TAURI, executable=True, overwrite=True)
+write(ROOT / "scripts" / "tts_fallback.py", TTS_FALLBACK, executable=True, overwrite=True)
+write(ROOT / "scripts" / "download_gguf.py", DL_GGUF, executable=True, overwrite=False)
+write(ROOT / "scripts" / "run_offline_llm.py", RUN_LLM, executable=True, overwrite=True)
+
+# audio assets (generated)
+write_tone_wav(ROOT / "assets" / "audio" / "startup.wav", seconds=0.35, freq=880.0, volume=0.35)
+write_tone_wav(ROOT / "assets" / "audio" / "assistant_ready.wav", seconds=0.35, freq=1046.5, volume=0.35)
+write_tone_wav(ROOT / "assets" / "audio" / "deploy_complete.wav", seconds=0.45, freq=1318.5, volume=0.4)
+write_tone_wav(ROOT / "assets" / "audio" / "error_alert.wav", seconds=0.35, freq=220.0, volume=0.5)
+
+# cloud stub
+write(ROOT / "cloud" / "fastapi_stub" / "requirements.txt", CLOUD_REQ, overwrite=False)
+write(ROOT / "cloud" / "fastapi_stub" / "main.py", CLOUD_MAIN, overwrite=False)
+write(ROOT / "scripts" / "run_cloud.py", RUN_CLOUD, executable=True, overwrite=True)
+
+# desktop/webui
+write(ROOT / "desktop" / "webui" / "requirements.txt", WEB_REQ, overwrite=False)
+write(ROOT / "desktop" / "webui" / "app.py", WEB_APP, overwrite=False)
+write(ROOT / "desktop" / "webui" / "agent_loader.py", AGENT_LOADER, overwrite=True)
+
+# seed docs
+if not any((ROOT / "docs").glob("*.md")):
+    write(ROOT / "docs" / "hello.md", "# Hello Supersonic\\n\\nAdd your docs here for RAG.", overwrite=False)
+
+# agent add-ons
+write(ROOT / "agent" / "auto_learn.py", AUTO_LEARN, overwrite=False)
+write(ROOT / "agent" / "memory_maintenance.py", MEM_MAINT, overwrite=False)
+write(ROOT / "agent" / "auto_expand_skills.py", AUTO_SKILLS, overwrite=False)
+write(ROOT / "agent" / "agent_sentinel.py", SENTINEL, overwrite=False)
+(ROOT / "agent" / "memory").mkdir(parents=True, exist_ok=True)
+(ROOT / "agent" / "skills").mkdir(parents=True, exist_ok=True)
+
+# tauri wrapper
+write(ROOT / "src-tauri" / "Cargo.toml", CARGO_TOML, overwrite=False)
+write(ROOT / "src-tauri" / "tauri.conf.json", TAURI_CONF, overwrite=False)
+write(ROOT / "src-tauri" / "src" / "main.rs", MAIN_RS, overwrite=True)
+
+# package.json
+patch_package_json()
+
+print("\n✅ Scaffolding complete (no external commands executed).")
+print("\nNext steps:")
+print("  1) python3 -m venv .venv && source .venv/bin/activate")
+print("  2) python -m pip install --upgrade pip")
+print("  3) pip install -r agent/requirements.txt -r desktop/webui/requirements.txt")
+print("  4) python scripts/download_gguf.py   # or place your own GGUF at AGENT_MODEL")
+print("  5) python scripts/run_offline_llm.py # open http://127.0.0.1:7860")
+print("  6) npm i && npm run tauri:dev        # desktop shell")
+print("  7) npm run tauri:build               # build installer")
+print("\nBench/optimize:")
+print("  python scripts/bench_llm.py && python scripts/optimize_llm.py")
+print("\nDiagnostics:")
+print("  python scripts/diagnostic_system.py")
+print("\nGitHub sync:")
+print("  python scripts/update_sync.py")

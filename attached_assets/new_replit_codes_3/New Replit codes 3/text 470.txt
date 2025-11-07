@@ -1,0 +1,9 @@
+// Extend persisted settings with switch state
+SETTINGS = Object.assign({
+  sound: true,
+  voice: true,
+  autoSpeakOnReady: true,
+  volume: 1.0,
+  volumes: { ready: 1.0, online: 1.0, error: 1.0, bench: 1.0, voice: 1.0 },
+  muteSwitch: false,            // UI state for the ON/OFF switch
+}, SETTINGS || {});

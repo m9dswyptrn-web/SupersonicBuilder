@@ -1,0 +1,8 @@
+# (optional) make a venv
+python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
+
+# dev goodies
+python -m pip install -r requirements-dev.txt
+
+# build everything (both dark + light if you pass --profiles=all)
+python builder.py pack --profiles=all

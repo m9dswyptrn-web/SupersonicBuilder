@@ -1,0 +1,1 @@
+#dp-restart-label { margin-left:.35rem; opacity:.9; }

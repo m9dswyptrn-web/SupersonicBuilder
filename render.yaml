@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: supersonic-commander
+    env: python
+    plan: starter
+    region: oregon
+    runtime: docker
+    autoDeploy: true
+    healthCheckPath: /
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: FLASK_ENV
+        value: production
+    # If you prefer Render's native Python runtime, comment 'runtime: docker'
+    # and uncomment below:
+    # buildCommand: pip install -r requirements.txt
+    # startCommand: gunicorn supersonic_settings_server:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120

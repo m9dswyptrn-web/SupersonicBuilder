@@ -1,0 +1,1 @@
+<button id="dp-restart" class="btn btn-mini" title="Restart last preview" hidden>↺ Restart</button>

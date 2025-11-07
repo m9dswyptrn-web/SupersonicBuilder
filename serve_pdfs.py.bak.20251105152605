@@ -1,0 +1,909 @@
+import json, os, time, hashlib, pathlib, threading
+
+# --- Supersonic: ensure rotating file handler for logs ---
+import logging
+from logging.handlers import RotatingFileHandler
+_log = logging.getLogger("supersonic")
+if not _log.handlers:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+_log_file = os.getenv("SUPERSONIC_LOG_FILE", "supersonic.log")
+try:
+    _rh = RotatingFileHandler(_log_file, maxBytes=1_000_000, backupCount=3)
+    _rh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    if not any(isinstance(h, RotatingFileHandler) for h in _log.handlers):
+        _log.addHandler(_rh)
+        _log.info("FILE_LOGGER_READY file=%s", _log_file)
+except Exception as _e:
+    _log.warning("FILE_LOGGER_DISABLED err=%s", _e)
+# --- end Supersonic rotating handler ---
+import urllib.request, urllib.error
+from datetime import datetime, timezone
+from flask import Flask, jsonify, request, send_from_directory, Response, request, render_template_string, redirect, url_for
+
+APP_PORT = int(os.getenv("PORT", "5000"))
+ROOT = pathlib.Path(__file__).parent.resolve()
+DL_DIR = ROOT / "downloads"
+INDEX_JSON = DL_DIR / "index.json"
+STATS_JSON = DL_DIR / "stats.json"
+
+app = Flask(__name__)
+
+# --- Supersonic: request/response logging hooks ---
+import time
+from flask import request
+
+try:
+    import logging
+    log = logging.getLogger("supersonic") if logging.getLogger("supersonic") else logging.getLogger()
+except Exception:
+    log = None
+
+@app.before_request
+def _supersonic_req_start():
+    request._supersonic_t0 = time.time()
+
+def _client_ip():
+    fwd = request.headers.get("X-Forwarded-For")
+    return (fwd.split(",")[0].strip() if fwd else request.remote_addr) or "unknown"
+
+@app.after_request
+def _supersonic_after(resp):
+    try:
+        t0 = getattr(request, "_supersonic_t0", None)
+        ms = int((time.time() - t0) * 1000) if t0 else -1
+        ua = request.headers.get("User-Agent","")
+        ln = f'REQ method={request.method} path={request.path} status={resp.status_code} ms={ms} bytes={resp.calculate_content_length() or 0} ua="{ua}" ip={_client_ip()}'
+        if log: log.info(ln)
+        else: print(ln)
+    except Exception as e:
+        if log: log.warning("REQ_LOG_FAIL err=%s", e)
+    return resp
+
+@app.errorhandler(Exception)
+def _supersonic_ex(e):
+    try:
+        import traceback
+        tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+        ua = request.headers.get("User-Agent","")
+        ln = f'EXC method={request.method} path={getattr(request,"path","?")} ua="{ua}" ip={_client_ip()}'
+        if log:
+            log.error(ln)
+            for line in tb.splitlines():
+                log.error(line)
+        else:
+            print(ln); print(tb)
+    except Exception:
+        pass
+    raise e
+# --- end Supersonic hooks ---
+
+# Thread-safe stats lock
+_stats_lock = threading.Lock()
+
+# ------------- Utilities -------------
+def _ensure_dirs():
+    DL_DIR.mkdir(parents=True, exist_ok=True)
+    if not INDEX_JSON.exists():
+        INDEX_JSON.write_text(json.dumps({"generated": time.time(), "items": []}, indent=2), "utf-8")
+    if not STATS_JSON.exists():
+        STATS_JSON.write_text(json.dumps({"updated": time.time(), "counts": {}, "last_download": {}}, indent=2), "utf-8")
+
+def _load_json(path, default):
+    try:
+        return json.loads(path.read_text("utf-8"))
+    except Exception:
+        return default
+
+def _save_json(path, data):
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2), "utf-8")
+    tmp.replace(path)
+
+def _human_mb(b):
+    return f"{b/1024/1024:.1f} MB"
+
+def _ts_utc(ts):
+    return time.strftime('%Y-%m-%d %H:%M', time.gmtime(ts))
+
+def _totals(stats):
+    counts = stats.get("counts", {})
+    return sum(int(v) for v in counts.values())
+
+def _fmt_human(ts):
+    """Format timestamp as human-readable relative time."""
+    if not ts:
+        return "never"
+    dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+    now = datetime.now(tz=timezone.utc)
+    delta = now - dt
+    mins = int(delta.total_seconds() // 60)
+    if mins < 1:
+        return "just now"
+    if mins < 60:
+        return f"{mins}m ago"
+    hrs = mins // 60
+    if hrs < 24:
+        return f"{hrs}h ago"
+    days = hrs // 24
+    return f"{days}d ago"
+
+# ------------- Data sources -------------
+def get_index():
+    _ensure_dirs()
+    data = _load_json(INDEX_JSON, {"generated": time.time(), "items": []})
+    items = sorted(data.get("items", []), key=lambda i: i.get("mtime", 0), reverse=True)
+    data["items"] = items
+    return data
+
+def get_stats():
+    _ensure_dirs()
+    return _load_json(STATS_JSON, {"updated": time.time(), "counts": {}, "last_download": {}})
+
+def bump_stat(filename):
+    """Thread-safe increment of download counter."""
+    with _stats_lock:
+        s = get_stats()
+        s["counts"][filename] = int(s["counts"].get(filename, 0)) + 1
+        s["last_download"][filename] = time.time()
+        s["updated"] = time.time()
+        _save_json(STATS_JSON, s)
+
+# ------------- Web UI -------------
+PAGE_HTML = r"""
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SonicBuilder Documentation</title>
+<style>
+:root{
+  --bg:#0b0f14; --fg:#cfd7e3; --muted:#8fa1b3; --card:#121821; --border:#233043; --link:#7aa2f7;
+  --ok:#2ecc71; --warn:#f39c12;
+}
+:root.light{
+  --bg:#f7f9fc; --fg:#1d2733; --muted:#4b5a6a; --card:#ffffff; --border:#dfe7f1; --link:#0a67d8;
+  --ok:#1e944f; --warn:#b66a00;
+}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,sans-serif;background:var(--bg);color:var(--fg);}
+.container{max-width:1000px;margin:0 auto;padding:32px}
+.header{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.badges{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-top:16px}
+table{width:100%;border-collapse:collapse}
+th,td{padding:10px 8px;border-bottom:1px solid var(--border);text-align:left}
+th{color:var(--muted);font-weight:600}
+a{color:var(--link);text-decoration:none}
+a:hover{text-decoration:underline}
+.small{color:var(--muted);font-size:12px}
+button.toggle{
+  border:1px solid var(--border); background:transparent; color:var(--fg);
+  padding:8px 10px; border-radius:8px; cursor:pointer;
+}
+kbd{background:var(--border);padding:2px 6px;border-radius:6px;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+#totalBox{border:1px solid var(--border);padding:6px 12px;border-radius:8px;display:inline-block}
+</style>
+
+<body>
+<div class="container">
+  <div class="header">
+    <div>
+      <h1 style="margin:0 0 6px 0">SonicBuilder Documentation Downloads</h1>
+      <div class="small">Live mirror with auto-refresh, analytics, and theme toggle.</div>
+    </div>
+    <div class="badges">
+      <a id="latestLink" href="#">
+        <img alt="Latest Download" id="latestBadge"
+          src="https://img.shields.io/badge/latest-download-blue?logo=adobeacrobatreader&logoColor=white">
+      </a>
+      <button class="toggle" id="themeBtn" title="Toggle theme">🌓 Theme</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2 style="margin:0">Last 5 PDFs</h2>
+      <span id="totalBox" class="small">
+        ⬇️ total downloads: <strong id="totalCnt">0</strong>
+      </span>
+    </div>
+    <table id="tbl">
+      <thead><tr><th>File</th><th>Size</th><th>Updated (UTC)</th><th>MD5</th><th>Downloads</th><th></th></tr></thead>
+      <tbody><tr><td colspan="6" class="small">Loading…</td></tr></tbody>
+    </table>
+    <div class="small" id="foot"></div>
+    <p class="small" id="exactTime" style="margin-top:8px;font-style:italic"></p>
+  </div>
+
+  <div class="card">
+    <strong>Tips</strong>
+    <ul class="small">
+      <li>Page auto-refreshes every 60s (<kbd>Cmd/Ctrl</kbd> + <kbd>R</kbd> for manual refresh).</li>
+      <li>Download counts increment when files are served (no client tracking).</li>
+      <li>Badge endpoints: <code>/badge/latest.json</code>, <code>/badge/downloads.json</code>, <code>/badge/updated.json</code>, <code>/badge/size.json</code>, <code>/badge/pdf-health.json</code></li>
+    </ul>
+  </div>
+</div>
+
+<script>
+(function(){
+  // --- theme: system default + manual toggle
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const saved = localStorage.getItem('sb_theme');
+  function applyTheme(t){ document.documentElement.classList.toggle('light', t==='light'); localStorage.setItem('sb_theme', t); }
+  applyTheme(saved ? saved : (prefersDark ? 'dark' : 'light'));
+  document.getElementById('themeBtn').onclick = function(){
+    const now = document.documentElement.classList.contains('light') ? 'dark' : 'light';
+    applyTheme(now);
+  };
+
+  async function fetchJSON(url){
+    const res = await fetch(url, {cache:'no-store'});
+    if(!res.ok) throw new Error('Fetch failed '+url);
+    return res.json();
+  }
+
+  function h(bytes){ return (bytes/1024/1024).toFixed(1)+' MB'; }
+  function md5s(s){ return s ? s.substring(0,8) : ''; }
+
+  async function load(){
+    try{
+      const [idx, stats] = await Promise.all([
+        fetchJSON('/api/index.json'),
+        fetchJSON('/api/stats.json')
+      ]);
+      const items = (idx.items||[]).slice(0,5);
+      const tbody = document.querySelector('#tbl tbody');
+      tbody.innerHTML = '';
+      items.forEach(it=>{
+        const tr = document.createElement('tr');
+        const cnt = (stats.counts||{})[it.name] || 0;
+        tr.innerHTML =
+          `<td><a href="/downloads/${it.name}">${it.name}</a></td>`+
+          `<td>${h(it.bytes||0)}</td>`+
+          `<td>${new Date((it.mtime||0)*1000).toISOString().slice(0,16).replace('T',' ')}</td>`+
+          `<td><code>${md5s(it.md5)}</code></td>`+
+          `<td>${cnt}</td>`+
+          `<td><a href="/downloads/${it.name}" download>⬇️</a></td>`;
+        tbody.appendChild(tr);
+      });
+      
+      // Update total downloads
+      const total = Object.values(stats.counts||{}).reduce((a,b)=>a+Number(b||0),0);
+      document.getElementById('totalCnt').textContent = total;
+      
+      // latest link
+      document.getElementById('latestLink').href = '/downloads/latest.pdf';
+      document.getElementById('foot').textContent =
+        'Index generated '+new Date((idx.generated||0)*1000).toISOString()+
+        ' • Stats updated '+new Date((stats.updated||0)*1000).toISOString();
+      
+      // Exact build time display
+      const summary = await fetchJSON('/api/summary.json');
+      const ts = summary.latest_mtime ? new Date(summary.latest_mtime*1000) : null;
+      document.getElementById('exactTime').textContent =
+        ts ? `Exact build time (UTC): ${ts.toISOString()}` : 'No builds yet';
+    }catch(e){
+      document.querySelector('#tbl tbody').innerHTML =
+        `<tr><td colspan="6" class="small">Error: ${e.message}</td></tr>`;
+    }
+  }
+
+  load();
+  setInterval(load, 60000); // auto refresh 60s
+})();
+</script>
+</body>
+</html>
+"""
+
+# ------------- Routes -------------
+
+@app.route("/")
+def home():
+    return render_template_string(PAGE_HTML)
+
+@app.route("/api/index.json")
+def api_index():
+    return Response(json.dumps(get_index()), mimetype="application/json")
+
+@app.route("/api/stats.json")
+def api_stats():
+    return Response(json.dumps(get_stats()), mimetype="application/json")
+
+@app.route("/api/summary.json")
+def api_summary():
+    idx, st = get_index(), get_stats()
+    latest = idx.get("items", [{}])[0] if idx.get("items") else {}
+    data = {
+        "generated": int(time.time()),
+        "latest_name": latest.get("name"),
+        "latest_bytes": latest.get("bytes", 0),
+        "latest_mtime": latest.get("mtime", 0),
+        "total_downloads": _totals(st),
+        "counts": st.get("counts", {})
+    }
+    return Response(json.dumps(data), mimetype="application/json")
+
+# ------------- Shields.io badge endpoints -------------
+
+@app.route("/badge/latest.json")
+def badge_latest():
+    idx = get_index()
+    latest = idx.get("items", [{}])[0] if idx.get("items") else {}
+    label = "latest"
+    message = latest.get("name") or "no file"
+    color = "blue" if latest else "lightgrey"
+    payload = {"schemaVersion": 1, "label": label, "message": message, "color": color}
+    return Response(json.dumps(payload), mimetype="application/json")
+
+@app.route("/badge/downloads.json")
+def badge_downloads():
+    st = get_stats()
+    total = _totals(st)
+    payload = {
+        "schemaVersion": 1,
+        "label": "downloads",
+        "message": str(total),
+        "color": "success" if total > 0 else "lightgrey"
+    }
+    return Response(json.dumps(payload), mimetype="application/json")
+
+@app.route("/badge/updated.json")
+def badge_updated():
+    idx = get_index()
+    latest = (idx.get("items") or [{}])[0]
+    mtime = latest.get("mtime", 0)
+    human = _fmt_human(mtime)
+    # Color by recency
+    color = "brightgreen"
+    if human.endswith("h ago") or human.endswith("d ago"):
+        color = "yellow" if ("h" in human and not human.startswith("24")) else "orange"
+    if human == "never":
+        color = "lightgrey"
+    payload = {
+        "schemaVersion": 1,
+        "label": "last updated",
+        "message": human,
+        "color": color
+    }
+    return Response(json.dumps(payload), mimetype="application/json")
+
+@app.route("/badge/size.json")
+def badge_size():
+    idx = get_index()
+    latest = (idx.get("items") or [{}])[0]
+    mb = latest.get("mb", 0.0)
+    msg = f"{mb:.1f} MB" if mb else "n/a"
+    color = "blue" if mb else "lightgrey"
+    payload = {
+        "schemaVersion": 1,
+        "label": "latest size",
+        "message": msg,
+        "color": color
+    }
+    return Response(json.dumps(payload), mimetype="application/json")
+
+@app.route("/badge/pdf-health.json")
+def badge_pdf_health():
+    """Probes GitHub Pages to verify it's live and serving PDFs."""
+    owner = "m9dswyptrn-web"
+    repo = "SonicBuilder"
+    url = f"https://{owner}.github.io/{repo}/downloads/latest.pdf"
+    
+    ok = False
+    code = 0
+    try:
+        req = urllib.request.Request(url, method="HEAD")
+        with urllib.request.urlopen(req, timeout=8) as r:
+            code = r.getcode() or 0
+            ok = (200 <= code < 300)
+    except urllib.error.HTTPError as e:
+        code = e.code
+        ok = False
+    except Exception:
+        ok = False
+    
+    payload = {
+        "schemaVersion": 1,
+        "label": "pdf health",
+        "message": "OK" if ok else f"ERR {code or 'down'}",
+        "color": "brightgreen" if ok else "red"
+    }
+    return Response(json.dumps(payload), mimetype="application/json")
+
+# ------------- File serving -------------
+
+@app.route("/downloads/<path:filename>")
+def serve_download(filename):
+    """
+    Serves files from downloads/ and increments analytics counters automatically.
+    Also supports 'latest.pdf' symlink/redirect convenience.
+    """
+    _ensure_dirs()
+    if filename == "latest.pdf":
+        latest_path = DL_DIR / "latest.pdf"
+        if latest_path.exists():
+            bump_stat("latest.pdf")
+            return send_from_directory(str(DL_DIR), "latest.pdf")
+        idx = get_index()
+        if idx.get("items"):
+            target = idx["items"][0]["name"]
+            return redirect(url_for("serve_download", filename=target), code=302)
+        return Response("No PDFs available", status=404)
+
+    target = DL_DIR / filename
+    if not target.exists():
+        return Response("File not found", status=404)
+    try:
+        bump_stat(filename)
+    except Exception:
+        pass
+    return send_from_directory(str(DL_DIR), filename, as_attachment=False)
+
+
+
+@app.route("/health")
+def supersonic_health():
+    from pathlib import Path as _Path
+    import os as _os, sys as _sys, json as _json, time as _time, shutil as _shutil, datetime as _dt
+
+    _start_file = _Path(".supersonic_start.json")
+    _now = _time.time()
+    _pid = _os.getpid()
+    _start_ts = None
+    if _start_file.exists():
+        try:
+            data = _json.loads(_start_file.read_text(encoding="utf-8"))
+            if data.get("pid") == _pid and isinstance(data.get("ts"), (int, float)):
+                _start_ts = float(data["ts"])
+        except Exception:
+            _start_ts = None
+    if _start_ts is None:
+        _start_ts = _now
+        try:
+            _start_file.write_text(_json.dumps({"pid": _pid, "ts": _start_ts}), encoding="utf-8")
+        except Exception:
+            pass
+    _uptime = max(0.0, _now - _start_ts)
+
+    try:
+        _du = _shutil.disk_usage(".")
+        _disk = {"total": int(_du.total), "used": int(_du.used), "free": int(_du.free)}
+    except Exception as _e:
+        _disk = {"total": 0, "used": 0, "free": 0, "error": str(_e)}
+
+    def _present(bin_name: str) -> bool:
+        try:
+            return _shutil.which(bin_name) is not None
+        except Exception:
+            return False
+
+    _checks = {
+        "git_present": _present("git"),
+        "make_present": _present("make"),
+    }
+
+    _cpu_count = 0
+    try:
+        _cpu_count = max(1, (_os.cpu_count() or 1))
+    except Exception:
+        _cpu_count = 1
+
+    _load_raw = None
+    _load_per_cpu = None
+    try:
+        if hasattr(_os, "getloadavg"):
+            _l1, _l5, _l15 = _os.getloadavg()
+            _load_raw = [_l1, _l5, _l15]
+            _load_per_cpu = [round(_l1/_cpu_count, 4), round(_l5/_cpu_count, 4), round(_l15/_cpu_count, 4)]
+    except Exception:
+        _load_raw = None
+    _log_path = _os.getenv("SUPERSONIC_LOG_FILE", "supersonic.log")
+    _err_rx = _os.getenv("HEALTH_ERROR_PATTERNS", r"(?i)\bERROR\b|\bTraceback\b")
+    try:
+        _err_re = __import__("re").compile(_err_rx)
+    except Exception:
+        _err_re = None
+    _errors_last_5m = 0
+    try:
+        import time as _time
+        _now2 = _time.time()
+        _max_bytes = 200_000
+        with open(_log_path, "r", encoding="utf-8", errors="replace") as _f:
+            _f.seek(0, _os.SEEK_END)
+            _pos = max(0, _f.tell() - _max_bytes)
+            _f.seek(_pos)
+            _chunk = _f.read()
+        _cutoff = _now2 - 300.0
+        _ts_re = __import__("re").compile(r"(20\d\d-\d\d-\d\d \d\d:\d\d:\d\d)")
+        for _ln in _chunk.splitlines():
+            if _err_re and _err_re.search(_ln):
+                _m = _ts_re.search(_ln)
+                if _m:
+                    try:
+                        import datetime as _dt, time as _time
+                        _t = _time.mktime(_dt.datetime.strptime(_m.group(1), "%Y-%m-%d %H:%M:%S").timetuple())
+                        if _t >= _cutoff:
+                            _errors_last_5m += 1
+                    except Exception:
+                        _errors_last_5m += 1
+                else:
+                    _errors_last_5m += 1
+    except Exception:
+        pass
+
+    _mem = {"rss_bytes": None, "vms_bytes": None, "rss_mb": None, "vms_mb": None, "source": "unknown"}
+    try:
+        import psutil as _ps
+        _p = _ps.Process()
+        _mi = _p.memory_info()
+        _mem["rss_bytes"] = int(getattr(_mi, "rss", 0))
+        _mem["vms_bytes"] = int(getattr(_mi, "vms", 0))
+        _mem["rss_mb"]    = round(_mem["rss_bytes"] / (1024*1024), 3)
+        _mem["vms_mb"]    = round(_mem["vms_bytes"] / (1024*1024), 3)
+        _mem["source"]    = "psutil"
+    except Exception:
+        try:
+            _page = _os.sysconf("SC_PAGE_SIZE")
+            with open("/proc/self/statm","r") as _f:
+                _vals = _f.read().strip().split()
+            _rss_pages = int(_vals[1]) if len(_vals) > 1 else 0
+            _rss_bytes = _rss_pages * _page
+            _mem["rss_bytes"] = int(_rss_bytes)
+            _mem["rss_mb"]    = round(_rss_bytes / (1024*1024), 3)
+            _mem["source"]    = "proc/statm"
+        except Exception:
+            try:
+                import resource as _res
+                _ru = _res.getrusage(_res.RUSAGE_SELF)
+                _rss_kb = getattr(_ru, "ru_maxrss", 0)
+                _rss_b  = int(_rss_kb * 1024) if _rss_kb < 10**7 else int(_rss_kb)
+                _mem["rss_bytes"] = _rss_b
+                _mem["rss_mb"]    = round(_rss_b / (1024*1024), 3)
+                _mem["source"]    = "resource"
+            except Exception:
+                pass
+
+    _win_sec  = int(_os.getenv("HEALTH_5XX_WINDOW_SEC", "600"))
+    try:
+        _p5xx_re = __import__("re").compile(_os.getenv("HEALTH_5XX_REGEX", r'(?i)\b(5\d\d)\b'))
+    except Exception:
+        _p5xx_re = __import__("re").compile(r'(?i)\b(5\d\d)\b')
+    _http_5xx_count = 0
+    try:
+        import time as _time
+        _now3 = _time.time()
+        _cut = _now3 - _win_sec
+        _max_bytes = 250_000
+        with open(_log_path, "r", encoding="utf-8", errors="replace") as _f:
+            _f.seek(0, _os.SEEK_END)
+            _pos = max(0, _f.tell() - _max_bytes)
+            _f.seek(_pos)
+            _chunk = _f.read()
+        _ts_re = __import__("re").compile(r"(20\d\d-\d\d-\d\d \d\d:\d\d:\d\d)")
+        for _ln in _chunk.splitlines():
+            if not _p5xx_re.search(_ln):
+                continue
+            _m = _ts_re.search(_ln)
+            if _m:
+                try:
+                    import datetime as _dt, time as _time
+                    _t = _time.mktime(_dt.datetime.strptime(_m.group(1), "%Y-%m-%d %H:%M:%S").timetuple())
+                    if _t >= _cut:
+                        _http_5xx_count += 1
+                except Exception:
+                    _http_5xx_count += 1
+            else:
+                _http_5xx_count += 1
+    except Exception:
+        pass
+
+    _free_mb = _disk.get("free", 0) // (1024 * 1024)
+    _status = "ok"
+    if _free_mb < int(_os.getenv("HEALTH_MIN_FREE_MB", "500")):
+        _status = "degraded"
+    if not _checks["git_present"] or not _checks["make_present"]:
+        _status = "degraded"
+
+    return jsonify({
+        "ok": True,
+        "status": _status,
+        "uptime_sec": float(_uptime),
+        "started_at": _dt.datetime.utcfromtimestamp(_start_ts).isoformat() + "Z",
+        "disk": _disk,
+        "checks": _checks,
+        "python": _sys.version,
+        "cwd": _os.getcwd(),
+        "cpu_count": int(_cpu_count),
+        "loadavg": { "raw": _load_raw, "per_cpu": _load_per_cpu },
+        "errors_last_5m": int(_errors_last_5m),
+        "memory": _mem,
+        "http_5xx": {"count": int(_http_5xx_count), "window_sec": int(_win_sec)},
+        "log_file": _log_path
+    })
+
+
+@app.route("/metrics")
+def supersonic_metrics():
+    if not _ss_require_key():
+        return jsonify({"ok": False, "error": "invalid key"}), 401
+
+    disk  = _ss_disk()
+    load  = _ss_cpu_load()
+    mem   = _ss_memory()
+    errs5 = _ss_recent_errors_and_5xx()
+    ts, pid = _ss_uptime_start()
+    now = _time.time()
+    uptime = (now - ts) if ts else None
+
+    payload = {
+        "ok": True,
+        "pid": pid,
+        "uptime_sec": uptime,
+        "disk": disk,
+        "loadavg": {"cpu_count": load.get("cpu_count"), "raw": load.get("raw"), "per_cpu": load.get("per_cpu")},
+        "memory": mem,
+        "errors_last_5m": errs5.get("errors_last_5m"),
+        "http_5xx": errs5.get("http_5xx"),
+        "log_file": errs5.get("log_file"),
+        "health_min_free_mb": int(_os.getenv("HEALTH_MIN_FREE_MB","500")),
+    }
+
+    want_prom = ("format" in request.args and request.args.get("format") == "prom") or \
+                ("text/plain" in request.headers.get("Accept",""))
+    if not want_prom:
+        return jsonify(payload)
+
+    def line(k, v, labels=None):
+        if v is None: return ""
+        lab = ""
+        if labels:
+            inner = ",".join([f'{kk}="{str(vv).replace("\\","\\\\").replace("\"","\\\"")}"' for kk,vv in labels.items()])
+            lab = "{" + inner + "}"
+        return f"{k}{lab} {v}\n"
+
+    prom = []
+    prom.append("# HELP app_uptime_seconds Process uptime seconds\n# TYPE app_uptime_seconds gauge\n")
+    prom.append(line("app_uptime_seconds", round(uptime or 0, 3)))
+    prom.append("# HELP app_disk_bytes Disk usage in bytes\n# TYPE app_disk_bytes gauge\n")
+    for k in ("total","used","free"):
+        prom.append(line("app_disk_bytes", disk.get(k), {"kind": k}))
+    if payload["loadavg"].get("raw"):
+        prom.append("# HELP app_load_avg Load average\n# TYPE app_load_avg gauge\n")
+        prom.append(line("app_load_avg", payload["loadavg"]["raw"][0], {"window":"1m"}))
+        prom.append(line("app_load_avg", payload["loadavg"]["raw"][1], {"window":"5m"}))
+        prom.append(line("app_load_avg", payload["loadavg"]["raw"][2], {"window":"15m"}))
+    if payload["loadavg"].get("per_cpu"):
+        prom.append("# HELP app_load_avg_per_cpu Load average normalized per CPU\n# TYPE app_load_avg_per_cpu gauge\n")
+        prom.append(line("app_load_avg_per_cpu", payload["loadavg"]["per_cpu"][0], {"window":"1m"}))
+        prom.append(line("app_load_avg_per_cpu", payload["loadavg"]["per_cpu"][1], {"window":"5m"}))
+        prom.append(line("app_load_avg_per_cpu", payload["loadavg"]["per_cpu"][2], {"window":"15m"}))
+    prom.append("# HELP app_memory_bytes Memory usage\n# TYPE app_memory_bytes gauge\n")
+    if mem.get("rss_bytes") is not None:
+        prom.append(line("app_memory_bytes", mem["rss_bytes"], {"type":"rss"}))
+    if mem.get("vms_bytes") is not None:
+        prom.append(line("app_memory_bytes", mem["vms_bytes"], {"type":"vms"}))
+    prom.append("# HELP app_errors_recent Recent error lines (5m window)\n# TYPE app_errors_recent gauge\n")
+    prom.append(line("app_errors_recent", errs5.get("errors_last_5m")))
+    prom.append("# HELP app_http_5xx_recent Recent HTTP 5xx lines (rolling window)\n# TYPE app_http_5xx_recent gauge\n")
+    http5 = errs5.get("http_5xx") or {}
+    prom.append(line("app_http_5xx_recent", http5.get("count"), {"window_sec": http5.get("window_sec")}))
+    body = "".join(prom)
+    return Response(body, status=200, headers={"Content-Type":"text/plain; version=0.0.4; charset=utf-8"})
+# --- end Supersonic /metrics ---
+
+
+# --- Supersonic: /metrics endpoint (JSON + Prom) ---
+from flask import request, Response
+import os as _os, time as _time, json as _json, shutil as _shutil
+
+def _ss_require_key():
+    want = _os.getenv("DOCTOR_KEY", "")
+    got  = request.headers.get("X-Doctor-Key", "")
+    return (not want) or (got == want)
+
+def _ss_disk():
+    try:
+        du = _shutil.disk_usage(".")
+        return {"total": int(du.total), "used": int(du.used), "free": int(du.free)}
+    except Exception as e:
+        return {"total": 0, "used": 0, "free": 0, "error": str(e)}
+
+def _ss_cpu_load():
+    try:
+        cpus = max(1, (_os.cpu_count() or 1))
+    except Exception:
+        cpus = 1
+    raw = per = None
+    try:
+        if hasattr(_os, "getloadavg"):
+            l1, l5, l15 = _os.getloadavg()
+            raw = [l1, l5, l15]
+            per = [round(l1/cpus,4), round(l5/cpus,4), round(l15/cpus,4)]
+    except Exception:
+        pass
+    return {"cpu_count": cpus, "raw": raw, "per_cpu": per}
+
+def _ss_memory():
+    mem = {"rss_bytes": None, "vms_bytes": None, "rss_mb": None, "vms_mb": None, "source": "unknown"}
+    try:
+        import psutil as _ps
+        p = _ps.Process()
+        mi = p.memory_info()
+        mem["rss_bytes"] = int(getattr(mi, "rss", 0))
+        mem["vms_bytes"] = int(getattr(mi, "vms", 0))
+        mem["rss_mb"]    = round(mem["rss_bytes"]/(1024*1024),3)
+        mem["vms_mb"]    = round(mem["vms_bytes"]/(1024*1024),3)
+        mem["source"]    = "psutil"
+        return mem
+    except Exception:
+        pass
+    try:
+        page = _os.sysconf("SC_PAGE_SIZE")
+        with open("/proc/self/statm","r") as f:
+            vals = f.read().strip().split()
+        rss_pages = int(vals[1]) if len(vals) > 1 else 0
+        rss = rss_pages * page
+        mem["rss_bytes"] = int(rss)
+        mem["rss_mb"] = round(rss/(1024*1024),3)
+        mem["source"] = "proc/statm"
+        return mem
+    except Exception:
+        pass
+    try:
+        import resource
+        ru = resource.getrusage(resource.RUSAGE_SELF)
+        rss_kb = getattr(ru, "ru_maxrss", 0)
+        rss_b  = int(rss_kb*1024) if rss_kb < 10**7 else int(rss_kb)
+        mem["rss_bytes"] = rss_b
+        mem["rss_mb"]    = round(rss_b/(1024*1024),3)
+        mem["source"]    = "resource"
+    except Exception:
+        pass
+    return mem
+
+def _ss_recent_errors_and_5xx():
+    log_path = _os.getenv("SUPERSONIC_LOG_FILE", "supersonic.log")
+    err_rx  = _os.getenv("HEALTH_ERROR_PATTERNS", r"(?i)\\bERROR\\b|\\bTraceback\\b")
+    win_sec = int(_os.getenv("HEALTH_5XX_WINDOW_SEC","600"))
+    p5xx    = _os.getenv("HEALTH_5XX_REGEX", r"(?i)\\b(5\\d\\d)\\b")
+
+    try:
+        err_re = __import__("re").compile(err_rx)
+    except Exception:
+        err_re = __import__("re").compile(r"(?i)\\bERROR\\b|\\bTraceback\\b")
+    try:
+        p5xx_re = __import__("re").compile(p5xx)
+    except Exception:
+        p5xx_re = __import__("re").compile(r"(?i)\\b(5\\d\\d)\\b")
+
+    errors_5m = 0
+    http5xx   = 0
+    now  = _time.time()
+    cut5 = now - 300.0
+    cutx = now - win_sec
+
+    max_bytes = 300_000
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            f.seek(0, _os.SEEK_END)
+            size = f.tell()
+            pos  = max(0, size - max_bytes)
+            f.seek(pos)
+            chunk = f.read()
+    except FileNotFoundError:
+        return {"errors_last_5m": 0, "http_5xx": {"count": 0, "window_sec": win_sec}, "log_file": log_path}
+    except Exception:
+        return {"errors_last_5m": None, "http_5xx": {"count": None, "window_sec": win_sec}, "log_file": log_path}
+
+    ts_re = __import__("re").compile(r"(20\\d\\d-\\d\\d-\\d\\d \\d\\d:\\d\\d:\\d\\d)")
+    for ln in chunk.splitlines():
+        m_ts = ts_re.search(ln)
+        t = None
+        if m_ts:
+            try:
+                import datetime as _dt, time as _time
+                t = _time.mktime(_dt.datetime.strptime(m_ts.group(1), "%Y-%m-%d %H:%M:%S").timetuple())
+            except Exception:
+                t = None
+        if err_re.search(ln):
+            if t is None or t >= cut5:
+                errors_5m += 1
+        if p5xx_re.search(ln):
+            if t is None or t >= cutx:
+                http5xx += 1
+
+    return {
+        "errors_last_5m": int(errors_5m),
+        "http_5xx": {"count": int(http5xx), "window_sec": int(win_sec)},
+        "log_file": log_path
+    }
+
+def _ss_uptime_start():
+    try:
+        import json
+        p = Path(".supersonic_start.json")
+        if p.exists():
+            j = json.loads(p.read_text(encoding="utf-8"))
+            return float(j.get("ts", 0.0)), int(j.get("pid", 0))
+    except Exception:
+        pass
+    return None, None
+
+@app.route("/metrics")
+def supersonic_metrics():
+    if not _ss_require_key():
+        return jsonify({"ok": False, "error": "invalid key"}), 401
+
+    disk  = _ss_disk()
+    load  = _ss_cpu_load()
+    mem   = _ss_memory()
+    errs5 = _ss_recent_errors_and_5xx()
+    ts, pid = _ss_uptime_start()
+    now = _time.time()
+    uptime = (now - ts) if ts else None
+
+    payload = {
+        "ok": True,
+        "pid": pid,
+        "uptime_sec": uptime,
+        "disk": disk,
+        "loadavg": {"cpu_count": load.get("cpu_count"), "raw": load.get("raw"), "per_cpu": load.get("per_cpu")},
+        "memory": mem,
+        "errors_last_5m": errs5.get("errors_last_5m"),
+        "http_5xx": errs5.get("http_5xx"),
+        "log_file": errs5.get("log_file"),
+        "health_min_free_mb": int(_os.getenv("HEALTH_MIN_FREE_MB","500")),
+    }
+
+    want_prom = ("format" in request.args and request.args.get("format") == "prom") or \
+                ("text/plain" in request.headers.get("Accept",""))
+    if not want_prom:
+        return jsonify(payload)
+
+    def line(k, v, labels=None):
+        if v is None: return ""
+        lab = ""
+        if labels:
+            parts = []
+            for kk, vv in labels.items():
+                # Escape backslashes and quotes for Prometheus label values
+                bs = chr(92)  # backslash
+                qt = chr(34)  # double-quote
+                val_str = str(vv).replace(bs, bs+bs).replace(qt, bs+qt)
+                parts.append(f'{kk}="{val_str}"')
+            inner = ",".join(parts)
+            lab = "{" + inner + "}"
+        return f"{k}{lab} {v}\n"
+
+    prom = []
+    prom.append("# HELP app_uptime_seconds Process uptime seconds\n# TYPE app_uptime_seconds gauge\n")
+    prom.append(line("app_uptime_seconds", round(uptime or 0, 3)))
+    prom.append("# HELP app_disk_bytes Disk usage in bytes\n# TYPE app_disk_bytes gauge\n")
+    for k in ("total","used","free"):
+        prom.append(line("app_disk_bytes", disk.get(k), {"kind": k}))
+    if payload["loadavg"].get("raw"):
+        prom.append("# HELP app_load_avg Load average\n# TYPE app_load_avg gauge\n")
+        prom.append(line("app_load_avg", payload["loadavg"]["raw"][0], {"window":"1m"}))
+        prom.append(line("app_load_avg", payload["loadavg"]["raw"][1], {"window":"5m"}))
+        prom.append(line("app_load_avg", payload["loadavg"]["raw"][2], {"window":"15m"}))
+    if payload["loadavg"].get("per_cpu"):
+        prom.append("# HELP app_load_avg_per_cpu Load average normalized per CPU\n# TYPE app_load_avg_per_cpu gauge\n")
+        prom.append(line("app_load_avg_per_cpu", payload["loadavg"]["per_cpu"][0], {"window":"1m"}))
+        prom.append(line("app_load_avg_per_cpu", payload["loadavg"]["per_cpu"][1], {"window":"5m"}))
+        prom.append(line("app_load_avg_per_cpu", payload["loadavg"]["per_cpu"][2], {"window":"15m"}))
+    prom.append("# HELP app_memory_bytes Memory usage\n# TYPE app_memory_bytes gauge\n")
+    if mem.get("rss_bytes") is not None:
+        prom.append(line("app_memory_bytes", mem["rss_bytes"], {"type":"rss"}))
+    if mem.get("vms_bytes") is not None:
+        prom.append(line("app_memory_bytes", mem["vms_bytes"], {"type":"vms"}))
+    prom.append("# HELP app_errors_recent Recent error lines (5m window)\n# TYPE app_errors_recent gauge\n")
+    prom.append(line("app_errors_recent", errs5.get("errors_last_5m")))
+    prom.append("# HELP app_http_5xx_recent Recent HTTP 5xx lines (rolling window)\n# TYPE app_http_5xx_recent gauge\n")
+    http5 = errs5.get("http_5xx") or {}
+    prom.append(line("app_http_5xx_recent", http5.get("count"), {"window_sec": http5.get("window_sec")}))
+    body = "".join(prom)
+    return Response(body, status=200, headers={"Content-Type":"text/plain; version=0.0.4; charset=utf-8"})
+# --- end Supersonic /metrics ---
+

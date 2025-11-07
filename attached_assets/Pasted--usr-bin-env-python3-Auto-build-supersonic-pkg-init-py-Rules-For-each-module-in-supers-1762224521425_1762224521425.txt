@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""
+Auto-build supersonic_pkg/__init__.py
+
+Rules:
+- For each module in supersonic_pkg/*.py (excluding __init__.py and private _*):
+  * If module defines __all__, re-export those names.
+  * Else, import the module as a namespace:  from . import module
+- Generate a stable, sorted __all__ at package level.
+- Idempotent: re-runs safely.
+
+Usage:
+  python3 tools/build_pkg_index.py
+"""
+from __future__ import annotations
+import ast
+from pathlib import Path
+
+PKG = Path(__file__).resolve().parents[1] / "supersonic_pkg"
+INIT = PKG / "__init__.py"
+
+def module_public_names(py_file: Path):
+    """Return (has_all, names_or_None)."""
+    try:
+        tree = ast.parse(py_file.read_text(encoding="utf-8", errors="ignore"))
+    except Exception:
+        return False, None
+    # explicit __all__
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name) and t.id == "__all__":
+                    if isinstance(node.value, (ast.List, ast.Tuple)):
+                        vals = []
+                        for elt in node.value.elts:
+                            if isinstance(elt, ast.Str):
+                                vals.append(elt.s)
+                        return True, vals
+    return False, None
+
+def main():
+    PKG.mkdir(parents=True, exist_ok=True)
+    (PKG / "__init__.py").touch(exist_ok=True)
+
+    modules = []
+    for p in sorted(PKG.glob("*.py")):
+        if p.name == "__init__.py": 
+            continue
+        if p.stem.startswith("_"):    # skip private helpers
+            continue
+        modules.append(p)
+
+    lines = []
+    pkg_all = set()
+    lines.append('"""Unified public API for supersonic_pkg (auto-generated)."""\n')
+
+    for mod in modules:
+        mod_name = mod.stem
+        has_all, names = module_public_names(mod)
+        if has_all and names:
+            # explicit re-export of names
+            exported = ", ".join(sorted(set(names)))
+            lines.append(f"from .{mod_name} import {exported}")
+            for n in names:
+                pkg_all.add(n)
+        else:
+            # namespace import
+            lines.append(f"from . import {mod_name} as {mod_name}")
+            pkg_all.add(mod_name)
+    lines.append("")
+    if pkg_all:
+        all_list = ", ".join(f'"{n}"' for n in sorted(pkg_all))
+        lines.append(f"__all__ = [{all_list}]")
+    else:
+        lines.append("__all__: list[str] = []")
+    lines.append("")
+
+    content = "\n".join(lines)
+    INIT.write_text(content, encoding="utf-8")
+    print(f"Rebuilt {INIT} with {len(pkg_all)} public symbols.")
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,2 @@
+#dp-restart { background:#1f2937; }
+#dp-restart:active { filter:brightness(1.1); }

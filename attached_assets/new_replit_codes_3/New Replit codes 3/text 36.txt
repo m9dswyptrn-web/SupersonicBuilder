@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+VER="3.10.1"
+DEST="static/vendor/jszip"
+mkdir -p "$DEST"
+curl -sSL "https://unpkg.com/jszip@${VER}/dist/jszip.min.js" -o "$DEST/jszip.min.js"
+echo "JSZip ${VER} vendored into ${DEST}/"

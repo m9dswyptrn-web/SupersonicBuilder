@@ -1,0 +1,33 @@
+  btnDlPNG?.addEventListener("click", async () => {
+    try {
+      if (!wrap || wrap.hidden) return;
+
+      // If preview is showing an actual PNG <img>, just fetch and save it as-is.
+      if (!image.hidden) {
+        const res = await fetch(image.src, { cache: "no-store" });
+        const blob = await res.blob();
+        downloadBlob(blob, `${selMake.value}_${selModel.value}_${selYear.value}_${selDiag.value}.png`);
+        return;
+      }
+
+      // PDF canvas export with quality scaling
+      if (canvas.hidden || !pdfDoc) return;
+
+      const q = getQualityScale(); // 0.6 – 2.0
+      // upscale via an offscreen canvas to preserve UI zoom but allow higher res
+      const off = document.createElement("canvas");
+      const w = Math.round(canvas.width * q);
+      const h = Math.round(canvas.height * q);
+      off.width = w; off.height = h;
+      const octx = off.getContext("2d");
+      octx.imageSmoothingQuality = "high";
+      octx.drawImage(canvas, 0, 0, w, h);
+
+      off.toBlob((blob) => {
+        if (!blob) return;
+        downloadBlob(blob, `${selMake.value}_${selModel.value}_${selYear.value}_${selDiag.value}_p${page}.png`);
+      }, "image/png", 1.0);
+    } catch (e) {
+      console.error(e); status("PNG download failed.");
+    }
+  });

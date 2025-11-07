@@ -1,0 +1,23 @@
+name: repo-url-setup
+on:
+  workflow_call:
+    outputs:
+      SB_REPO_URL:
+        description: Exported repository URL
+        value: ${{ jobs.export.outputs.SB_REPO_URL }}
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    outputs:
+      SB_REPO_URL: ${{ steps.set.outputs.url }}
+    steps:
+      - id: set
+        run: |
+          if [ -n "${{ github.repository }}" ]; then
+            URL="https://github.com/${{ github.repository }}"
+          else
+            URL="https://08abbd3d-777f-4af5-b274-466c8cc1c573-00-1ko1zjf07c39i.riker.replit.dev"
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "SB_REPO_URL=$URL" >> "$GITHUB_ENV"

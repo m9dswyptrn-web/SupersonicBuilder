@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🛰️ SonicBuilder Mirror Watchtower</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0d1117;
+      color: #e6edf3;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    h1 {
+      color: #58a6ff;
+      margin-bottom: 10px;
+      font-size: 2em;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    select, button {
+      background: #161b22;
+      color: #e6edf3;
+      border: 1px solid #30363d;
+      padding: 8px 12px;
+      border-radius: 6px;
+      margin-right: 10px;
+      font-size: 14px;
+    }
+    button {
+      background: #238636;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    button:hover {
+      background: #2ea043;
+      transform: translateY(-1px);
+    }
+    pre {
+      background: #161b22;
+      border: 1px solid #30363d;
+      padding: 15px;
+      overflow-x: auto;
+      max-height: 500px;
+      white-space: pre-wrap;
+      border-radius: 6px;
+      font-size: 13px;
+      line-height: 1.5;
+      font-family: 'Consolas', 'Monaco', monospace;
+    }
+    .status-light {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      margin-right: 10px;
+      vertical-align: middle;
+      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+    }
+    .health-panel {
+      background: #161b22;
+      border: 2px solid #30363d;
+      border-radius: 8px;
+      padding: 20px;
+      margin: 20px 0;
+    }
+    .health-row {
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .controls {
+      margin: 20px 0;
+    }
+    .footer {
+      font-size: 12px;
+      color: #8b949e;
+      text-align: center;
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid #30363d;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧠 SonicBuilder Mirror Watchtower</h1>
+    <p>Monitor mirror sync health and compare changes between commits</p>
+
+    <div class="health-panel">
+      <div class="health-row">
+        <span id="healthLight" class="status-light" style="background:gray"></span>
+        <span id="healthLabel">Checking mirror health...</span>
+      </div>
+    </div>
+
+    <div class="controls">
+      <label for="commitA"><strong>Compare:</strong></label>
+      <select id="commitA"></select>
+      <label for="commitB"><strong>with:</strong></label>
+      <select id="commitB"></select>
+      <button onclick="showDiff()">🔍 Show Diff</button>
+      <button onclick="loadCommits()">🔄 Refresh</button>
+    </div>
+
+    <pre id="diffView"><em>Loading commits from GitHub...</em></pre>
+
+    <div class="footer">
+      SonicBuilder v2.0.9 — Mirror Watchtower (Diff Analysis + Health Sentinel)
+    </div>
+  </div>
+
+  <script>
+    const repo = "m9dswyptrn-web/SonicBuilder";
+    const apiBase = `https://api.github.com/repos/${repo}/commits?sha=founder_mirror&per_page=20`;
+
+    async function loadCommits() {
+      try {
+        const res = await fetch(apiBase);
+        const commits = await res.json();
+        
+        const selA = document.getElementById("commitA");
+        const selB = document.getElementById("commitB");
+        
+        // Clear existing options
+        selA.innerHTML = '';
+        selB.innerHTML = '';
+        
+        // Populate dropdowns
+        commits.forEach((commit, idx) => {
+          const shortSha = commit.sha.substring(0, 7);
+          const msg = commit.commit.message.substring(0, 50);
+          const optText = `${shortSha} — ${msg}`;
+          
+          const optA = new Option(optText, commit.sha);
+          const optB = new Option(optText, commit.sha);
+          
+          selA.add(optA);
+          selB.add(optB);
+          
+          // Pre-select first two commits for comparison
+          if (idx === 0) selA.selectedIndex = 0;
+          if (idx === 1) selB.selectedIndex = 1;
+        });
+        
+        // Update health status
+        healthCheck(commits);
+        
+        document.getElementById("diffView").textContent = 
+          "✅ Commits loaded. Select two commits and click 'Show Diff' to compare.";
+      } catch (err) {
+        document.getElementById("diffView").textContent = 
+          `⚠️ Error loading commits: ${err.message}\n\nMake sure the founder_mirror branch exists.`;
+      }
+    }
+
+    async function showDiff() {
+      const a = document.getElementById("commitA").value;
+      const b = document.getElementById("commitB").value;
+      const diffBox = document.getElementById("diffView");
+      
+      if (!a || !b) {
+        diffBox.textContent = "⚠️ Please select two commits to compare.";
+        return;
+      }
+      
+      if (a === b) {
+        diffBox.textContent = "⚠️ Please select different commits to compare.";
+        return;
+      }
+      
+      diffBox.textContent = "🔄 Loading diff from GitHub...";
+      
+      try {
+        const res = await fetch(`https://api.github.com/repos/${repo}/compare/${b}...${a}`);
+        const data = await res.json();
+        
+        if (data.files && data.files.length > 0) {
+          let output = `Comparing ${data.base_commit.sha.substring(0, 7)} → ${data.commits[data.commits.length - 1].sha.substring(0, 7)}\n\n`;
+          output += `Files changed: ${data.files.length}\n`;
+          output += `Commits: ${data.commits.length}\n`;
+          output += `\n${'='.repeat(70)}\n\n`;
+          
+          data.files.forEach(file => {
+            output += `📄 ${file.filename}\n`;
+            output += `   Status: ${file.status}\n`;
+            output += `   Changes: +${file.additions} -${file.deletions}\n`;
+            
+            if (file.patch) {
+              output += `\n${file.patch}\n`;
+            } else {
+              output += `   [Binary file or no diff available]\n`;
+            }
+            
+            output += `\n${'-'.repeat(70)}\n\n`;
+          });
+          
+          diffBox.textContent = output;
+        } else {
+          diffBox.textContent = "ℹ️ No differences found between selected commits.";
+        }
+      } catch (err) {
+        diffBox.textContent = `⚠️ Error loading diff: ${err.message}`;
+      }
+    }
+
+    function healthCheck(commits) {
+      const light = document.getElementById("healthLight");
+      const label = document.getElementById("healthLabel");
+      
+      if (!commits || commits.length === 0) {
+        light.style.background = "#6e7681";
+        label.textContent = "⚫ Unknown — No commit data available";
+        return;
+      }
+      
+      const latest = new Date(commits[0].commit.author.date);
+      const now = new Date();
+      const ageHours = (now - latest) / 3600000; // Convert to hours
+      
+      if (ageHours < 1.5) {
+        light.style.background = "#2ea043";
+        label.textContent = `🟢 Healthy — Last sync ${Math.round(ageHours * 60)} minutes ago`;
+      } else if (ageHours < 3) {
+        light.style.background = "#f5a623";
+        label.textContent = `🟠 Slightly Overdue — Last sync ${Math.round(ageHours)} hours ago`;
+      } else {
+        light.style.background = "#f85149";
+        label.textContent = `🔴 Stale — Last sync ${Math.round(ageHours)} hours ago (expected every hour)`;
+      }
+    }
+
+    // Initial load
+    loadCommits();
+    
+    // Auto-refresh every 5 minutes
+    setInterval(loadCommits, 300000);
+  </script>
+</body>
+</html>

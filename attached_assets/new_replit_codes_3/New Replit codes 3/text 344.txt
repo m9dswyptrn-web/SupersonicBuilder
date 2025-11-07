@@ -1,0 +1,2 @@
+python scripts/bench_llm.py        # prints tokens/sec and avg run
+python scripts/optimize_llm.py     # suggests threads/ctx tweaks

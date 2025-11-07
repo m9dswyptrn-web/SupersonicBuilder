@@ -1,0 +1,11 @@
+.menu {
+  position:absolute; margin-top:.35rem; padding:.35rem; min-width:140px;
+  background: var(--bg); border:1px solid var(--border); border-radius:6px;
+  box-shadow: 0 8px 22px rgba(0,0,0,.35);
+  z-index: 1000;
+}
+.menu-item {
+  width:100%; text-align:left; padding:.4rem .5rem; background:transparent; border:0; color:var(--fg);
+}
+.menu-item:hover { background: rgba(255,255,255,.06); cursor:pointer; }
+#theme-toggle[aria-expanded="true"] + #theme-menu { display:block; }

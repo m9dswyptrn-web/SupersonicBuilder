@@ -1,0 +1,235 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-setup:
+    name: Validate project setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run validator
+        run: python scripts/validate_github_setup.py
+
+  build:
+    name: Build release bundle
+    needs: [validate-setup]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          pip install -r requirements.txt || true
+          pip install -r requirements.extras.txt || true
+          pip install reportlab pypdf pdfrw pillow cairosvg watchdog requests pymupdf
+      - name: Build release artifacts (with metadata + footer + two-up raster)
+        run: |
+          make release_with_two_up
+      - name: Preflight check (validate & generate report)
+        run: |
+          python scripts/release_preflight_check.py \
+            --require dist/sonic_manual_dark.pdf dist/sonic_manual_dark_two_up_raster.pdf \
+            --optional dist/sonic_manual_light.pdf dist/sonic_manual_light_two_up_raster.pdf dist/SHA256SUMS.txt \
+            --md-out dist/RELEASE_ASSET_REPORT.md
+      - name: Verify PDF has metadata
+        run: |
+          python - <<'PY'
+          from pypdf import PdfReader
+          import glob, sys
+          ok = False
+          for path in glob.glob("output/*dark*.pdf"):
+            try:
+              r = PdfReader(path)
+              title = (r.metadata or {}).get('/Title', '')
+              if title and title.lower() != 'untitled':
+                print("OK:", path, title)
+                ok = True
+            except Exception as e:
+              print("WARN:", path, e)
+          sys.exit(0 if ok else 1)
+          PY
+      - name: Upload build artifacts (for debugging)
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/**
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Find release files
+        id: files
+        run: |
+          echo "list<<EOF" >> $GITHUB_OUTPUT
+          ls -1 dist/*.pdf || true
+          ls -1 dist/*.zip || true
+          ls -1 dist/*.zip.sha256 || true
+          ls -1 dist/SHA256SUMS.txt || true
+          ls -1 dist/RELEASE_ASSET_REPORT.md || true
+          echo "EOF" >> $GITHUB_OUTPUT
+      - name: Create Release + upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.files.outputs.list }}
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install requests library
+        run: pip install requests
+      - name: Append asset links to release notes
+        run: |
+          python scripts/post_release_links.py \
+            --token ${{ secrets.GITHUB_TOKEN }} \
+            --repo ${{ github.repository }} \
+            --tag ${{ github.ref_name }}
+
+  verify-release-assets:
+    name: Verify published assets (checksums)
+    needs: [publish]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download assets for this tag
+        run: |
+          mkdir -p verify && cd verify
+          gh release download "$GITHUB_REF_NAME" \
+            -R "$GITHUB_REPOSITORY" \
+            --clobber \
+            --pattern '*.pdf' \
+            --pattern '*.zip' \
+            --pattern '*.zip.sha256' \
+            --pattern 'SHA256SUMS.txt'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Show downloaded files
+        run: ls -l verify
+      - name: Verify using SHA256SUMS.txt
+        run: |
+          cd verify
+          if [ -f SHA256SUMS.txt ]; then
+            sha256sum -c SHA256SUMS.txt
+          else
+            echo "No SHA256SUMS.txt found; falling back to per-file .sha256 checks"
+          fi
+      - name: Verify per-file .sha256 checks
+        if: always()
+        run: |
+          cd verify
+          status=0
+          for f in *.zip.sha256 2>/dev/null; do
+            [ -e "$f" ] || continue
+            zip="${f%.sha256}"
+            paste -d' ' "$f" <(echo " $zip") > "$f.tmp"
+            sha256sum -c "$f.tmp" || status=1
+          done
+          exit $status
+      - name: Summarize results
+        if: always()
+        run: |
+          echo "### Release asset verification for $GITHUB_REF_NAME" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f verify/SHA256SUMS.txt ]; then
+            echo "Verified via \`SHA256SUMS.txt\`:" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat verify/SHA256SUMS.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Verified via per-file \`.sha256\` files." >> $GITHUB_STEP_SUMMARY
+
+  update-badge:
+    name: Update version badge on default branch
+    needs: [verify-release-assets]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEFAULT_BRANCH }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Generate version badge JSON
+        run: python scripts/gen_version_badge.py
+      - name: Commit badge update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add badges/version.json
+          if git diff --cached --quiet; then
+            echo "No badge changes"
+          else
+            git commit -m "chore(badge): update version badge after release $GITHUB_REF_NAME"
+            git push origin $DEFAULT_BRANCH
+          fi
+
+  notify-release:
+    name: Notify (Slack/Discord)
+    needs: [validate-setup, build, publish, verify-release-assets, update-badge]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Compose message (success/failure)
+        run: |
+          STATUS="SUCCESS"
+          [ "${{ needs.verify-release-assets.result }}" = "success" ] || STATUS="FAILURE"
+          [ "${{ needs.update-badge.result }}" = "success" ] || STATUS="FAILURE"
+          TAG="${GITHUB_REF_NAME}"
+          REPO="${GITHUB_REPOSITORY}"
+          RUN_URL="https://github.com/${REPO}/actions/runs/${GITHUB_RUN_ID}"
+          RELEASE_URL="https://github.com/${REPO}/releases/tag/${TAG}"
+          cat > slack.json <<'SLACK'
+          {
+            "blocks": [
+              { "type": "section", "text": { "type": "mrkdwn", "text": "*Release ${TAG} – ${STATUS}*\n<${RUN_URL}|Workflow Run> • <${RELEASE_URL}|Release Page>" } },
+              { "type": "context", "elements": [{ "type": "mrkdwn", "text": "${REPO}" }] }
+            ]
+          }
+          SLACK
+          sed -i "s|\${TAG}|$TAG|g; s|\${STATUS}|$STATUS|g; s|\${RUN_URL}|$RUN_URL|g; s|\${RELEASE_URL}|$RELEASE_URL|g; s|\${REPO}|$REPO|g" slack.json
+          cat > discord.json <<'DISCORD'
+          { "content": "**Release ${TAG} – ${STATUS}**\nRun: ${RUN_URL}\nRelease: ${RELEASE_URL}" }
+          DISCORD
+          sed -i "s|\${TAG}|$TAG|g; s|\${STATUS}|$STATUS|g; s|\${RUN_URL}|$RUN_URL|g; s|\${RELEASE_URL}|$RELEASE_URL|g" discord.json
+      - name: Slack notify
+        if: always() && secrets.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -s -X POST -H 'Content-type: application/json' --data @slack.json "$SLACK_WEBHOOK_URL"
+      - name: Discord notify
+        if: always() && secrets.DISCORD_WEBHOOK_URL != ''
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          curl -s -H "Content-Type: application/json" -d @discord.json "$DISCORD_WEBHOOK_URL"

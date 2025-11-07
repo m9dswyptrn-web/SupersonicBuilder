@@ -1,0 +1,9 @@
+pytest
+pytest-cov
+psutil
+pre-commit
+coverage-badge
+black
+isort
+flake8
+flake8-bugbear

@@ -1,0 +1,30 @@
+<div class="hr"></div>
+<div style="font-size:13px; color:#aaa; margin-bottom:6px;">Performance watchdog</div>
+
+<label><input type="checkbox" id="optPerfAuto"> Auto-apply performance tweaks on alerts</label>
+
+<div id="perfPane" style="display:grid; grid-template-columns: 1fr auto; gap:8px 10px; align-items:center; margin-top:8px;">
+  <span class="muted">Low-FPS alert at</span>
+  <span><input type="range" id="pfFpsMin"  min="10" max="60" step="1" style="width:160px;"> <b id="pfFpsMinVal">25</b> fps</span>
+
+  <span class="muted">Release tweaks at</span>
+  <span><input type="range" id="pfFpsRel"  min="20" max="60" step="1" style="width:160px;"> <b id="pfFpsRelVal">40</b> fps</span>
+
+  <span class="muted">Low-FPS must last</span>
+  <span><input type="range" id="pfFpsDur"  min="500" max="5000" step="100" style="width:160px;"> <b id="pfFpsDurVal">2000</b> ms</span>
+
+  <span class="muted">High-RTT alert above</span>
+  <span><input type="range" id="pfRttMax"  min="100" max="2000" step="25" style="width:160px;"> <b id="pfRttMaxVal">500</b> ms</span>
+
+  <span class="muted">High-RTT must last</span>
+  <span><input type="range" id="pfRttDur"  min="500" max="5000" step="100" style="width:160px;"> <b id="pfRttDurVal">3000</b> ms</span>
+
+  <span class="muted">Alert cooldown</span>
+  <span><input type="range" id="pfCool"    min="5000" max="60000" step="1000" style="width:160px;"> <b id="pfCoolVal">15000</b> ms</span>
+
+  <div></div>
+  <div style="display:flex; gap:8px; justify-content:flex-end;">
+    <button class="pill" onclick="perfResetDefaults()">Reset</button>
+    <button class="pill" onclick="perfSave()">Save</button>
+  </div>
+</div>

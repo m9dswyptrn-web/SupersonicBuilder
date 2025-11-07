@@ -1,0 +1,23 @@
+// Clear cache
+el.setCatClear?.addEventListener("click", () => {
+  try {
+    localStorage.removeItem("supersonic-catalog-cache-v1");
+    localStorage.removeItem("supersonic-catalog-meta-v1");
+    alert("Catalog cache cleared.");
+  } catch { alert("Could not clear cache (storage error)."); }
+});
+
+// Refresh catalog (forces a fresh fetch + UI repopulate)
+el.setCatRefresh?.addEventListener("click", async () => {
+  try {
+    // call into the picker loader if exposed, else just nuke cache and reload
+    if (window.SonicDiagramPicker?.reloadCatalogNow) {
+      await window.SonicDiagramPicker.reloadCatalogNow();
+      alert("Catalog refreshed.");
+    } else {
+      localStorage.removeItem("supersonic-catalog-cache-v1");
+      localStorage.removeItem("supersonic-catalog-meta-v1");
+      location.reload();
+    }
+  } catch { alert("Catalog refresh failed."); }
+});

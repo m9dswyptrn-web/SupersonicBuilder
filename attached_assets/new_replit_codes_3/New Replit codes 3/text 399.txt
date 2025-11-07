@@ -1,0 +1,9 @@
+<!-- STATUS LED -->
+<div id="led" class="led cpu" title="Status LED"></div>
+<div id="statusText" class="muted">Status: checking…</div>
+<span id="backend" class="tag">backend: …</span>
+<span id="model" class="tag">model: …</span>
+
+<!-- READY LED -->
+<div id="ledReady" class="led ready-no" title="Ready LED" style="margin-left:16px;"></div>
+<div id="readyText" class="muted">Ready: checking…</div>

@@ -1,0 +1,13 @@
+<button class="ms-item" id="msPerf" title="Performance (FPS & latency)">
+  <span id="msPerfIcon">⏱️</span>
+  <span class="ms-label" id="msPerfTxt">-- fps / -- ms</span>
+</button>
+
+<!-- Tiny popover for details -->
+<div id="msPerfPop" class="perf-pop" style="display:none;">
+  <div class="perf-row"><strong>FPS:</strong> <span id="ppFps">—</span></div>
+  <div class="perf-row"><strong>RTT:</strong> <span id="ppRtt">—</span></div>
+  <div class="perf-row"><strong>Min/Max FPS:</strong> <span id="ppFpsMin">—</span> / <span id="ppFpsMax">—</span></div>
+  <div class="perf-row"><strong>Min/Max RTT:</strong> <span id="ppRttMin">—</span> / <span id="ppRttMax">—</span></div>
+  <button class="pill" id="ppBurstBtn">Run 5s benchmark</button>
+</div>

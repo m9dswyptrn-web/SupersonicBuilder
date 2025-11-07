@@ -1,0 +1,2 @@
+setx CMAKE_ARGS "-DLLAMA_CUBLAS=on"
+pip install --force-reinstall --no-binary llama-cpp-python llama-cpp-python==0.3.2

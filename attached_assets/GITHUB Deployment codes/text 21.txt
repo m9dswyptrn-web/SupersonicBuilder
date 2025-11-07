@@ -1,0 +1,111 @@
+"""
+    safe_write(ROOT/"docs/status_banner.md", status_md.strip()+"\n", dry=dry)
+    tdir = ROOT/".github"/"ISSUE_TEMPLATE"
+    bug = """---
+name: Bug report
+about: Create a report to help us improve
+labels: bug
+---
+
+**Describe the bug**
+A clear description…
+
+**To Reproduce**
+Steps…
+
+**Expected behavior**
+…
+"""
+    feature = """---
+name: Feature request
+about: Suggest an idea for this project
+labels: enhancement
+---
+
+**What problem does this solve?**
+…
+
+**Describe the solution you’d like**
+…
+
+**Additional context**
+…
+"""
+    safe_write(tdir/"bug.md", bug, dry=dry)
+    safe_write(tdir/"feature.md", feature, dry=dry)
+
+def add_sbom_tools(dry=False):
+    sbom_py = r"""#!/usr/bin/env python3
+import subprocess, sys
+def main():
+    try:
+        subprocess.run([sys.executable,"-m","pip","install","cyclonedx-bom"], check=True)
+        subprocess.run(["cyclonedx-py","--format","json","-o","sbom.json"], check=True)
+        print("SBOM written to sbom.json")
+    except Exception as e:
+        print("SBOM generation failed:", e); sys.exit(1)
+if __name__=="__main__": main()
+"""
+    safe_write(ROOT/"scripts/sbom_generate.py", sbom_py, dry=dry, executable=True)
+
+# ----------------------------- git push & tag -----------------------------
+def git_init_and_push(remote_url: str|None, gh_create: str|None, version: str|None, dry=False):
+    if not (ROOT/".git").exists():
+        if dry: print("[dry] git init")
+        else:
+            run(["git","init"])
+            run(["git","branch","-M","main"])
+    if not dry:
+        run(["git","add","-A"], check=False)
+        run(["git","commit","-m","supersonic: initial handoff"], check=False)
+
+    if gh_create:
+        if shutil.which("gh") is None:
+            print("ERROR: gh CLI not found (install or use --remote)."); sys.exit(2)
+        if not dry:
+            run(["gh","repo","create", gh_create, "--public","--source",".","--remote","origin","--push"])
+    elif remote_url:
+        if not dry:
+            run(["git","remote","remove","origin"], check=False)
+            run(["git","remote","add","origin", remote_url])
+            run(["git","push","-u","origin","main"])
+    else:
+        print("No remote supplied; skipping push. Use --gh-create or --remote.")
+        return
+
+    if version:
+        tag = f"v{version}" if not version.startswith("v") else version
+        if not dry:
+            run(["git","tag","-a", tag, "-m", f"release {tag}"])
+            run(["git","push","origin", tag])
+        else:
+            print(f"[dry] would tag {tag}")
+
+# ----------------------------- entry -----------------------------
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--remote", help="Git remote URL (https://github.com/you/repo.git)")
+    ap.add_argument("--gh-create", help="Create repo with GitHub CLI: owner/repo")
+    ap.add_argument("--version", help="Release version like 1.0.0 (tags v1.0.0)")
+    ap.add_argument("--no-pages", action="store_true", help="Disable Pages latest alias")
+    ap.add_argument("--dry-run", action="store_true", help="Show actions without changing files")
+    args = ap.parse_args()
+
+    print("== Supersonic shipper (everything) starting ==")
+    ensure_requirements(dry=args.dry_run)
+    add_workflows(include_pages_latest=not args.no_pages, dry=args.dry_run)
+    add_repo_meta(dry=args.dry_run)
+    add_make_helpers(dry=args.dry_run)
+    add_repo_extras(dry=args.dry_run)
+    add_sbom_tools(dry=args.dry_run)
+    write_full_voice_toolchain(dry=args.dry_run)
+
+    if not args.dry_run:
+        run([PY,"-m","pip","install","-r","requirements.txt"], check=False)
+
+    seed_assets_and_generate(dry=args.dry_run)
+    git_init_and_push(args.remote, args.gh_create, args.version, dry=args.dry_run)
+    print("== Supersonic shipper complete ✅ ==")
+
+if __name__ == "__main__":
+    main()

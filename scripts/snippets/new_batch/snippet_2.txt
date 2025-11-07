@@ -1,0 +1,2 @@
+python3 /mnt/data/render_manifest.py --version <ver> \
+  --release-zip <zip> --out /mnt/data --all

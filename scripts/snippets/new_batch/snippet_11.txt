@@ -1,0 +1,1 @@
+make release OUT=/mnt/data VERSION=5.0.0 PUSH=s3

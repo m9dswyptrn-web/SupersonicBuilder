@@ -1,0 +1,5 @@
+$env:REQUIRE_OK = "1"
+$env:REQUIRE_HIGHLIGHTS = "1"
+$env:NOTES_MIN_CHARS = "160"
+cd SonicBuilder\tools
+.\verify_deep_publish.ps1 -OutDir "." -Version "5.0.0" -PUSH "github"

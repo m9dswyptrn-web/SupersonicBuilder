@@ -1,0 +1,95 @@
+name: Pages • Latest PDF
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'build/**/*.pdf'
+      - 'dist/**/*.pdf'
+  release:
+    types: [published, edited]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages-latest"
+  cancel-in-progress: true
+
+env:
+  REPO: m9dswyptrn-web/SonicBuilder
+  OUTDIR: __site   # staging dir for Pages
+  PDF_GLOB_PRIMARY: build/**/*.pdf
+  PDF_GLOB_FALLBACK: dist/**/*.pdf
+
+jobs:
+  publish-latest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Find newest PDF in repo
+        id: findpdf
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          PDFs=(${{ env.PDF_GLOB_PRIMARY }})
+          if [ ${#PDFs[@]} -eq 0 ]; then
+            PDFs=(${{ env.PDF_GLOB_FALLBACK }})
+          fi
+          if [ ${#PDFs[@]} -eq 0 ]; then
+            echo "No PDFs found in build/ or dist/." >&2
+            exit 1
+          fi
+          newest=$(ls -t "${PDFs[@]}" | head -n1)
+          echo "newest=$newest" >> $GITHUB_OUTPUT
+          echo "Found: $newest"
+
+      - name: Stage site tree
+        run: |
+          set -euo pipefail
+          rm -rf "${OUTDIR}"
+          mkdir -p "${OUTDIR}/downloads"
+          # copy the newest PDF into downloads with its real filename
+          cp "${{ steps.findpdf.outputs.newest }}" "${OUTDIR}/downloads/"
+          # also create/update 'latest.pdf'
+          newest_name=$(basename "${{ steps.findpdf.outputs.newest }}")
+          ln -sf "${newest_name}" "${OUTDIR}/downloads/latest.pdf"
+
+      - name: Add minimal index
+        run: |
+          cat > "${OUTDIR}/index.html" <<'HTML'
+          <!doctype html><meta charset="utf-8">
+          <title>SonicBuilder Downloads</title>
+          <style>
+            html{color-scheme:dark light} body{font:16px/1.5 system-ui;margin:40px;max-width:880px}
+            a.btn{display:inline-block;padding:.6rem 1rem;border:1px solid #3a6df0;border-radius:8px;text-decoration:none}
+          </style>
+          <h1>SonicBuilder — Latest Manual</h1>
+          <p><a class="btn" href="./downloads/latest.pdf">⬇️ Download latest.pdf</a></p>
+          <p>All files are under <code>/downloads/</code>.</p>
+          HTML
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ env.OUTDIR }}
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
+
+      - name: Post summary
+        if: always()
+        run: |
+          echo "### Pages deployed" >> $GITHUB_STEP_SUMMARY
+          echo "- URL: ${{ steps.deploy.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Latest PDF: ${{ steps.deploy.outputs.page_url }}downloads/latest.pdf" >> $GITHUB_STEP_SUMMARY

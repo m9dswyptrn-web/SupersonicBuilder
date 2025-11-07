@@ -1,0 +1,2 @@
+cd SonicBuilder\tools
+.\reset.ps1 -OutDir "." -Version "5.0.0"

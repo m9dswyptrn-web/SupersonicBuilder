@@ -1,0 +1,11 @@
+title: GM Wire Color Legend (Quick Ref)
+legend:
+  - { color: "RED/YEL", meaning: "12V Constant (BCM W26 P2)" }
+  - { color: "RED/BRN", meaning: "12V Constant #2 (BCM W26 P3)" }
+  - { color: "PUR/BLK", meaning: "Ignition" }
+  - { color: "PUR/YEL", meaning: "Accessory" }
+  - { color: "BLU", meaning: "CAN High (HS GMLAN)" }
+  - { color: "WHT", meaning: "CAN Low (HS GMLAN)" }
+  - { color: "GRN", meaning: "CAN Single-Wire (LS GMLAN)" }
+  - { color: "BLK", meaning: "Ground" }
+note: "Confirm colors at cavity; variations exist by trim/region."

@@ -1,0 +1,58 @@
+{
+  "title": "Chevy Sonic LTZ Android 15 Install Guide (Dark)",
+  "theme": "dark",
+  "version": "2025.10.27-0200",
+  "pages": [
+    {
+      "id": "cover",
+      "title": "Cover & TOC",
+      "assets": [
+        "assets/brand.svg"
+      ]
+    },
+    {
+      "id": "harness",
+      "title": "44-pin Harness (Vector)",
+      "assets": [
+        "assets/pinout_44pin.svg",
+        "assets/rr2_gm2_primary.svg"
+      ]
+    },
+    {
+      "id": "photos_harness",
+      "title": "Annotated Harness Photos",
+      "assets": [
+        "assets/pinout_harness_closeup.jpg",
+        "assets/rr2_gm2_primary_photo.jpg"
+      ]
+    },
+    {
+      "id": "audio_map",
+      "title": "RCA / Speaker Output Map",
+      "assets": [
+        "assets/dsp_amp_stack.svg",
+        "assets/tables/speakers.csv"
+      ]
+    },
+    {
+      "id": "can_triggers",
+      "title": "CAN, Triggers & Grounds",
+      "assets": [
+        "assets/grz_overlay.svg",
+        "assets/grz_overlay_photo.jpg",
+        "assets/trigger_ground.svg",
+        "assets/trigger_ground_star_point.jpg"
+      ]
+    },
+    {
+      "id": "cards",
+      "title": "Field Cards (Dark)",
+      "assets": []
+    },
+    {
+      "id": "legend",
+      "title": "Legend & Notes",
+      "assets": []
+    }
+  ]
+}

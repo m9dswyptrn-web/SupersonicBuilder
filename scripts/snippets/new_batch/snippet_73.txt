@@ -1,0 +1,609 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+SonicBuilder — Supersonic Edition
+Full-chain packager with advanced extras, graceful optional deps, and profiles matrix.
+
+Commands:
+  clean                 Remove build/ and dist/
+  prepare               Stage assets into build/
+  notes                 Build RELEASE_NOTES.md from CHANGELOG
+  diffhtml              Render pretty diff HTML from CHANGELOG via tools/diff_render_html.py
+  manifest              Create MANIFEST.json (file list + sha256 + metadata)
+  sums                  Create SHA256SUMS.txt for staged files
+  sbom                  Write TOOLS.txt with environment details
+  qrstamp               Generate QR codes into build/docs (optional; uses segno or qrcode)
+  stamp-pdf-meta        Embed PDF metadata (pikepdf optional)
+  pack                  Full chain → versioned ZIP(s); supports --profiles=dark,light,all
+  verify <zip>          Verify built ZIP hashes against SHA256SUMS.txt
+  bump --kind=k         Bump version in config (patch|minor|major)
+  gh-draft              Create RELEASE_DRAFT.md (nice GitHub-ready notes)
+  adb-demo              Explicit demo ADB command (silent unless used)
+
+Environment:
+  SB_REPO, SB_BRANCH, SB_SHA         (context shown in manifests and diff watermark)
+  SB_CHANGELOG_URL                   (used in gh-draft and notes if present)
+"""
+
+import argparse, hashlib, json, os, re, shutil, sys, textwrap, time, zipfile, datetime, subprocess, platform
+from pathlib import Path
+
+# ---------- Optional libraries (auto-detected) ----------
+try:
+    import segno  # QR code generator (preferred)
+    _HAS_SEGNO = True
+except Exception:
+    _HAS_SEGNO = False
+
+try:
+    import qrcode  # fallback QR
+    from PIL import Image  # usually required by qrcode[pil]
+    _HAS_QRCODE = True
+except Exception:
+    _HAS_QRCODE = False
+
+try:
+    import pikepdf  # PDF metadata stamping
+    _HAS_PIKEPDF = True
+except Exception:
+    _HAS_PIKEPDF = False
+
+# ---------- Defaults (can be overridden by sonicbuilder.config.json) ----------
+DEFAULTS = {
+    "project_name": "SonicBuilder",
+    "vehicle": "Chevy Sonic LTZ (T300)",
+    "version": "v3.2.1",
+    "profile": "dark",
+    "profiles_matrix": ["dark", "light"],     # used by --profiles=all
+    "changelog_md": "CHANGELOG.md",
+    "diff_renderer": "SonicBuilder/tools/diff_render_html.py",
+    "notes_header": "# Release Notes\n",
+    "src": {
+        "dsp": "SonicBuilder/dsp",
+        "docs": "SonicBuilder/docs",
+        "extras": "SonicBuilder/extras"
+    },
+    "stage_globs": ["LICENSE*", "README*"],
+    "dist_name_pattern": "{project}_BuildOfBuilds_ProPack_ENHANCED_{version}_{profile}.zip",
+    "adb_path": "adb",
+    "adb_demo_cmd": ["shell", "echo", "SonicBuilder ADB demo OK"],
+    "metadata": {
+        "author": "Christopher Elgin",
+        "theme": "dark-shop-manual",
+        "pdf_style": "laminated",
+        "repo_hint_env": ["SB_REPO", "SB_BRANCH", "SB_SHA"]
+    },
+    "qr": {
+        "enabled": True,
+        "target_url_env": "SB_CHANGELOG_URL",     # fallback to README or project home if unset
+        "filename_svg": "QR_release.svg",
+        "filename_png": "QR_release.png",
+        "size_px": 512
+    },
+    "pdf_meta": {
+        "enabled": True,
+        "fields": {
+            "Title": "{project} {version} ({profile})",
+            "Author": "{author}",
+            "Subject": "{vehicle} wiring/DSP pack",
+            "Keywords": "SonicBuilder,{vehicle},{version},{profile}"
+        }
+    }
+}
+
+ROOT = Path(__file__).resolve().parent
+BUILD = ROOT / "build"
+DIST  = ROOT / "dist"
+
+# ---------- Utilities ----------
+def deep_merge(a, b):
+    out = dict(a)
+    for k, v in b.items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+def load_config():
+    cfg = DEFAULTS
+    f = ROOT / "sonicbuilder.config.json"
+    if f.exists():
+        try:
+            cfg = deep_merge(cfg, json.loads(f.read_text(encoding="utf-8")))
+        except Exception as e:
+            print(f"[warn] could not parse {f}: {e}; using defaults")
+    return cfg
+
+def save_config(cfg):
+    (ROOT / "sonicbuilder.config.json").write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+
+def sha256_file(p: Path) -> str:
+    h = hashlib.sha256()
+    with p.open("rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+def copy_tree(src: Path, dst: Path):
+    if not src.exists(): return
+    for root, dirs, files in os.walk(src):
+        r = Path(root); rel = r.relative_to(src)
+        (dst / rel).mkdir(parents=True, exist_ok=True)
+        for fn in files:
+            sp = r / fn; dp = dst / rel / fn
+            dp.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(sp, dp)
+
+def stage_globs(patterns, dst: Path):
+    for pat in patterns:
+        for p in ROOT.glob(pat):
+            if p.is_file():
+                (dst / p.name).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(p, dst / p.name)
+
+def run(cmd, check=True, capture=False):
+    if capture:
+        return subprocess.check_output(cmd, stderr=subprocess.STDOUT).decode()
+    else:
+        subprocess.check_call(cmd)
+        return ""
+
+def try_run(cmd):
+    try:
+        return subprocess.check_output(cmd, stderr=subprocess.STDOUT, timeout=2.0).decode().strip()
+    except Exception:
+        return ""
+
+def detect_repo_context():
+    env_repo = os.getenv("SB_REPO", "").strip()
+    env_branch = os.getenv("SB_BRANCH", "").strip()
+    env_sha = os.getenv("SB_SHA", "").strip()
+
+    def parse_repo(url: str) -> str:
+        if not url: return ""
+        m = re.match(r"^[\w\-.]+@[^:]+:(.+)$", url) or re.match(r"^https?://[^/]+/(.+)$", url)
+        path = m.group(1) if m else ""
+        if path.endswith(".git"): path = path[:-4]
+        parts = [p for p in path.split("/") if p]
+        if len(parts) >= 2: return f"{parts[-2]}/{parts[-1]}"
+        return parts[-1] if parts else ""
+
+    repo = env_repo or parse_repo(try_run(["git","remote","get-url","origin"]))
+    branch = env_branch or try_run(["git","rev-parse","--abbrev-ref","HEAD"])
+    sha = env_sha or try_run(["git","rev-parse","--short","HEAD"])
+    if branch == "HEAD": branch = ""
+
+    label = ""
+    if repo and branch and sha: label = f"{repo}@{branch}#{sha}"
+    elif repo and branch:       label = f"{repo}@{branch}"
+    elif repo and sha:          label = f"{repo}#{sha}"
+    elif repo:                  label = repo
+    elif branch and sha:        label = f"{branch}#{sha}"
+    elif sha:                   label = f"#{sha}"
+    elif branch:                label = branch
+    return label
+
+def write_text(path: Path, content: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+def list_files_under(path: Path):
+    return [p for p in sorted(path.rglob("*")) if p.is_file()]
+
+def current_ts():
+    return datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+# ---------- Steps ----------
+def step_clean():
+    shutil.rmtree(BUILD, ignore_errors=True)
+    shutil.rmtree(DIST,  ignore_errors=True)
+    print("[ok] clean")
+
+def step_prepare(cfg, profile: str):
+    BUILD.mkdir(parents=True, exist_ok=True)
+    # Stage assets
+    copy_tree(ROOT / cfg["src"]["dsp"],   BUILD / "dsp")
+    copy_tree(ROOT / cfg["src"]["docs"],  BUILD / "docs")
+    copy_tree(ROOT / cfg["src"]["extras"],BUILD / "extras")
+    stage_globs(cfg.get("stage_globs", []), BUILD)
+
+    start = textwrap.dedent(f"""\
+    # START HERE
+
+    Thanks for using {cfg['project_name']}!
+
+    • Vehicle: {cfg.get('vehicle')}
+    • Version: {cfg.get('version')}
+    • Profile: {profile}
+
+    Contents:
+      - dsp/    → DSP configs / presets
+      - docs/   → Wiring PDFs, install guides (dark laminated style)
+      - extras/ → Optional tools or add-ons
+
+    Tips:
+      - Release notes: RELEASE_NOTES.md (if present)
+      - Verify integrity with SHA256SUMS.txt
+      - Filenames include profile & version for easy tracking
+    """)
+    write_text(BUILD / "INSTALL_START_HERE.md", start)
+    print(f"[ok] prepare (profile={profile})")
+
+def extract_top_sections_from_changelog(changelog_path: Path):
+    if not changelog_path.exists():
+        return {}
+    md = changelog_path.read_text(encoding="utf-8")
+    blocks = {}
+    current = None
+    lines = []
+    for ln in md.splitlines():
+        if ln.startswith("## "):
+            if current and lines:
+                blocks[current] = "\n".join(lines).strip()
+            current = ln[3:].strip().lower()
+            lines = []
+        else:
+            if current: lines.append(ln)
+    if current and lines:
+        blocks[current] = "\n".join(lines).strip()
+    wanted = {}
+    for key in ("added","removed","changed","fixes","fixed","security"):
+        for k in list(blocks.keys()):
+            if k.startswith(key):
+                wanted[key] = blocks[k]
+                break
+    return wanted
+
+def step_notes(cfg, profile: str):
+    changelog = ROOT / cfg["changelog_md"]
+    if not changelog.exists():
+        print("[skip] notes: changelog not found"); return
+    sections = extract_top_sections_from_changelog(changelog)
+    lines = [cfg.get("notes_header", "# Release Notes").rstrip(), ""]
+    lines.append(f"**Version:** {cfg['version']}  \n**Profile:** {profile}")
+    url = os.getenv("SB_CHANGELOG_URL", "").strip()
+    if url: lines.append(f"**Full Changelog:** {url}")
+    lines.append("")
+    if sections:
+        for title_key in ("added","removed","changed","fixes","security"):
+            body = sections.get(title_key)
+            if not body: continue
+            nice = title_key.capitalize() if title_key != "fixes" else "Fixed"
+            lines.append(f"## {nice}")
+            lines.append(body if body.strip() else "_No items_")
+            lines.append("")
+    else:
+        lines.append("_No categorized sections found in CHANGELOG_")
+    write_text(BUILD / "RELEASE_NOTES.md", "\n".join(lines))
+    print("[ok] notes")
+
+def step_diffhtml(cfg):
+    script = ROOT / cfg["diff_renderer"]
+    md = ROOT / cfg["changelog_md"]
+    if not script.exists() or not md.exists():
+        print("[skip] diffhtml: renderer or changelog missing")
+        return
+    out_html = BUILD / "docs" / (md.stem + ".html")
+    out_html.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        run([sys.executable, str(script), "--md", str(md), "--out", str(out_html)], check=True)
+        print(f"[ok] diffhtml → {out_html.relative_to(ROOT)}")
+    except Exception as e:
+        print(f"[warn] diffhtml failed: {e}")
+
+def step_pdf_meta(cfg, profile: str):
+    if not _HAS_PIKEPDF or not cfg.get("pdf_meta", {}).get("enabled", True):
+        print("[skip] stamp-pdf-meta: pikepdf not available or disabled")
+        return
+    docs = BUILD / "docs"
+    if not docs.exists():
+        print("[skip] stamp-pdf-meta: docs/ not present"); return
+    fields = cfg["pdf_meta"].get("fields", {})
+    subst = {
+        "project": cfg["project_name"],
+        "version": cfg["version"],
+        "profile": profile,
+        "vehicle": cfg.get("vehicle",""),
+        "author": cfg.get("metadata",{}).get("author","")
+    }
+    count = 0
+    for pdf in docs.rglob("*.pdf"):
+        try:
+            with pikepdf.Pdf.open(pdf) as doc:
+                meta = doc.open_metadata(set_pikepdf_as_editor=False)
+                for k, v in fields.items():
+                    # Map basic keys onto PDF info dict
+                    text = v.format(**subst)
+                    if k.lower() == "title":   doc.docinfo.Title = text
+                    elif k.lower() == "author":doc.docinfo.Author = text
+                    elif k.lower() == "subject": doc.docinfo.Subject = text
+                    elif k.lower() == "keywords": doc.docinfo.Keywords = text
+                    # Also mirror into XMP if available
+                    meta[f"pdf:{k.lower()}"] = text
+                doc.save(pdf)
+                count += 1
+        except Exception as e:
+            print(f"[warn] could not stamp {pdf.name}: {e}")
+    print(f"[ok] stamp-pdf-meta ({count} pdfs)")
+
+def step_qr(cfg):
+    if not cfg.get("qr",{}).get("enabled", True):
+        print("[skip] qrstamp: disabled"); return
+    url_env = cfg["qr"].get("target_url_env", "SB_CHANGELOG_URL")
+    target = os.getenv(url_env, "").strip()
+    if not target:
+        # fallback to README or repo homepage hint
+        readme = ROOT / "README.md"
+        if readme.exists():
+            target = "README.md (local)"  # still useful as label asset
+        else:
+            print("[skip] qrstamp: no URL in env and no README fallback"); return
+    out_dir = BUILD / "docs"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    svg_name = cfg["qr"].get("filename_svg","QR_release.svg")
+    png_name = cfg["qr"].get("filename_png","QR_release.png")
+    size = int(cfg["qr"].get("size_px", 512))
+    made = 0
+    try:
+        if _HAS_SEGNO:
+            q = segno.make(target, error='h')
+            q.save(out_dir / svg_name, border=2)
+            q.save(out_dir / png_name, scale=1, border=2, dark='black', light='white', dpi=300, xmldecl=False, background=None,  # segno controls size via scale; make it around 512px
+                   )
+            made = 2
+        elif _HAS_QRCODE:
+            img = qrcode.make(target)
+            img = img.resize((size, size))
+            img.save(out_dir / png_name)
+            made = 1
+        else:
+            print("[skip] qrstamp: segno/qrcode not installed")
+    except Exception as e:
+        print(f"[warn] qrstamp failed: {e}")
+    if made:
+        print(f"[ok] qrstamp → {out_dir / png_name} {'and SVG' if made==2 else ''}")
+
+def step_manifest(cfg, profile: str):
+    repo_ctx = detect_repo_context()
+    files = list_files_under(BUILD)
+    items, total = [], 0
+    for f in files:
+        rel = f.relative_to(BUILD).as_posix()
+        sz = f.stat().st_size
+        total += sz
+        items.append({"path": rel, "size": sz, "sha256": sha256_file(f)})
+    manifest = {
+        "project": cfg["project_name"],
+        "vehicle": cfg.get("vehicle"),
+        "version": cfg["version"],
+        "profile": profile,
+        "created_utc": current_ts(),
+        "repo_context": repo_ctx,
+        "file_count": len(items),
+        "total_bytes": total,
+        "metadata": cfg.get("metadata", {}),
+        "files": items
+    }
+    write_text(BUILD / "MANIFEST.json", json.dumps(manifest, indent=2))
+    print("[ok] manifest")
+
+def step_sums():
+    lines = []
+    for f in list_files_under(BUILD):
+        rel = f.relative_to(BUILD).as_posix()
+        lines.append(f"{sha256_file(f)}  {rel}")
+    write_text(BUILD / "SHA256SUMS.txt", "\n".join(lines) + "\n")
+    print("[ok] sums")
+
+def step_sbom():
+    lines = []
+    lines.append(f"SonicBuilder SBOM-lite — {current_ts()}")
+    lines.append(f"Platform: {platform.platform()}")
+    lines.append(f"Python: {platform.python_version()} ({sys.executable})")
+    def ver(name, args):
+        val = try_run(args)
+        if val: lines.append(f"{name}: {val.splitlines()[0]}")
+    ver("git", ["git","--version"])
+    ver("adb", ["adb","version"])
+    if _HAS_SEGNO:
+        lines.append(f"segno: yes")
+    if _HAS_QRCODE:
+        lines.append(f"qrcode: yes (PIL available)")
+    if _HAS_PIKEPDF:
+        lines.append("pikepdf: yes")
+    write_text(BUILD / "TOOLS.txt", "\n".join(lines) + "\n")
+    print("[ok] sbom (TOOLS.txt)")
+
+def step_pack(cfg, profile: str):
+    DIST.mkdir(parents=True, exist_ok=True)
+    name = cfg["dist_name_pattern"].format(
+        project=cfg["project_name"].replace(" ", ""),
+        version=cfg["version"],
+        profile=profile
+    )
+    zpath = DIST / name
+    with zipfile.ZipFile(zpath, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        for f in list_files_under(BUILD):
+            z.write(f, f.relative_to(BUILD).as_posix())
+    print(f"[ok] pack → {zpath.relative_to(ROOT)}")
+    return zpath
+
+def step_verify(zip_path: Path):
+    tmp = ROOT / ".verify_tmp"
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True, exist_ok=True)
+    try:
+        with zipfile.ZipFile(zip_path, "r") as z:
+            z.extractall(tmp)
+        sums = tmp / "SHA256SUMS.txt"
+        if not sums.exists():
+            print("[fail] SHA256SUMS.txt not found"); return 2
+        expected = {}
+        for ln in sums.read_text(encoding="utf-8").splitlines():
+            ln=ln.strip()
+            if not ln: continue
+            h, rel = ln.split(None, 1)
+            rel = rel.lstrip("* ").strip()
+            expected[rel] = h
+        for rel, exp in expected.items():
+            p = tmp / rel
+            if not p.exists():
+                print(f"[fail] missing: {rel}"); return 2
+            real = sha256_file(p)
+            if real != exp:
+                print(f"[fail] hash mismatch: {rel}\n expected {exp}\n actual   {real}")
+                return 2
+        print("[ok] verify: all hashes match"); return 0
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+def step_gh_draft(cfg, profile: str):
+    # Build a GitHub-ready release draft using notes + optional Full Changelog URL
+    url = os.getenv("SB_CHANGELOG_URL", "").strip()
+    changelog = ROOT / cfg["changelog_md"]
+    sections = extract_top_sections_from_changelog(changelog) if changelog.exists() else {}
+    title = f"Release {cfg['version']} — {profile}"
+    lines = [f"# {title}", ""]
+    if url: lines.append(f"Full Changelog: {url}\n")
+    order = [("added","Added"),("removed","Removed"),("changed","Changed"),("fixes","Fixed"),("security","Security")]
+    any_sec = False
+    for key,label in order:
+        body = sections.get(key)
+        if not body: continue
+        any_sec = True
+        lines.append(f"## {label}\n{body.strip()}\n")
+    if not any_sec:
+        lines.append("_No categorized changes found._\n")
+    write_text(ROOT / "RELEASE_DRAFT.md", "\n".join(lines))
+    print("[ok] gh-draft → RELEASE_DRAFT.md")
+
+def step_adb_demo(cfg):
+    cmd = [cfg.get("adb_path","adb")] + cfg.get("adb_demo_cmd", [])
+    print(f"[info] ADB demo (explicit only): {' '.join(cmd)}")
+    try:
+        run(cmd, check=True)
+        print("[ok] adb demo complete")
+    except Exception as e:
+        print(f"[warn] adb not available or failed: {e}")
+
+# ---------- Version bump ----------
+def parse_semver(v: str):
+    m = re.search(r'(\d+)\.(\d+)\.(\d+)', v)
+    if not m:
+        raise ValueError("version must contain x.y.z")
+    return [int(m.group(1)), int(m.group(2)), int(m.group(3))]
+
+def bump_version_text(v: str, kind: str):
+    prefix = ""
+    m = re.match(r'^(v)?(.*)$', v)
+    if m and m.group(1) == "v": prefix = "v"
+    nums = parse_semver(v)
+    if kind == "patch": nums[2] += 1
+    elif kind == "minor": nums[1] += 1; nums[2] = 0
+    elif kind == "major": nums[0] += 1; nums[1] = 0; nums[2] = 0
+    else: raise ValueError("kind must be patch|minor|major")
+    return f"{prefix}{nums[0]}.{nums[1]}.{nums[2]}"
+
+# ---------- Orchestrators ----------
+def full_chain_for_profile(cfg, profile: str):
+    step_prepare(cfg, profile)
+    step_notes(cfg, profile)
+    step_diffhtml(cfg)
+    step_qr(cfg)
+    step_pdf_meta(cfg, profile)
+    step_manifest(cfg, profile)
+    step_sums()
+    z = step_pack(cfg, profile)
+    step_sbom()
+    # draft after pack so you can immediately paste to GH if desired
+    step_gh_draft(cfg, profile)
+    return z
+
+def resolve_profiles_arg(cfg, arg: str):
+    if arg.lower() == "all":
+        return cfg.get("profiles_matrix", ["dark","light"])
+    return [p.strip() for p in arg.split(",") if p.strip()]
+
+# ---------- CLI ----------
+def main():
+    cfg = load_config()
+    ap = argparse.ArgumentParser(prog="builder.py", description="SonicBuilder Supersonic Packager")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    sub.add_parser("clean")
+    p_prep = sub.add_parser("prepare"); p_prep.add_argument("--profile", default=cfg["profile"])
+    p_notes = sub.add_parser("notes");  p_notes.add_argument("--profile", default=cfg["profile"])
+    sub.add_parser("diffhtml")
+    p_meta  = sub.add_parser("stamp-pdf-meta"); p_meta.add_argument("--profile", default=cfg["profile"])
+    sub.add_parser("sbom")
+    sub.add_parser("sums")
+    p_qr = sub.add_parser("qrstamp")
+    p_pack = sub.add_parser("pack"); p_pack.add_argument("--profiles", default=cfg["profile"], help="dark|light|all or comma-list")
+    v = sub.add_parser("verify"); v.add_argument("zipfile")
+    b = sub.add_parser("bump"); b.add_argument("--kind", required=True, choices=["patch","minor","major"])
+    g = sub.add_parser("gh-draft"); g.add_argument("--profile", default=cfg["profile"])
+    sub.add_parser("adb-demo")
+
+    args = ap.parse_args()
+
+    if args.cmd == "clean":
+        step_clean(); return
+
+    if args.cmd == "prepare":
+        step_prepare(cfg, args.profile); return
+
+    if args.cmd == "notes":
+        step_notes(cfg, args.profile); return
+
+    if args.cmd == "diffhtml":
+        step_diffhtml(cfg); return
+
+    if args.cmd == "stamp-pdf-meta":
+        step_pdf_meta(cfg, args.profile); return
+
+    if args.cmd == "sbom":
+        step_sbom(); return
+
+    if args.cmd == "sums":
+        step_sums(); return
+
+    if args.cmd == "qrstamp":
+        step_qr(cfg); return
+
+    if args.cmd == "pack":
+        step_clean()
+        zips = []
+        for prof in resolve_profiles_arg(cfg, args.profiles):
+            print(f"=== Building profile: {prof} ===")
+            # switch the current profile on-the-fly
+            cfg_profiled = deep_merge(cfg, {"profile": prof})
+            z = full_chain_for_profile(cfg_profiled, prof)
+            zips.append(z)
+            # reset build dir between profiles
+            shutil.rmtree(BUILD, ignore_errors=True)
+            BUILD.mkdir(parents=True, exist_ok=True)
+        print("[ok] pack matrix done")
+        for z in zips:
+            print(f"  -> {z.relative_to(ROOT)}")
+        return
+
+    if args.cmd == "verify":
+        rc = step_verify(Path(args.zipfile)); sys.exit(rc)
+
+    if args.cmd == "bump":
+        old = cfg["version"]
+        new = bump_version_text(old, args.kind)
+        cfg["version"] = new
+        save_config(cfg)
+        print(f"[ok] bump: {old} → {new}")
+        return
+
+    if args.cmd == "gh-draft":
+        step_gh_draft(cfg, args.profile); return
+
+    if args.cmd == "adb-demo":
+        step_adb_demo(cfg); return
+
+if __name__ == "__main__":
+    main()

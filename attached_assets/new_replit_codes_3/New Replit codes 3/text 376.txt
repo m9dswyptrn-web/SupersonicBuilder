@@ -1,0 +1,11 @@
+python scripts/run_offline_llm.py
+# open http://127.0.0.1:7860
+
+# In the UI:
+#   • watch the LED + backend/model chips
+#   • click Speak 🗣️ to hear status
+#   • click Run Bench → the Performance card updates avg tok/s + tokens/run
+
+# API checks:
+curl http://127.0.0.1:7860/api/bench          # get last result
+curl -X POST http://127.0.0.1:7860/api/bench   # run a new bench

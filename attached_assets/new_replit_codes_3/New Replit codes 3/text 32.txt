@@ -1,0 +1,183 @@
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const status = (msg) => { $("dp-status").textContent = msg || ""; };
+
+  // selects (assumes you already populate these)
+  const selMake   = $("dp-make");
+  const selModel  = $("dp-model");
+  const selYear   = $("dp-year");
+  const selDiag   = $("dp-diagram");
+  const selVar    = $("dp-variant");
+  const selFmt    = $("dp-format");
+
+  // buttons
+  const btnPrev   = $("dp-preview");
+  const btnOpen   = $("dp-open");
+  const btnCopy   = $("dp-copy");
+  const btnRefresh= $("dp-refresh");
+  const btnClose  = $("dp-close");
+
+  // PDF controls
+  const btnFirst  = $("dp-first");
+  const btnP      = $("dp-prev");
+  const btnN      = $("dp-next");
+  const btnLast   = $("dp-last");
+  const btnZoomIn = $("dp-zoomin");
+  const btnZoomOut= $("dp-zoomout");
+  const btnZoomFit= $("dp-zoomfit");
+  const btnRotate = $("dp-rotate");
+  const pageInfo  = $("dp-page-info");
+
+  // surfaces
+  const wrap      = $("dp-preview-wrap");
+  const canvas    = $("dp-canvas");
+  const image     = $("dp-image");
+  const spinner   = $("dp-spinner");
+
+  // -------------------------------------------------------------------
+  // URL builder
+  function buildURL(withBust=false) {
+    const mk = encodeURIComponent(selMake.value);
+    const md = encodeURIComponent(selModel.value);
+    const yr = encodeURIComponent(selYear.value);
+    const id = encodeURIComponent(selDiag.value);
+    const fmt = encodeURIComponent(selFmt.value);
+    const variant = encodeURIComponent(selVar.value);
+    let url = `/api/diagrams/${mk}/${md}/${yr}/${id}?format=${fmt}&variant=${variant}`;
+    if (withBust) url += `&t=${Date.now()}`;
+    return url;
+  }
+
+  function canAct() { return !!selDiag.value; }
+  function enableActions() {
+    const ok = canAct();
+    btnPrev.disabled = btnOpen.disabled = btnCopy.disabled = !ok;
+  }
+  function disableActions() {
+    btnPrev.disabled = btnOpen.disabled = btnCopy.disabled = true;
+  }
+
+  function showSpinner(b) { spinner.hidden = !b; }
+  function hidePreview() {
+    wrap.hidden = true;
+    canvas.hidden = true;
+    image.hidden = true;
+    status("");
+  }
+
+  // -------------------------------------------------------------------
+  // PDF PREVIEW (via PDF.js)
+  let pdfDoc = null, pdfURL = null, page = 1, pages = 0, scale = 1.25, rotation = 0;
+  const ctx = canvas.getContext("2d");
+  // Tell pdf.js where the worker is
+  if (window["pdfjsLib"]) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "/static/vendor/pdfjs/pdf.worker.min.js";
+  }
+
+  async function loadPDF(url) {
+    pdfDoc = null; page = 1; pages = 0; scale = 1.25; rotation = 0;
+    pageInfo.textContent = "– / –";
+    try {
+      const loadingTask = pdfjsLib.getDocument(url);
+      pdfDoc = await loadingTask.promise;
+      pages = pdfDoc.numPages;
+      pageInfo.textContent = `1 / ${pages}`;
+    } catch (e) {
+      console.error(e);
+      status("Failed to load PDF.");
+      throw e;
+    }
+  }
+
+  async function renderPage() {
+    if (!pdfDoc) return;
+    showSpinner(true);
+    const pdfPage = await pdfDoc.getPage(page);
+
+    // Fit-to-width based on container width
+    const surfaceWidth = canvas.parentElement.clientWidth || 900;
+    const vw = pdfPage.getViewport({ scale: 1, rotation }).width;
+    const fitScale = surfaceWidth / vw;
+    const targetScale = Math.max(0.1, fitScale * scale);
+
+    const viewport = pdfPage.getViewport({ scale: targetScale, rotation });
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+
+    await pdfPage.render({ canvasContext: ctx, viewport }).promise;
+    pageInfo.textContent = `${page} / ${pages}`;
+    showSpinner(false);
+  }
+
+  async function preview() {
+    wrap.hidden = false;
+    showSpinner(true);
+    const fmt = selFmt.value;
+
+    if (fmt === "png") {
+      pdfDoc = null; // ensure PDF viewer is “off”
+      image.hidden = false;
+      canvas.hidden = true;
+      image.src = buildURL(true);
+      image.onload = () => { showSpinner(false); status(""); };
+      image.onerror = () => { showSpinner(false); status("Preview failed."); };
+      return;
+    }
+
+    // PDF path
+    image.hidden = true;
+    canvas.hidden = false;
+    pdfURL = buildURL(true);
+    try {
+      await loadPDF(pdfURL);
+      await renderPage();
+      status("");
+    } catch (_) {
+      // fall back to open-in-tab if render fails
+      window.open(buildURL(), "_blank", "noopener");
+    }
+  }
+
+  function ensurePDF() { return pdfDoc != null; }
+
+  // Controls
+  btnFirst?.addEventListener("click", async () => { if(!ensurePDF()) return; page = 1; await renderPage(); });
+  btnP?.addEventListener("click",    async () => { if(!ensurePDF()) return; page = Math.max(1, page-1); await renderPage(); });
+  btnN?.addEventListener("click",    async () => { if(!ensurePDF()) return; page = Math.min(pages, page+1); await renderPage(); });
+  btnLast?.addEventListener("click", async () => { if(!ensurePDF()) return; page = pages; await renderPage(); });
+
+  btnZoomIn?.addEventListener("click",  async () => { if(!ensurePDF()) return; scale *= 1.15; await renderPage(); });
+  btnZoomOut?.addEventListener("click", async () => { if(!ensurePDF()) return; scale /= 1.15; await renderPage(); });
+  btnZoomFit?.addEventListener("click", async () => { if(!ensurePDF()) return; scale = 1.0; await renderPage(); });
+  btnRotate?.addEventListener("click",  async () => { if(!ensurePDF()) return; rotation = (rotation + 90) % 360; await renderPage(); });
+
+  btnPrev.addEventListener("click", preview);
+  btnRefresh.addEventListener("click", () => preview());
+  btnClose.addEventListener("click", () => hidePreview());
+
+  btnOpen.addEventListener("click", () => window.open(buildURL(), "_blank", "noopener"));
+  btnCopy.addEventListener("click", async () => {
+    const url = location.origin + buildURL();
+    try { await navigator.clipboard.writeText(url); status("URL copied."); setTimeout(()=>status(""),1200); }
+    catch { status("Copy failed. Long-press to copy."); }
+  });
+
+  // Keyboard: Enter = preview; Shift+Enter = open; Arrow keys page nav; +/- zoom
+  document.addEventListener("keydown", async (e) => {
+    if (!canAct()) return;
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); preview(); }
+    else if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); window.open(buildURL(), "_blank", "noopener"); }
+    else if (ensurePDF()) {
+      if (e.key === "ArrowLeft")  { page = Math.max(1, page-1); await renderPage(); }
+      if (e.key === "ArrowRight") { page = Math.min(pages, page+1); await renderPage(); }
+      if (e.key === "+")          { scale *= 1.15; await renderPage(); }
+      if (e.key === "-")          { scale /= 1.15; await renderPage(); }
+      if (e.key.toLowerCase() === "r") { rotation = (rotation + 90) % 360; await renderPage(); }
+      if (e.key.toLowerCase() === "f") { scale = 1.0; await renderPage(); }
+    }
+  });
+
+  // You already have catalog-loading + select wiring; keep that.
+  // Ensure you call enable/disable as your diagram selection changes:
+  selDiag?.addEventListener("change", () => { enableActions(); hidePreview(); });
+})();

@@ -1,0 +1,56 @@
+name: SonicBuilder CI Build
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      
+      - name: Run security patch
+        run: |
+          python3 supersonic/security_patch.py
+      
+      - name: Build bundles
+        run: |
+          python3 setup/package_all.py
+      
+      - name: Verify build
+        run: |
+          test -f Supersonic_Core.zip || exit 1
+          test -f Supersonic_Security.zip || exit 1
+          test -f Supersonic_Failsafe.zip || exit 1
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: supersonic-bundles
+          path: |
+            Supersonic_*.zip
+          retention-days: 7
+      
+      - name: Upload security report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report
+          path: founder_console/security_status.json
+          retention-days: 30

@@ -1,0 +1,8 @@
+# full build → dist/SonicBuilder_BuildOfBuilds_ProPack_ENHANCED_v3.2.1_dark.zip
+python builder.py pack
+
+# verify a zip you built earlier
+python builder.py verify dist/SonicBuilder_BuildOfBuilds_ProPack_ENHANCED_v3.2.1_dark.zip
+
+# explicitly test adb (silent otherwise)
+python builder.py adb-demo

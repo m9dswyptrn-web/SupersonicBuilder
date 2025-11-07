@@ -1,0 +1,3 @@
+cd SonicBuilder
+make deepclean       # wipe caches + outputs
+make reset           # deepclean + clean + rebuild

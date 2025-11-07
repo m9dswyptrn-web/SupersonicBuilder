@@ -1,0 +1,90 @@
+name: Issue Diagnostics (/diagnose)
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+  actions: read
+  contents: read
+
+jobs:
+  diagnose:
+    if: >
+      github.event.issue.state == 'open' &&
+      contains(github.event.comment.body, '/diagnose')
+    runs-on: ubuntu-latest
+    env:
+      APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+      DOCTOR_KEY:   ${{ secrets.DOCTOR_KEY }}
+    steps:
+      - name: Validate config
+        run: |
+          [ -n "${APP_BASE_URL}" ] || (echo "APP_BASE_URL secret missing" && exit 1)
+          echo "Target: ${APP_BASE_URL}"
+
+      - name: Fetch /health
+        id: health
+        run: |
+          curl -fsS -H "X-Doctor-Key: ${DOCTOR_KEY}" "${APP_BASE_URL}/health" > health.json || echo '{}' > health.json
+          cat health.json
+
+      - name: Fetch /logs/tail
+        id: tail
+        run: |
+          LINES="${{ vars.DIAG_TAIL_LINES || '400' }}"
+          curl -fsS -H "X-Doctor-Key: ${DOCTOR_KEY}" "${APP_BASE_URL}/logs/tail?n=${LINES}" > tail.json || echo '{"ok":false,"error":"fetch failed"}' > tail.json
+          python3 - <<'PY'
+import json, sys, textwrap
+j = json.load(open("tail.json"))
+lines = j.get("lines", []) if j.get("ok") else [f"ERROR: {j.get('error','unknown')}"]
+open("tail.txt","w").write("\n".join(lines))
+print(f"Wrote tail.txt ({len(lines)} lines)")
+PY
+          head -n 40 tail.txt || true
+
+      - name: Upload diagnostics artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-${{ github.run_id }}
+          path: |
+            health.json
+            tail.json
+            tail.txt
+
+      - name: Compose markdown reply
+        id: md
+        run: |
+          python3 - <<'PY'
+import json, os
+from datetime import datetime, timezone
+def clip(s, n=300):
+    s = s if isinstance(s,str) else str(s)
+    return (s[:n] + "…") if len(s) > n else s
+
+health = {}
+try:
+  health = json.load(open("health.json"))
+except Exception: pass
+
+status = health.get("status","unknown")
+uptime = health.get("uptime_sec")
+disk = health.get("disk", {})
+free_mb = (int(disk.get("free",0))//(1024*1024)) if disk else None
+
+tail = open("tail.txt","r",encoding="utf-8",errors="replace").read().splitlines()[-60:]
+tail_block = "\n".join(clip(l, 500) for l in tail)
+
+ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+
+md = f"""\
+### 🧪 Diagnostics Report — {ts}
+
+**/health**
+- status: `{status}`
+- uptime_sec: `{uptime}`
+- free_disk_mb: `{free_mb}`
+
+**Last 60 log lines**
+<details><summary>expand</summary>

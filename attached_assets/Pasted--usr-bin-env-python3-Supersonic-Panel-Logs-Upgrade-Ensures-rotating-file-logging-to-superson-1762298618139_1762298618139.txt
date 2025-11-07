@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+"""
+Supersonic Panel Logs Upgrade
+- Ensures rotating file logging to supersonic.log
+- Adds GET /logs/tail?n=200 (secured via DOCTOR_KEY if set)
+- Adds a "Logs" button to templates/panel.html
+"""
+import os, re, datetime, shutil
+from pathlib import Path
+
+ROOT = Path(os.getcwd())
+SERVER = ROOT/"serve_pdfs.py"
+TPL    = ROOT/"templates"/"panel.html"
+BKTS   = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+
+def backup(p: Path):
+    if p.exists():
+        dst = p.with_suffix(p.suffix + f".bak.{BKTS}")
+        shutil.copy2(p, dst)
+        print(f"🧾 Backup: {p.name} -> {dst.name}")
+
+def ensure_logging_block(txt: str) -> str:
+    """
+    Adds rotating file handler if not present.
+    Looks for our previous 'logging.basicConfig' lines and appends a handler.
+    """
+    if "RotatingFileHandler(" in txt and "supersonic.log" in txt:
+        return txt  # already present
+
+    block = r"""
+# --- Supersonic rotating file logging (auto-added) ---
+try:
+    from logging.handlers import RotatingFileHandler
+    _log_file = os.getenv("SUPERSONIC_LOG_FILE", "supersonic.log")
+    _rh = RotatingFileHandler(_log_file, maxBytes=1_000_000, backupCount=3)
+    _rh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    if not any(isinstance(h, RotatingFileHandler) for h in log.handlers):
+        log.addHandler(_rh)
+        log.info("FILE_LOGGER_READY file=%s", _log_file)
+except Exception as _e:
+    log.warning("FILE_LOGGER_DISABLED err=%s", _e)
+# --- end Supersonic rotating file logging ---
+"""
+    # place after first 'log =' or 'logging.basicConfig'
+    anchor = re.search(r"log\s*=\s*logging\.getLogger", txt) or re.search(r"logging\.basicConfig", txt)
+    if anchor:
+        i = anchor.end()
+        # insert after next newline
+        j = txt.find("\n", i)
+        if j == -1: j = i
+        return txt[:j+1] + block + txt[j+1:]
+    else:
+        return txt + "\n" + block
+
+def ensure_tail_endpoint(txt: str) -> str:
+    if "/logs/tail" in txt:
+        return txt
+    ep = r"""
+@app.route("/logs/tail")
+def supersonic_logs_tail():
+    # Secure with DOCTOR_KEY if set
+    want = os.getenv("DOCTOR_KEY", "")
+    got = request.headers.get("X-Doctor-Key", "")
+    if want and got != want:
+        return jsonify({"ok": False, "error": "invalid key"}), 401
+    try:
+        n = max(10, min(5000, int(request.args.get("n", "200"))))
+    except Exception:
+        n = 200
+    log_path = os.getenv("SUPERSONIC_LOG_FILE", "supersonic.log")
+    lines = []
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            # Simple, memory-safe tail
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            chunk = 4096
+            buf = ""
+            pos = size
+            while pos > 0 and len(lines) <= n:
+                pos = max(0, pos - chunk)
+                f.seek(pos)
+                buf = f.read(min(chunk, size - pos)) + buf
+                lines = buf.splitlines()[-(n+1):]
+        return jsonify({"ok": True, "file": log_path, "lines": lines[-n:]})
+    except FileNotFoundError:
+        return jsonify({"ok": True, "file": log_path, "lines": [], "note": "log file not created yet"}), 200
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+"""
+    # put near other injected routes
+    hook = txt.rfind("# --- end Supersonic ---")
+    if hook != -1:
+        return txt[:hook] + ep + txt[hook:]
+    return txt + "\n" + ep
+
+def patch_server():
+    if not SERVER.exists():
+        print("❌ serve_pdfs.py not found.")
+        return
+    backup(SERVER)
+    txt = SERVER.read_text(encoding="utf-8")
+    txt = ensure_logging_block(txt)
+    txt = ensure_tail_endpoint(txt)
+    SERVER.write_text(txt, encoding="utf-8")
+    print("✅ Patched serve_pdfs.py with rotating file logger and /logs/tail")
+
+def patch_panel():
+    if not TPL.exists():
+        print("⚠️ templates/panel.html not found; skipping UI patch.")
+        return
+    backup(TPL)
+    html = TPL.read_text(encoding="utf-8")
+    if "btnLogs" in html and "/logs/tail" in html:
+        print("✅ Panel already has Logs button.")
+        return
+
+    # Add a Logs button after Health
+    html = html.replace(
+        'id="btnHealth"',
+        'id="btnHealth" class="btn" style="background:#2ea043;">❤️ Health</button>\n  '
+        '<button id="btnLogs" class="btn" style="background:#6e7681;">🧾 Logs</button><button'
+    ).replace('<buttonbutton','<button')
+
+    # Add JS to fetch logs and render in <pre id="out">
+    if "btnLogs" not in html:
+        # fallback inject into script if replace failed (different formatting)
+        html = html.replace(
+            "document.getElementById('btnHealth').onclick=()=>call('/health');",
+            "document.getElementById('btnHealth').onclick=()=>call('/health');\n"
+            "  document.getElementById('btnLogs').onclick=()=>call('/logs/tail?n=400');"
+        )
+    else:
+        html = html.replace(
+            "document.getElementById('btnHealth').onclick=()=>call('/health');",
+            "document.getElementById('btnHealth').onclick=()=>call('/health');\n"
+            "  document.getElementById('btnLogs').onclick=()=>call('/logs/tail?n=400');"
+        )
+    TPL.write_text(html, encoding="utf-8")
+    print("✅ Panel updated with 🧾 Logs button")
+
+if __name__ == "__main__":
+    patch_server()
+    patch_panel()
+    print("\n🎉 Done. Reload your app and open /panel → click 🧾 Logs to view the last 400 lines.")

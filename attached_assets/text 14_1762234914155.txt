@@ -1,0 +1,19 @@
+<script>
+function applySettingsToUI(){
+  // …your existing apply…
+  const m = document.getElementById('settingsMenu'); if(!m) return;
+  const $ = id => m.querySelector('#'+id);
+
+  // perf switch
+  const perfAuto = $('#optPerfAuto'); if (perfAuto) perfAuto.checked = !!SETTINGS.perfAuto;
+
+  // sliders
+  const P = SETTINGS.perf || {};
+  $('#pfFpsMin').value  = P.fpsMin;      m.querySelector('#pfFpsMinVal').textContent  = P.fpsMin;
+  $('#pfFpsRel').value  = P.fpsRelease;  m.querySelector('#pfFpsRelVal').textContent  = P.fpsRelease;
+  $('#pfFpsDur').value  = P.fpsDurationMs; m.querySelector('#pfFpsDurVal').textContent= P.fpsDurationMs;
+  $('#pfRttMax').value  = P.rttMaxMs;    m.querySelector('#pfRttMaxVal').textContent  = P.rttMaxMs;
+  $('#pfRttDur').value  = P.rttDurationMs; m.querySelector('#pfRttDurVal').textContent= P.rttDurationMs;
+  $('#pfCool').value    = P.cooldownMs;  m.querySelector('#pfCoolVal').textContent    = P.cooldownMs;
+}
+</script>

@@ -1,0 +1,99 @@
+name: Update README Badges
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"   # every 30 minutes
+  push:
+    paths:
+      - downloads/index.json
+      - downloads/stats.json
+permissions:
+  contents: write
+
+jobs:
+  badges:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure dirs
+        run: mkdir -p docs/badges
+
+      - name: Build downloads/latest/updated/size badges
+        shell: python
+        run: |
+          import json, time, pathlib
+          root = pathlib.Path(".").resolve()
+          docs = root/"docs"/"badges"
+          docs.mkdir(parents=True, exist_ok=True)
+
+          index_p = root/"downloads"/"index.json"
+          stats_p = root/"downloads"/"stats.json"
+
+          def read_json(p):
+            try:
+              return json.loads(p.read_text("utf-8"))
+            except Exception:
+              return {}
+
+          idx = read_json(index_p) or {"items":[]}
+          st  = read_json(stats_p)  or {"counts":{}}
+
+          latest = (idx.get("items") or [{}])[0]
+          latest_name = latest.get("name", "no file")
+          mtime = latest.get("mtime", 0)
+          mb = latest.get("mb", 0.0)
+
+          total = sum(int(v) for v in (st.get("counts") or {}).values())
+
+          # downloads badge
+          (docs/"downloads.json").write_text(json.dumps({
+            "schemaVersion": 1, "label": "downloads", "message": str(total),
+            "color": "success" if total>0 else "lightgrey"
+          }), "utf-8")
+
+          # latest filename badge
+          (docs/"latest.json").write_text(json.dumps({
+            "schemaVersion": 1, "label": "latest", "message": latest_name,
+            "color": "blue" if latest_name!="no file" else "lightgrey"
+          }), "utf-8")
+
+          # last updated (human) badge
+          def human(ts):
+            if not ts: return "never"
+            now = time.time()
+            mins = int((now - ts)//60)
+            if mins < 1: return "just now"
+            if mins < 60: return f"{mins}m ago"
+            hrs = mins//60
+            if hrs < 24: return f"{hrs}h ago"
+            days = hrs//24
+            return f"{days}d ago"
+
+          msg = human(mtime)
+          color = "brightgreen"
+          if msg.endswith("h ago") or msg.endswith("d ago"):
+            color = "yellow" if ("h" in msg and not msg.startswith("24")) else "orange"
+          if msg == "never":
+            color = "lightgrey"
+
+          (docs/"updated.json").write_text(json.dumps({
+            "schemaVersion": 1, "label": "last updated", "message": msg, "color": color
+          }), "utf-8")
+
+          # latest size badge
+          size_msg = f"{mb:.1f} MB" if mb else "n/a"
+          size_color = "blue" if mb else "lightgrey"
+          (docs/"size.json").write_text(json.dumps({
+            "schemaVersion": 1, "label": "latest size", "message": size_msg, "color": size_color
+          }), "utf-8")
+
+          print(f"✅ Generated badge JSONs: downloads={total}, latest={latest_name}, updated={msg}, size={size_msg}")
+
+      - name: Commit badges
+        run: |
+          git config user.name  "actions-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/badges/*.json
+          git commit -m "chore(badges): refresh downloads/latest/updated/size" || echo "No changes"
+          git push

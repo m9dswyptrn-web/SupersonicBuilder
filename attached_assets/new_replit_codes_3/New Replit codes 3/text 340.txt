@@ -1,0 +1,2 @@
+export LLM_THREADS=$(nproc)
+export LLM_CTX=4096

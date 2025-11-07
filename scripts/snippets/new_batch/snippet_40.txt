@@ -1,0 +1,3 @@
+REQUIRE_OK=1 REQUIRE_HIGHLIGHTS=1 NOTES_MIN_CHARS=200 \
+CHECK_PREFIX=abcd1234 \
+make verify-deep-publish VERSION=5.0.0 OUT=/mnt/data PUSH=both

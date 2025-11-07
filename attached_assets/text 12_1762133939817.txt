@@ -1,0 +1,9 @@
+SonicBuilderSupersonic/
+│
+├── deploy_to_github.py   👈 my script
+├── main.py
+├── make/
+├── docs/
+├── assets/
+├── ...
+└── .replit

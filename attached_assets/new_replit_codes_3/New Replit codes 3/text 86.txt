@@ -1,0 +1,5 @@
+#dp-restart.fade-visible,
+#dp-restart-label.fade-visible {
+  box-shadow: 0 0 8px var(--accent-glow, rgba(0,255,255,0.3));
+  color: var(--accent-color, #00ffff);
+}

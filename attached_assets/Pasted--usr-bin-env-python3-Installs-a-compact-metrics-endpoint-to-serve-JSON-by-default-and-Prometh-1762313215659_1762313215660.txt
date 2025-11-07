@@ -1,0 +1,286 @@
+#!/usr/bin/env python3
+"""
+Installs a compact /metrics endpoint to serve JSON by default and Prometheus
+text format when requested (?format=prom or Accept: text/plain).
+
+Safe to run multiple times; it backs up serve_pdfs.py and skips if already present.
+Relies only on stdlib; uses env to align with your other upgrades:
+  - SUPERSONIC_LOG_FILE (default: supersonic.log)
+  - HEALTH_ERROR_PATTERNS (default: (?i)\bERROR\b|\bTraceback\b)
+  - HEALTH_5XX_WINDOW_SEC (default: 600)
+  - HEALTH_5XX_REGEX (default: (?i)\b(5\d\d)\b)
+  - HEALTH_MIN_FREE_MB (not enforced here, but reported)
+
+Secured with DOCTOR_KEY if set (header: X-Doctor-Key).
+"""
+import os, re, shutil, datetime
+from pathlib import Path
+
+ROOT   = Path(os.getcwd())
+SERVER = ROOT / "serve_pdfs.py"
+STAMP  = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+
+ROUTE_SNIPPET = r'''
+# --- Supersonic: /metrics endpoint (JSON + Prom) ---
+from flask import request, Response
+import os as _os, time as _time, json as _json, shutil as _shutil
+
+def _ss_require_key():
+    want = _os.getenv("DOCTOR_KEY", "")
+    got  = request.headers.get("X-Doctor-Key", "")
+    return (not want) or (got == want)
+
+def _ss_disk():
+    try:
+        du = _shutil.disk_usage(".")
+        return {"total": int(du.total), "used": int(du.used), "free": int(du.free)}
+    except Exception as e:
+        return {"total": 0, "used": 0, "free": 0, "error": str(e)}
+
+def _ss_cpu_load():
+    try:
+        cpus = max(1, (os.cpu_count() or 1))
+    except Exception:
+        cpus = 1
+    raw = per = None
+    try:
+        if hasattr(os, "getloadavg"):
+            l1, l5, l15 = os.getloadavg()
+            raw = [l1, l5, l15]
+            per = [round(l1/cpus,4), round(l5/cpus,4), round(l15/cpus,4)]
+    except Exception:
+        pass
+    return {"cpu_count": cpus, "raw": raw, "per_cpu": per}
+
+def _ss_memory():
+    # Try psutil if available, else fallbacks
+    mem = {"rss_bytes": None, "vms_bytes": None, "rss_mb": None, "vms_mb": None, "source": "unknown"}
+    try:
+        import psutil as _ps
+        p = _ps.Process()
+        mi = p.memory_info()
+        mem["rss_bytes"] = int(getattr(mi, "rss", 0))
+        mem["vms_bytes"] = int(getattr(mi, "vms", 0))
+        mem["rss_mb"]    = round(mem["rss_bytes"]/(1024*1024),3)
+        mem["vms_mb"]    = round(mem["vms_bytes"]/(1024*1024),3)
+        mem["source"]    = "psutil"
+        return mem
+    except Exception:
+        pass
+    # Linux /proc fallback
+    try:
+        page = os.sysconf("SC_PAGE_SIZE")
+        with open("/proc/self/statm","r") as f:
+            vals = f.read().strip().split()
+        rss_pages = int(vals[1]) if len(vals) > 1 else 0
+        rss = rss_pages * page
+        mem["rss_bytes"] = int(rss)
+        mem["rss_mb"] = round(rss/(1024*1024),3)
+        mem["source"] = "proc/statm"
+        return mem
+    except Exception:
+        pass
+    # resource fallback
+    try:
+        import resource
+        ru = resource.getrusage(resource.RUSAGE_SELF)
+        rss_kb = getattr(ru, "ru_maxrss", 0)
+        rss_b  = int(rss_kb*1024) if rss_kb < 10**7 else int(rss_kb)
+        mem["rss_bytes"] = rss_b
+        mem["rss_mb"]    = round(rss_b/(1024*1024),3)
+        mem["source"]    = "resource"
+    except Exception:
+        pass
+    return mem
+
+def _ss_recent_errors_and_5xx():
+    log_path = os.getenv("SUPERSONIC_LOG_FILE", "supersonic.log")
+    err_rx  = os.getenv("HEALTH_ERROR_PATTERNS", r"(?i)\\bERROR\\b|\\bTraceback\\b")
+    win_sec = int(os.getenv("HEALTH_5XX_WINDOW_SEC","600"))
+    p5xx    = os.getenv("HEALTH_5XX_REGEX", r"(?i)\\b(5\\d\\d)\\b")
+
+    try:
+        err_re = re.compile(err_rx)
+    except Exception:
+        err_re = re.compile(r"(?i)\\bERROR\\b|\\bTraceback\\b")
+    try:
+        p5xx_re = re.compile(p5xx)
+    except Exception:
+        p5xx_re = re.compile(r"(?i)\\b(5\\d\\d)\\b")
+
+    errors_5m = 0
+    http5xx   = 0
+    now  = time.time()
+    cut5 = now - 300.0  # 5m for error count
+    cutx = now - win_sec
+
+    max_bytes = 300_000
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            pos  = max(0, size - max_bytes)
+            f.seek(pos)
+            chunk = f.read()
+    except FileNotFoundError:
+        return {"errors_last_5m": 0, "http_5xx": {"count": 0, "window_sec": win_sec}, "log_file": log_path}
+    except Exception:
+        return {"errors_last_5m": None, "http_5xx": {"count": None, "window_sec": win_sec}, "log_file": log_path}
+
+    ts_re = re.compile(r"(20\\d\\d-\\d\\d-\\d\\d \\d\\d:\\d\\d:\\d\\d)")
+    for ln in chunk.splitlines():
+        m_ts = ts_re.search(ln)
+        # timestamp parse (best-effort)
+        t = None
+        if m_ts:
+            try:
+                import datetime as _dt, time as _time
+                t = _time.mktime(_dt.datetime.strptime(m_ts.group(1), "%Y-%m-%d %H:%M:%S").timetuple())
+            except Exception:
+                t = None
+        # errors
+        if err_re.search(ln):
+            if t is None or t >= cut5:
+                errors_5m += 1
+        # 5xx
+        if p5xx_re.search(ln):
+            if t is None or t >= cutx:
+                http5xx += 1
+
+    return {
+        "errors_last_5m": int(errors_5m),
+        "http_5xx": {"count": int(http5xx), "window_sec": int(win_sec)},
+        "log_file": log_path
+    }
+
+def _ss_uptime_start():
+    # read the .supersonic_start.json used by /health (if present)
+    try:
+        import json
+        p = Path(".supersonic_start.json")
+        if p.exists():
+            j = json.loads(p.read_text(encoding="utf-8"))
+            return float(j.get("ts", 0.0)), int(j.get("pid", 0))
+    except Exception:
+        pass
+    return None, None
+
+@app.route("/metrics")
+def supersonic_metrics():
+    if not _ss_require_key():
+        return jsonify({"ok": False, "error": "invalid key"}), 401
+
+    disk  = _ss_disk()
+    load  = _ss_cpu_load()
+    mem   = _ss_memory()
+    errs5 = _ss_recent_errors_and_5xx()
+    ts, pid = _ss_uptime_start()
+    now = _time.time()
+    uptime = (now - ts) if ts else None
+
+    payload = {
+        "ok": True,
+        "pid": pid,
+        "uptime_sec": uptime,
+        "disk": disk,
+        "loadavg": {"cpu_count": load.get("cpu_count"), "raw": load.get("raw"), "per_cpu": load.get("per_cpu")},
+        "memory": mem,
+        "errors_last_5m": errs5.get("errors_last_5m"),
+        "http_5xx": errs5.get("http_5xx"),
+        "log_file": errs5.get("log_file"),
+        "health_min_free_mb": int(os.getenv("HEALTH_MIN_FREE_MB","500")),
+    }
+
+    # content negotiation
+    want_prom = ("format" in request.args and request.args.get("format") == "prom") or \
+                ("text/plain" in request.headers.get("Accept",""))
+    if not want_prom:
+        return jsonify(payload)
+
+    # Minimal Prometheus exposition
+    def line(k, v, labels=None):
+        if v is None: return ""
+        lab = ""
+        if labels:
+            inner = ",".join([f'{kk}="{str(vv).replace("\\","\\\\").replace("\"","\\\"")}"' for kk,vv in labels.items()])
+            lab = "{" + inner + "}"
+        return f"{k}{lab} {v}\n"
+
+    prom = []
+    # uptime
+    prom.append("# HELP app_uptime_seconds Process uptime seconds\n# TYPE app_uptime_seconds gauge\n")
+    prom.append(line("app_uptime_seconds", round(uptime or 0, 3)))
+    # disk
+    prom.append("# HELP app_disk_bytes Disk usage in bytes\n# TYPE app_disk_bytes gauge\n")
+    for k in ("total","used","free"):
+        prom.append(line("app_disk_bytes", disk.get(k), {"kind": k}))
+    # load
+    if load.get("raw"):
+        prom.append("# HELP app_load_avg Load average\n# TYPE app_load_avg gauge\n")
+        prom.append(line("app_load_avg", load["raw"][0], {"window":"1m"}))
+        prom.append(line("app_load_avg", load["raw"][1], {"window":"5m"}))
+        prom.append(line("app_load_avg", load["raw"][2], {"window":"15m"}))
+    if load.get("per_cpu"):
+        prom.append("# HELP app_load_avg_per_cpu Load average normalized per CPU\n# TYPE app_load_avg_per_cpu gauge\n")
+        prom.append(line("app_load_avg_per_cpu", load["per_cpu"][0], {"window":"1m"}))
+        prom.append(line("app_load_avg_per_cpu", load["per_cpu"][1], {"window":"5m"}))
+        prom.append(line("app_load_avg_per_cpu", load["per_cpu"][2], {"window":"15m"}))
+    # memory
+    prom.append("# HELP app_memory_bytes Memory usage\n# TYPE app_memory_bytes gauge\n")
+    if mem.get("rss_bytes") is not None:
+        prom.append(line("app_memory_bytes", mem["rss_bytes"], {"type":"rss"}))
+    if mem.get("vms_bytes") is not None:
+        prom.append(line("app_memory_bytes", mem["vms_bytes"], {"type":"vms"}))
+    # errors & 5xx
+    prom.append("# HELP app_errors_recent Recent error lines (5m window)\n# TYPE app_errors_recent gauge\n")
+    prom.append(line("app_errors_recent", errs5.get("errors_last_5m")))
+    prom.append("# HELP app_http_5xx_recent Recent HTTP 5xx lines (rolling window)\n# TYPE app_http_5xx_recent gauge\n")
+    http5 = errs5.get("http_5xx") or {}
+    prom.append(line("app_http_5xx_recent", http5.get("count"), {"window_sec": http5.get("window_sec")}))
+
+    body = "".join(prom)
+    return Response(body, status=200, headers={"Content-Type":"text/plain; version=0.0.4; charset=utf-8"})
+# --- end Supersonic /metrics ---
+'''
+
+def backup(p: Path):
+    dst = p.with_suffix(p.suffix + f".bak.{STAMP}")
+    shutil.copy2(p, dst)
+    print(f"🧾 Backup: {p.name} -> {dst.name}")
+    return dst
+
+def main():
+    if not SERVER.exists():
+        print("❌ serve_pdfs.py not found.")
+        return
+
+    # Read file
+    src = SERVER.read_text(encoding="utf-8", errors="ignore")
+
+    # If already present, skip
+    if "/metrics" in src and "Supersonic: /metrics endpoint" in src:
+        print("✅ /metrics already installed; nothing to do.")
+        return
+
+    # Prefer to inject near our Supersonic block if available
+    blk_end = src.find("# --- end Supersonic ---")
+    if blk_end != -1:
+        patched = src[:blk_end] + ROUTE_SNIPPET + "\n" + src[blk_end:]
+    else:
+        # Fallback: append to end
+        patched = src.rstrip() + "\n\n" + ROUTE_SNIPPET + "\n"
+
+    # Ensure imports exist (jsonify used above, request/Response included in snippet)
+    if "from flask import render_template, jsonify, request" not in patched and "from flask import Flask, jsonify, request" not in patched:
+        patched = patched.replace("from flask import Flask", "from flask import Flask, jsonify, request")
+
+    # Backup & write
+    backup(SERVER)
+    SERVER.write_text(patched, encoding="utf-8")
+    print("✅ Installed /metrics endpoint.")
+    print("\n🧪 Try:")
+    print("  curl -s -H 'X-Doctor-Key: $DOCTOR_KEY' $APP_URL/metrics | jq .")
+    print("  curl -s -H 'X-Doctor-Key: $DOCTOR_KEY' '$APP_URL/metrics?format=prom'")
+
+if __name__ == "__main__":
+    main()

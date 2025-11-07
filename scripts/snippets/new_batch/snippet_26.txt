@@ -1,0 +1,3 @@
+cd SonicBuilder\tools
+.\deepclean.ps1 -OutDir "."
+.\reset.ps1 -OutDir "." -Version "5.0.0"

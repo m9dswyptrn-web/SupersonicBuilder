@@ -1,0 +1,27 @@
+sections:
+  - title: Head Unit & Integration
+    items:
+      - name: EOENKK Android 15 DSP Head Unit
+        sku: EOENKK-A15-DSP
+        url: https://example.com/eoenkk-a15-dsp
+        notes: 7\" QLED, DSP, LTE, BT 5.4, CarPlay/Android Auto
+      - name: iDatalink Maestro RR2 + HRN-RR-GM5
+        sku: RR2 + HRN-RR-GM5
+        url: https://example.com/idatalink-rr2
+        notes: GM harness + steering controls + retention
+  - title: Cameras
+    items:
+      - name: DVR Front + Rear Camera Kit
+        sku: DVR-360
+        url: https://example.com/dvr-360
+        notes: Parking monitor, 1080p/60
+  - title: Power & Wiring
+    items:
+      - name: 10A Mini Fuse Add-a-Circuit
+        sku: MINI-TAP-10A
+        url: https://example.com/mini-tap-10a
+        notes: Add ACC feed
+      - name: 18 AWG Tinned Copper (Red/Black)
+        sku: WIRE-18-TC
+        url: https://example.com/wire-18
+        notes: Primary power/ground

@@ -1,0 +1,4 @@
+python3 version_badge_bootstrap.py
+git add -A
+git commit -m "Docs: dynamic version badge (latest GitHub release)"
+git push origin main

@@ -1,0 +1,616 @@
+<!doctype html><meta charset="utf-8">
+<title>Supersonic Commander — Control Panel</title>
+<style>
+  :root{--c:#00ffff;--bg:#0d0d0d;--card:#1b1b1b;--mut:#9aa}
+  body{background:var(--bg);color:#e0e0e0;font-family:Segoe UI,Roboto,Arial,sans-serif;margin:0;padding:20px}
+  h1,h2{color:var(--c);margin:.2em 0}
+  .card{background:var(--card);border:1px solid #00ffff33;border-radius:12px;padding:16px;margin:16px 0;max-width:1200px}
+  label{display:block;margin:.4em 0 .2em;color:#cfe}
+  input[type="range"]{width:300px}
+  .row{display:flex;gap:18px;flex-wrap:wrap}
+  .row>div{min-width:260px}
+  button{background:var(--c);color:#001315;border:none;border-radius:8px;padding:10px 14px;font-weight:600;cursor:pointer}
+  button.secondary{background:#112a2a;color:#cfe;border:1px solid #00ffff44}
+  button.danger{background:#aa1111;color:#fff;border:1px solid #ff444444}
+  small{color:var(--mut)}
+  pre{max-height:320px;overflow:auto;background:#0b0b0b;border:1px solid #00ffff33;border-radius:8px;padding:10px;font-size:12px;line-height:1.4}
+  .status{display:inline-block;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:600}
+  .status.running{background:#ffaa00;color:#000}
+  .status.success{background:#00aa00;color:#fff}
+  .status.fail{background:#aa0000;color:#fff}
+  
+  /* Performance monitoring mini status bar */
+  .mini-status{position:fixed;top:0;left:0;right:0;background:rgba(13,13,13,0.95);backdrop-filter:blur(10px);border-bottom:1px solid #00ffff33;padding:8px 16px;display:flex;gap:12px;align-items:center;z-index:9999;font-size:13px}
+  .ms-item{background:rgba(0,255,255,0.1);border:1px solid rgba(0,255,255,0.2);border-radius:6px;padding:4px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:all 0.2s}
+  .ms-item:hover{background:rgba(0,255,255,0.2);border-color:rgba(0,255,255,0.4)}
+  .ms-item.active{background:rgba(255,170,0,0.3);border-color:rgba(255,170,0,0.6)}
+  .ms-label{font-size:12px;color:#cfe}
+  body{padding-top:60px}
+  
+  /* Performance popover */
+  .perf-pop{position:absolute;right:10px;top:52px;min-width:220px;padding:10px 12px;background:rgba(10,10,11,.95);color:#e5e7eb;border:1px solid rgba(255,255,255,.08);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.45);z-index:10000}
+  .perf-row{display:flex;justify-content:space-between;margin:4px 0;font-size:13px}
+  
+  /* Performance tweaks */
+  .reduced-motion * {animation:none !important}
+  
+  /* Horizontal rule for sections */
+  .hr{height:1px;background:rgba(0,255,255,0.15);margin:16px 0}
+  .muted{color:var(--mut)}
+  .pill{background:rgba(0,255,255,0.15);color:#cfe;border:1px solid rgba(0,255,255,0.3);border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;transition:all 0.2s}
+  .pill:hover{background:rgba(0,255,255,0.25);border-color:rgba(0,255,255,0.5)}
+</style>
+
+<!-- Mini Status Bar -->
+<div class="mini-status">
+  <button class="ms-item" id="msPerf" title="Performance (FPS & latency)">
+    <span id="msPerfIcon">⏱️</span>
+    <span class="ms-label" id="msPerfTxt">-- fps / -- ms</span>
+  </button>
+  <button class="ms-item" id="msBoost" title="Toggle performance mode">
+    🚀 <span class="ms-label">Boost</span>
+  </button>
+  <button class="ms-item" id="msProfile" title="Cycle profile">
+    🧩 <span class="ms-label" id="msProfileTxt">balanced</span>
+  </button>
+  
+  <!-- Performance popover -->
+  <div id="msPerfPop" class="perf-pop" style="display:none;">
+    <div class="perf-row"><strong>FPS:</strong> <span id="ppFps">—</span></div>
+    <div class="perf-row"><strong>RTT:</strong> <span id="ppRtt">—</span></div>
+    <div class="perf-row"><strong>Min/Max FPS:</strong> <span id="ppFpsMin">—</span> / <span id="ppFpsMax">—</span></div>
+    <div class="perf-row"><strong>Min/Max RTT:</strong> <span id="ppRttMin">—</span> / <span id="ppRttMax">—</span></div>
+    <button class="pill" id="ppBurstBtn">Run 5s benchmark</button>
+  </div>
+</div>
+
+<h1>🧭 Supersonic Commander — Control Panel</h1>
+<p>Enterprise-grade build automation with voice feedback and streaming consoles.</p>
+
+<div class="card">
+  <h2>⚙️ Settings</h2>
+  <div class="row">
+    <div>
+      <label>Voice Pack</label>
+      <select id="voice_pack">
+        <option>FlightOps</option>
+        <option>SciFiControl</option>
+        <option>IndustrialOps</option>
+        <option>ArcadeHUD</option>
+      </select>
+    </div>
+    <div>
+      <label>Volume: <span id="volume_v">1.00</span></label>
+      <input type="range" id="volume" min="0" max="1" step="0.01">
+    </div>
+    <div>
+      <label>Rate (WPM): <span id="rate_v">185</span></label>
+      <input type="range" id="rate" min="120" max="220" step="1">
+    </div>
+  </div>
+
+  <div class="row">
+    <div>
+      <label>Dashboard Auto Refresh</label>
+      <select id="dashboard_auto_refresh">
+        <option value="true">Enabled</option>
+        <option value="false">Disabled</option>
+      </select>
+    </div>
+    <div>
+      <label>Telemetry Interval (sec)</label>
+      <input type="number" id="telemetry_interval_sec" min="10" step="5" style="width:120px">
+    </div>
+    <div>
+      <label>Theme</label>
+      <select id="theme">
+        <option>dark</option>
+        <option>light</option>
+      </select>
+    </div>
+    <div>
+      <label>Show Changelog Cards</label>
+      <select id="show_changelog_cards">
+        <option value="true">Show</option>
+        <option value="false">Hide</option>
+      </select>
+    </div>
+    <div>
+      <label style="display:inline-flex;align-items:center;gap:8px">
+        <input type="checkbox" id="advanced_tools"> Show advanced tools
+      </label>
+      <small style="display:block;margin-top:4px">Enables Auto-Fix, Promote, and Rollback</small>
+    </div>
+  </div>
+
+  <div class="hr"></div>
+  <div style="font-size:13px; color:#aaa; margin-bottom:6px;">Performance Profiles</div>
+  <div id="profileRow" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+    <button class="pill" onclick="applyProfile('quiet')">🤫 Quiet</button>
+    <button class="pill" onclick="applyProfile('balanced')">⚖️ Balanced</button>
+    <button class="pill" onclick="applyProfile('performance')">⚡ Performance</button>
+    <span id="profileTag" class="muted" style="margin-left:8px;">Current: balanced</span>
+  </div>
+  
+  <div class="hr"></div>
+  <div style="font-size:13px; color:#aaa; margin-bottom:6px;">Performance Watchdog</div>
+  <label><input type="checkbox" id="optPerfAuto"> Auto-apply performance tweaks on alerts</label>
+  
+  <div id="perfPane" style="display:grid; grid-template-columns: 1fr auto; gap:8px 10px; align-items:center; margin-top:8px;">
+    <span class="muted">Low-FPS alert at</span>
+    <span><input type="range" id="pfFpsMin" min="10" max="60" step="1" style="width:160px;"> <b id="pfFpsMinVal">25</b> fps</span>
+    
+    <span class="muted">Release tweaks at</span>
+    <span><input type="range" id="pfFpsRel" min="20" max="60" step="1" style="width:160px;"> <b id="pfFpsRelVal">40</b> fps</span>
+    
+    <span class="muted">Low-FPS must last</span>
+    <span><input type="range" id="pfFpsDur" min="500" max="5000" step="100" style="width:160px;"> <b id="pfFpsDurVal">2000</b> ms</span>
+    
+    <span class="muted">High-RTT alert above</span>
+    <span><input type="range" id="pfRttMax" min="100" max="2000" step="25" style="width:160px;"> <b id="pfRttMaxVal">500</b> ms</span>
+    
+    <span class="muted">High-RTT must last</span>
+    <span><input type="range" id="pfRttDur" min="500" max="5000" step="100" style="width:160px;"> <b id="pfRttDurVal">3000</b> ms</span>
+    
+    <span class="muted">Alert cooldown</span>
+    <span><input type="range" id="pfCool" min="5000" max="60000" step="1000" style="width:160px;"> <b id="pfCoolVal">15000</b> ms</span>
+    
+    <div></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button class="pill" onclick="perfResetDefaults()">Reset</button>
+      <button class="pill" onclick="perfSave()">Save</button>
+    </div>
+  </div>
+
+  <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
+    <button id="save">Save Settings</button>
+    <button class="secondary" id="test_voice">Test Voice</button>
+    <small id="status"></small>
+  </div>
+</div>
+
+<div class="card">
+  <h2>🔨 Build Operations</h2>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+    <button id="rebuild">Rebuild Now</button>
+    <button class="secondary" id="deploy">Deploy to /docs</button>
+    <button class="secondary" id="verify">Verify Links</button>
+    <button class="secondary" id="autofix" style="display:none">Auto-Fix Preview</button>
+    <button class="secondary" id="promote" style="display:none">Promote Fixes</button>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <label style="display:inline-flex;align-items:center;gap:6px;margin:0">
+      <input type="checkbox" id="verify_externals"> Check external URLs
+    </label>
+    <label style="display:inline-flex;align-items:center;gap:6px;margin:0">
+      <input type="checkbox" id="verify_hints" checked> Show fix hints
+    </label>
+    <div id="rollback_controls" style="display:none;margin-left:auto;display:flex;gap:8px;align-items:center">
+      <select id="rollback_select" title="Choose backup to restore" style="min-width:200px"></select>
+      <button class="danger" id="rollback">Emergency Rollback</button>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>🔁 Rebuild Console</h2>
+  <pre id="build_log"></pre>
+  <small id="build_state"></small>
+</div>
+
+<div class="card">
+  <h2>🚀 Deploy Console</h2>
+  <pre id="deploy_log"></pre>
+  <small id="deploy_state"></small>
+</div>
+
+<div class="card">
+  <h2>🔗 Verify Console</h2>
+  <pre id="verify_log"></pre>
+  <small id="verify_state"></small>
+</div>
+
+<div class="card" id="autofix_card" style="display:none">
+  <h2>🔧 Auto-Fix Console</h2>
+  <pre id="autofix_log"></pre>
+  <small id="autofix_state"></small>
+</div>
+
+<div class="card" id="promote_card" style="display:none">
+  <h2>⬆️ Promote Console</h2>
+  <pre id="promote_log"></pre>
+  <small id="promote_state"></small>
+</div>
+
+<div class="card" id="rollback_card" style="display:none">
+  <h2>⏪ Rollback Console</h2>
+  <pre id="rollback_log"></pre>
+  <small id="rollback_state"></small>
+</div>
+
+<div class="card">
+  <h2>📋 Operations Audit Log (last 200)</h2>
+  <pre id="audit_log" style="max-height:220px"></pre>
+  <button class="secondary" id="audit_refresh">Refresh Audit Log</button>
+</div>
+
+<script>
+// ========== Global SETTINGS object ==========
+window.SETTINGS = {};
+
+// ========== Settings Management ==========
+async function loadSettings(){
+  const r = await fetch('/api/settings'); const s = await r.json();
+  window.SETTINGS = s;
+  
+  voice_pack.value = s.voice_pack ?? 'FlightOps';
+  volume.value = s.volume ?? 1.0; volume_v.textContent = (+volume.value).toFixed(2);
+  rate.value = s.rate ?? 185; rate_v.textContent = rate.value;
+  dashboard_auto_refresh.value = String(!!s.dashboard_auto_refresh);
+  telemetry_interval_sec.value = s.telemetry_interval_sec ?? 30;
+  theme.value = s.theme ?? 'dark';
+  show_changelog_cards.value = String(!!s.show_changelog_cards);
+  advanced_tools.checked = !!s.advanced_tools;
+  applyAdvancedToggle(advanced_tools.checked);
+  
+  applySettingsToUI();
+}
+async function saveSettings(){
+  const payload = {
+    voice_pack: voice_pack.value,
+    volume: +volume.value,
+    rate: +rate.value,
+    dashboard_auto_refresh: dashboard_auto_refresh.value === 'true',
+    telemetry_interval_sec: +telemetry_interval_sec.value,
+    theme: theme.value,
+    show_changelog_cards: show_changelog_cards.value === 'true',
+    advanced_tools: advanced_tools.checked,
+    perfAuto: window.SETTINGS.perfAuto,
+    profile: window.SETTINGS.profile,
+    perf: window.SETTINGS.perf
+  };
+  const r = await fetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+  const j = await r.json();
+  if(j.ok) window.SETTINGS = j.settings;
+  status.textContent = j.ok ? 'Saved ✔' : ('Error: ' + (j.error||''));
+  setTimeout(()=>status.textContent='', 2000);
+}
+async function testVoice(){
+  const r = await fetch('/api/test-voice', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({pack: voice_pack.value})});
+  const j = await r.json();
+  status.textContent = j.ok ? 'Speaking… 🔊' : ('Voice error: ' + (j.error||'')); 
+  setTimeout(()=>status.textContent='', 2000);
+}
+volume.oninput = () => volume_v.textContent = (+volume.value).toFixed(2);
+rate.oninput = () => rate_v.textContent = rate.value;
+save.onclick = saveSettings;
+test_voice.onclick = testVoice;
+loadSettings();
+
+// ========== Rebuild Console ==========
+let bOffset = 0, bTimer = null;
+async function startRebuild(){
+  const r = await fetch('/api/rebuild', {method:'POST'});
+  const j = await r.json();
+  if(!j.ok){status.textContent = 'Build already running';setTimeout(()=>status.textContent='',2000);return;}
+  bOffset = 0;
+  build_log.textContent = '🔁 Rebuild started…\n';
+  build_state.textContent = '';
+  if(bTimer) clearInterval(bTimer);
+  bTimer = setInterval(pollBuild, 1000);
+}
+async function pollBuild(){
+  const r = await fetch('/api/rebuild-status?offset=' + bOffset);
+  const j = await r.json();
+  if(!j.ok) return;
+  if (j.lines && j.lines.length){
+    build_log.textContent += j.lines.join('\n') + '\n';
+    build_log.scrollTop = build_log.scrollHeight;
+  }
+  bOffset = j.next ?? bOffset;
+  let txt = (j.running ? '🟡 Running' : (j.rc === 0 ? '🟢 Success' : (j.rc==null ? '…' : '🔴 Failed')));
+  if (j.started_at) txt += ` • started ${j.started_at}`;
+  if (j.ended_at) txt += ` • ended ${j.ended_at}`;
+  build_state.textContent = txt;
+  if (!j.running && bTimer){clearInterval(bTimer);bTimer = null;}
+}
+rebuild.onclick = startRebuild;
+
+// ========== Deploy Console ==========
+let dOffset = 0, dTimer = null;
+async function startDeploy(){
+  const r = await fetch('/api/deploy', {method:'POST'});
+  const j = await r.json();
+  if(!j.ok){status.textContent = 'Deploy already running';setTimeout(()=>status.textContent='',2000);return;}
+  dOffset = 0;
+  deploy_log.textContent = '🚀 Deploy started…\n';
+  deploy_state.textContent = '';
+  if(dTimer) clearInterval(dTimer);
+  dTimer = setInterval(pollDeploy, 1000);
+}
+async function pollDeploy(){
+  const r = await fetch('/api/deploy-status?offset=' + dOffset);
+  const j = await r.json();
+  if(!j.ok) return;
+  if (j.lines && j.lines.length){
+    deploy_log.textContent += j.lines.join('\n') + '\n';
+    deploy_log.scrollTop = deploy_log.scrollHeight;
+  }
+  dOffset = j.next ?? dOffset;
+  let txt = (j.running ? '🟡 Running' : (j.rc === 0 ? '🟢 Success' : (j.rc==null ? '…' : '🔴 Failed')));
+  if (j.started_at) txt += ` • started ${j.started_at}`;
+  if (j.ended_at) txt += ` • ended ${j.ended_at}`;
+  deploy_state.textContent = txt;
+  if (!j.running && dTimer){clearInterval(dTimer);dTimer = null;}
+}
+deploy.onclick = startDeploy;
+
+// ========== Verify Console ==========
+let vOffset = 0, vTimer = null;
+async function startVerify(){
+  const payload = {externals: verify_externals.checked, hints: verify_hints.checked};
+  const r = await fetch('/api/verify', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+  const j = await r.json();
+  if(!j.ok){status.textContent = 'Verify already running';setTimeout(()=>status.textContent='',2000);return;}
+  vOffset = 0;
+  verify_log.textContent = '🔗 Verify started…\n';
+  verify_state.textContent = '';
+  if(vTimer) clearInterval(vTimer);
+  vTimer = setInterval(pollVerify, 1000);
+}
+async function pollVerify(){
+  const r = await fetch('/api/verify-status?offset=' + vOffset);
+  const j = await r.json();
+  if(!j.ok) return;
+  if (j.lines && j.lines.length){
+    verify_log.textContent += j.lines.join('\n') + '\n';
+    verify_log.scrollTop = verify_log.scrollHeight;
+  }
+  vOffset = j.next ?? vOffset;
+  let txt = (j.running ? '🟡 Running' : (j.rc === 0 ? '🟢 Clean' : (j.rc==null ? '…' : '🔴 Broken links')));
+  if (j.started_at) txt += ` • started ${j.started_at}`;
+  if (j.ended_at) txt += ` • ended ${j.ended_at}`;
+  verify_state.textContent = txt;
+  if (!j.running && vTimer){clearInterval(vTimer);vTimer = null;}
+}
+verify.onclick = startVerify;
+
+// ========== Advanced Tools Toggle ==========
+function applyAdvancedToggle(on){
+  for (const id of ["autofix","promote","autofix_card","promote_card","rollback_card","rollback_controls"]) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = on ? "" : "none";
+  }
+  if (on) loadBackups();
+}
+advanced_tools.addEventListener("change", async ()=>{
+  await saveSettings();
+  applyAdvancedToggle(advanced_tools.checked);
+});
+
+// ========== Auto-Fix Console ==========
+let aOffset = 0, aTimer = null;
+async function startAutofix(){
+  const r = await fetch('/api/autofix', {method:'POST'});
+  const j = await r.json();
+  if(!j.ok){status.textContent = 'Auto-fix already running';setTimeout(()=>status.textContent='',2000);return;}
+  aOffset = 0;
+  autofix_log.textContent = '🔧 Auto-fix preview started…\n';
+  autofix_state.textContent = '';
+  if(aTimer) clearInterval(aTimer);
+  aTimer = setInterval(pollAutofix, 1000);
+}
+async function pollAutofix(){
+  const r = await fetch('/api/autofix-status?offset=' + aOffset);
+  const j = await r.json();
+  if(!j.ok) return;
+  if (j.lines && j.lines.length){
+    autofix_log.textContent += j.lines.join('\n') + '\n';
+    autofix_log.scrollTop = autofix_log.scrollHeight;
+  }
+  aOffset = j.next ?? aOffset;
+  let txt = (j.running ? '🟡 Running' : (j.rc === 0 ? '🟢 Preview ready' : (j.rc==null ? '…' : '🔴 Preview failed')));
+  if (j.started_at) txt += ` • started ${j.started_at}`;
+  if (j.ended_at) txt += ` • ended ${j.ended_at}`;
+  autofix_state.textContent = txt;
+  if (!j.running && aTimer){clearInterval(aTimer);aTimer = null;}
+}
+autofix.onclick = startAutofix;
+
+// ========== Promote Console ==========
+let pOffset = 0, pTimer = null;
+async function startPromote(){
+  if(!confirm("Promote auto-fixed preview into /docs? A timestamped backup will be created.")){return;}
+  const r = await fetch('/api/promote', {method:'POST'});
+  const j = await r.json();
+  if(!j.ok){status.textContent = 'Promote already running';setTimeout(()=>status.textContent='',2000);return;}
+  pOffset = 0;
+  promote_log.textContent = '⬆️ Promote started…\n';
+  promote_state.textContent = '';
+  if(pTimer) clearInterval(pTimer);
+  pTimer = setInterval(pollPromote, 1000);
+}
+async function pollPromote(){
+  const r = await fetch('/api/promote-status?offset=' + pOffset);
+  const j = await r.json();
+  if(!j.ok) return;
+  if (j.lines && j.lines.length){
+    promote_log.textContent += j.lines.join('\n') + '\n';
+    promote_log.scrollTop = promote_log.scrollHeight;
+  }
+  pOffset = j.next ?? pOffset;
+  let txt = (j.running ? '🟡 Running' : (j.rc === 0 ? '🟢 Promoted' : (j.rc==null ? '…' : '🔴 Failed')));
+  if (j.started_at) txt += ` • started ${j.started_at}`;
+  if (j.ended_at) txt += ` • ended ${j.ended_at}`;
+  promote_state.textContent = txt;
+  if (!j.running && pTimer){clearInterval(pTimer);pTimer = null;}
+}
+promote.onclick = startPromote;
+
+// ========== Rollback Console ==========
+let rOffset = 0, rTimer = null;
+async function loadBackups(){
+  const j = await (await fetch('/api/rollback-list')).json();
+  if(!j.ok) return;
+  rollback_select.innerHTML = '';
+  if (!j.backups || j.backups.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = ''; opt.textContent = '(no backups available)';
+    rollback_select.appendChild(opt);
+    return;
+  }
+  (j.backups||[]).forEach(name=>{
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    rollback_select.appendChild(opt);
+  });
+}
+async function startRollback(){
+  const name = rollback_select.value;
+  if(!name){ status.textContent='No backups found'; setTimeout(()=>status.textContent='',2000); return;}
+  if(!confirm(`Restore from ${name}? A pre-rollback backup of current docs will be created.`)) return;
+
+  const r = await fetch('/api/rollback', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({backup:name})});
+  const j = await r.json();
+  if(!j.ok){ status.textContent = 'Rollback already running or invalid'; setTimeout(()=>status.textContent='', 2000); return; }
+  rOffset=0; rollback_log.textContent='⏪ Rollback started…\n'; rollback_state.textContent='';
+  if(rTimer) clearInterval(rTimer);
+  rTimer=setInterval(pollRollback, 1000);
+}
+async function pollRollback(){
+  const r = await fetch('/api/rollback-status?offset='+rOffset);
+  const j = await r.json();
+  if(!j.ok) return;
+  if(j.lines?.length){
+    rollback_log.textContent += j.lines.join('\n')+'\n';
+    rollback_log.scrollTop = rollback_log.scrollHeight;
+  }
+  rOffset = j.next ?? rOffset;
+  let txt = (j.running ? '🟡 Running' : (j.rc===0 ? '🟢 Rolled back' : (j.rc==null ? '…' : '🔴 Failed')));
+  if (j.started_at) txt += ` • started ${j.started_at}`;
+  if (j.ended_at)   txt += ` • ended ${j.ended_at}`;
+  rollback_state.textContent = txt;
+
+  if(!j.running && rTimer){
+    clearInterval(rTimer); rTimer=null;
+    if(j.rc===0){
+      status.textContent='✅ Rollback complete';
+      setTimeout(()=>status.textContent='',3000);
+      loadBackups();
+    }
+  }
+}
+rollback.onclick = startRollback;
+
+// ========== Audit Log ==========
+async function refreshAudit(){
+  const r = await fetch('/api/audit');
+  const j = await r.json();
+  if(!j.ok) return;
+  const lines = (j.lines || []).map(s=>{
+    try{
+      const o = JSON.parse(s);
+      return `[${o.ts}] ${o.op}.${o.status} ${JSON.stringify(o.meta||{})}`;
+    }catch{
+      return s;
+    }
+  });
+  audit_log.textContent = lines.join('\n');
+  audit_log.scrollTop = audit_log.scrollHeight;
+}
+audit_refresh.onclick = refreshAudit;
+window.addEventListener('load', refreshAudit);
+
+// ========== Performance Settings Management ==========
+function applySettingsToUI(){
+  if(!window.SETTINGS) return;
+  const perfAuto = document.getElementById('optPerfAuto');
+  if (perfAuto) perfAuto.checked = !!window.SETTINGS.perfAuto;
+  
+  const P = window.SETTINGS.perf || {};
+  const pfFpsMin = document.getElementById('pfFpsMin');
+  const pfFpsRel = document.getElementById('pfFpsRel');
+  const pfFpsDur = document.getElementById('pfFpsDur');
+  const pfRttMax = document.getElementById('pfRttMax');
+  const pfRttDur = document.getElementById('pfRttDur');
+  const pfCool = document.getElementById('pfCool');
+  
+  if(pfFpsMin) { pfFpsMin.value = P.fpsMin ?? 25; document.getElementById('pfFpsMinVal').textContent = P.fpsMin ?? 25; }
+  if(pfFpsRel) { pfFpsRel.value = P.fpsRelease ?? 40; document.getElementById('pfFpsRelVal').textContent = P.fpsRelease ?? 40; }
+  if(pfFpsDur) { pfFpsDur.value = P.fpsDurationMs ?? 2000; document.getElementById('pfFpsDurVal').textContent = P.fpsDurationMs ?? 2000; }
+  if(pfRttMax) { pfRttMax.value = P.rttMaxMs ?? 500; document.getElementById('pfRttMaxVal').textContent = P.rttMaxMs ?? 500; }
+  if(pfRttDur) { pfRttDur.value = P.rttDurationMs ?? 3000; document.getElementById('pfRttDurVal').textContent = P.rttDurationMs ?? 3000; }
+  if(pfCool) { pfCool.value = P.cooldownMs ?? 15000; document.getElementById('pfCoolVal').textContent = P.cooldownMs ?? 15000; }
+  
+  if(typeof updateProfileTag === 'function') updateProfileTag();
+}
+
+function bindPerfSettings(){
+  const perfAuto = document.getElementById('optPerfAuto');
+  if(perfAuto && !perfAuto._bound){
+    perfAuto.addEventListener('change', e => {
+      window.SETTINGS.perfAuto = !!e.target.checked;
+      saveSettings();
+    });
+    perfAuto._bound = true;
+  }
+  
+  function bindSlider(id, valId, key){
+    const el = document.getElementById(id);
+    if(!el || el._bound) return;
+    el.addEventListener('input', e => {
+      const v = parseInt(e.target.value, 10);
+      if(!window.SETTINGS.perf) window.SETTINGS.perf = {};
+      window.SETTINGS.perf[key] = v;
+      document.getElementById(valId).textContent = String(v);
+    });
+    el.addEventListener('change', () => saveSettings());
+    el._bound = true;
+  }
+  
+  bindSlider('pfFpsMin', 'pfFpsMinVal', 'fpsMin');
+  bindSlider('pfFpsRel', 'pfFpsRelVal', 'fpsRelease');
+  bindSlider('pfFpsDur', 'pfFpsDurVal', 'fpsDurationMs');
+  bindSlider('pfRttMax', 'pfRttMaxVal', 'rttMaxMs');
+  bindSlider('pfRttDur', 'pfRttDurVal', 'rttDurationMs');
+  bindSlider('pfCool', 'pfCoolVal', 'cooldownMs');
+}
+
+function perfSave(){
+  saveSettings();
+  status.textContent = 'Performance settings saved';
+  setTimeout(() => status.textContent = '', 2000);
+}
+
+function perfResetDefaults(){
+  window.SETTINGS.perf = {
+    fpsMin: 25,
+    fpsRelease: 40,
+    fpsDurationMs: 2000,
+    rttMaxMs: 500,
+    rttDurationMs: 3000,
+    cooldownMs: 15000
+  };
+  saveSettings();
+  applySettingsToUI();
+  status.textContent = 'Performance settings reset';
+  setTimeout(() => status.textContent = '', 2000);
+}
+
+// Initialize performance settings bindings on load
+window.addEventListener('load', () => {
+  bindPerfSettings();
+});
+</script>
+
+<!-- Load performance monitoring modules -->
+<script src="static/supersonic-perf-profiles.js"></script>
+<script src="static/supersonic-perf-monitor.js"></script>
+<script>
+// Initialize performance monitor after modules are loaded
+window.addEventListener('load', () => {
+  const monitor = new SupersonicPerfMonitor();
+  monitor.init();
+  window.perfMonitor = monitor;
+});
+</script>

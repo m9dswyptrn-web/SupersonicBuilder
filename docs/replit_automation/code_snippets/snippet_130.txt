@@ -1,0 +1,3 @@
+<meta id="catalog-config"
+      data-version="{{ _catalog_version() if callable(_catalog_version) else '' }}"
+      data-ttl-ms="{{ (CATALOG_TTL_HOURS * 60 * 60 * 1000) | int if CATALOG_TTL_HOURS is defined else '' }}">

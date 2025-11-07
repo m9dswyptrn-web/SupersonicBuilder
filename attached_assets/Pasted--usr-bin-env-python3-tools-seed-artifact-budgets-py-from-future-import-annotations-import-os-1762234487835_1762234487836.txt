@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+# tools/seed_artifact_budgets.py
+from __future__ import annotations
+import os, sys, re, json, math, urllib.request
+from pathlib import Path
+from glob import glob
+from typing import Dict, List
+
+BUDGET_PATH = Path(".github/artifact_budgets.json")
+
+def human(n:int)->str:
+    u=["B","KB","MB","GB","TB"]; i=0; f=float(n)
+    while f>=1024 and i<len(u)-1: f/=1024; i+=1
+    return f"{f:.2f} "+u[i]
+
+def mb(n:int)->float:
+    return n/1024.0/1024.0
+
+def gh_get(url:str, token:str):
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "seed-artifact-budgets"
+    })
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+def find_previous_release(owner_repo:str, token:str, current_tag:str|None)->dict|None:
+    releases = gh_get(f"https://api.github.com/repos/{owner_repo}/releases?per_page=100", token)
+    releases.sort(key=lambda r:r.get("created_at",""), reverse=True)
+    if current_tag:
+        seen=False
+        for rel in releases:
+            if rel.get("tag_name")==current_tag:
+                seen=True; continue
+            if seen:
+                return rel
+    for rel in releases:
+        if not rel.get("draft") and not rel.get("prerelease"):
+            return rel
+    return None
+
+def to_glob(name:str)->str:
+    # turn "SonicBuilder_BuildOfBuilds_ProPack_1.2.3.zip" -> "SonicBuilder_BuildOfBuilds_ProPack_*.zip"
+    stem, ext = os.path.splitext(name)
+    # heuristics: replace numeric/version runs with *
+    glob_stem = re.sub(r"(\d+\.\d+\.\d+|\d{4}-\d{2}-\d{2}|\d+)", "*", stem)
+    # collapse consecutive * to single
+    glob_stem = re.sub(r"\*{2,}", "*", glob_stem)
+    return f"{glob_stem}{ext}"
+
+def load_existing() -> List[Dict]:
+    if BUDGET_PATH.exists():
+        try:
+            return json.loads(BUDGET_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return []
+
+def upsert(entries:List[Dict], new_entry:Dict):
+    # prevent duplicates by identical pattern
+    for e in entries:
+        if e.get("pattern")==new_entry.get("pattern"):
+            e.update({k:v for k,v in new_entry.items() if k!="pattern"})
+            return
+    entries.append(new_entry)
+
+def main():
+    owner_repo = os.getenv("GITHUB_REPOSITORY","").strip()
+    token = (os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN") or "").strip()
+    current_tag = os.getenv("GITHUB_REF_NAME","").strip() if os.getenv("GITHUB_REF_TYPE","")=="tag" else os.getenv("CURRENT_TAG","").strip()
+
+    # Gather current artifacts
+    candidates = []
+    for g in ["dist/**", "build/**"]:
+        candidates += [Path(p) for p in glob(g, recursive=True)]
+    files = [p for p in candidates if p.is_file() and not any(seg in p.parts for seg in (".venv","node_modules","__pycache__"))]
+
+    if not files:
+        print("No artifacts found under dist/ or build/"); sys.exit(0)
+
+    # Map current sizes
+    current_sizes = { p.name: p.stat().st_size for p in files }
+
+    # Previous release assets (optional if token missing)
+    prev_assets = {}
+    prev_tag = None
+    if owner_repo and token:
+        prev = find_previous_release(owner_repo, token, current_tag or None)
+        if prev:
+            prev_tag = prev.get("tag_name")
+            prev_assets = { a["name"]: int(a.get("size",0)) for a in prev.get("assets",[]) }
+
+    # Build new budget entries
+    new_entries: List[Dict] = []
+    for name, size in sorted(current_sizes.items()):
+        size_mb = mb(size)
+        prev_mb = mb(prev_assets.get(name, 0)) if prev_assets else 0.0
+
+        # derive caps
+        max_mb = min( max( math.ceil(size_mb*1.15), 150 ), 950 )  # 15% headroom, clamp [150..950]
+        delta_mb = size_mb*0.20
+        max_delta_mb = min( max( math.ceil(delta_mb), 30 ), 150 ) # 20% or at least 30MB, clamp ≤150
+
+        pattern = to_glob(name)
+        entry_exact = { "pattern": name, "max_mb": int(max_mb), "max_delta_mb": int(max_delta_mb) }
+        entry_glob  = { "pattern": pattern, "max_mb": int(max_mb), "max_delta_mb": int(max_delta_mb) }
+
+        new_entries.append(entry_exact)
+        if pattern != name:
+            new_entries.append(entry_glob)
+
+        # log
+        delta_now = size_mb - prev_mb if prev_mb > 0 else 0.0
+        print(f"• {name}: {human(size)}"
+              + (f" (prev {prev_mb:.2f} MB, Δ {delta_now:+.2f} MB)" if prev_mb else " (no prev)"))
+
+    # Merge with existing
+    combined = load_existing()
+    for e in new_entries:
+        upsert(combined, e)
+
+    # Add conservative catch-alls if not present
+    defaults = [
+        { "pattern": "dist/*.zip",   "max_mb": 300, "max_delta_mb": 50 },
+        { "pattern": "build/*.zip",  "max_mb": 300, "max_delta_mb": 50 },
+        { "pattern": "dist/**/*.whl","max_mb": 150, "max_delta_mb": 25 },
+        { "pattern": "dist/**/*.tar.gz", "max_mb": 400, "max_delta_mb": 75 }
+    ]
+    for d in defaults:
+        upsert(combined, d)
+
+    # Ensure folder
+    BUDGET_PATH.parent.mkdir(parents=True, exist_ok=True)
+    BUDGET_PATH.write_text(json.dumps(combined, indent=2), encoding="utf-8")
+    print(f"\n✅ Wrote {BUDGET_PATH} with {len(combined)} entries.")
+
+if __name__ == "__main__":
+    main()

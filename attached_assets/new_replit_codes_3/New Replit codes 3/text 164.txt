@@ -1,0 +1,6 @@
+# Flask
+FLASK_ENV=production
+CATALOG_TTL_HOURS=24
+
+# App-specific
+# DIAGRAM_INDEX=./data/diagrams_index.json

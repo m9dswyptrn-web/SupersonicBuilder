@@ -1,0 +1,9 @@
+types:
+  power: "power"
+  ground: "ground"
+  audio: "audio"
+  can: "can"
+  trigger: "trigger"
+  mic: "mic"
+  usb: "usb"
+  video: "video"

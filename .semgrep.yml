@@ -1,0 +1,60 @@
+# SonicBuilder subprocess hardening rules
+rules:
+  - id: py-subprocess-shell-true
+    languages: [python]
+    message: "Avoid 'shell=True' with subprocess.* — use shell=False and argv list."
+    severity: ERROR
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.call(..., shell=True, ...)
+          - pattern: subprocess.check_call(..., shell=True, ...)
+          - pattern: subprocess.run(..., shell=True, ...)
+          - pattern: subprocess.check_output(..., shell=True, ...)
+    paths:
+      exclude:
+        - "**/.venv/**"
+        - "**/venv/**"
+        - "**/dist/**"
+        - "**/build/**"
+
+  - id: py-subprocess-string-command
+    languages: [python]
+    message: "Command built as a string. Pass argv list to subprocess.* (no shell)."
+    severity: WARNING
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.call($CMD, ...)
+          - pattern: subprocess.check_call($CMD, ...)
+          - pattern: subprocess.run($CMD, ...)
+          - pattern: subprocess.check_output($CMD, ...)
+      - metavariable-pattern:
+          metavariable: $CMD
+          pattern: |
+            "...";  # string literal
+    paths:
+      exclude:
+        - "**/.venv/**"
+        - "**/venv/**"
+        - "**/dist/**"
+        - "**/build/**"
+
+  - id: py-subprocess-user-controlled
+    languages: [python]
+    message: "Possible user-controlled data into subprocess. Validate/escape."
+    severity: WARNING
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.run($X, ...)
+          - pattern: subprocess.call($X, ...)
+          - pattern: subprocess.check_call($X, ...)
+          - pattern: subprocess.check_output($X, ...)
+      - pattern-not: subprocess.run(["..."], ...)
+      - pattern-not: subprocess.call(["..."], ...)
+      - pattern-not: subprocess.check_call(["..."], ...)
+      - pattern-not: subprocess.check_output(["..."], ...)
+    paths:
+      exclude:
+        - "**/.venv/**"
+        - "**/venv/**"
+        - "**/dist/**"
+        - "**/build/**"

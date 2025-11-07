@@ -1,0 +1,94 @@
+set -euo pipefail
+
+cat > precommit_python_bootstrap.py <<'PY'
+#!/usr/bin/env python3
+# Adds Ruff + Black to your existing pre-commit config (idempotent).
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+pc = ROOT / ".pre-commit-config.yaml"
+pyproj = ROOT / "pyproject.toml"
+
+RUFF_BLOCK = """\
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
+"""
+
+BLACK_BLOCK = """\
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+"""
+
+PYPROJECT_SNIPPET = """\
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# Uncomment to enable import sorting by Ruff (recommended)
+# [tool.ruff.lint]
+# select = ["I", "E", "F", "W"]
+"""
+
+def ensure_precommit_blocks():
+    if not pc.exists():
+        raise SystemExit("❌ .pre-commit-config.yaml not found. Run precommit_bootstrap.py first.")
+
+    text = pc.read_text(encoding="utf-8")
+    changed = False
+
+    if "astral-sh/ruff-pre-commit" not in text:
+        text = text.rstrip() + ("\n\n" if not text.endswith("\n") else "\n") + RUFF_BLOCK
+        changed = True
+
+    if "psf/black" not in text:
+        text = text.rstrip() + ("\n\n" if not text.endswith("\n") else "\n") + BLACK_BLOCK
+        changed = True
+
+    if changed:
+        pc.write_text(text, encoding="utf-8")
+        print("→ updated .pre-commit-config.yaml with Ruff + Black")
+    else:
+        print("→ Ruff + Black already present (no change)")
+
+def ensure_pyproject():
+    if pyproj.exists():
+        # do not overwrite; assume you may already have config
+        print("→ pyproject.toml exists (leaving as-is)")
+        return
+    pyproj.write_text(PYPROJECT_SNIPPET, encoding="utf-8")
+    print("→ wrote pyproject.toml (Black/Ruff defaults)")
+
+def main():
+    ensure_precommit_blocks()
+    ensure_pyproject()
+    print("\n✅ Python pre-commit upgrade complete.\n"
+          "Next steps will autoupdate hook revs and run across the repo.")
+if __name__ == "__main__":
+    main()
+PY
+
+python3 precommit_python_bootstrap.py
+
+# Ensure pre-commit is installed & hooks up-to-date
+python3 -m pip install --upgrade pip >/dev/null
+pip install pre-commit >/dev/null
+pre-commit autoupdate
+
+# Install hooks and run once over all files (so future commits stay green)
+pre-commit install
+pre-commit run --all-files || true
+
+echo
+echo "✅ Ruff + Black wired into pre-commit."
+echo "   • Ruff: lint + quick fixes + format (ruff-format)"
+echo "   • Black: canonical Python formatting"
+echo "Re-run: pre-commit run --all-files"

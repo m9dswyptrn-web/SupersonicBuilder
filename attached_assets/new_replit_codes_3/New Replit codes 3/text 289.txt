@@ -1,0 +1,3 @@
+# inside your venv
+brew install cmake
+CMAKE_ARGS="-DLLAMA_METAL=on" pip install --force-reinstall --no-binary llama-cpp-python llama-cpp-python==0.3.2

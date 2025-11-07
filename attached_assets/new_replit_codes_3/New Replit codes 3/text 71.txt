@@ -1,0 +1,1 @@
+<span id="dp-restart-label" class="muted" hidden>Last: —</span>

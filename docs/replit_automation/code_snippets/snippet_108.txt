@@ -1,0 +1,8 @@
+window.SonicDiagramPicker = {
+  restartIfAvailable: () => {
+    // if LAST.has was persisted via your own mechanism, you can restore it here.
+    // For now we simply click the Restart button if visible:
+    const btnRestart = document.getElementById("dp-restart");
+    if (btnRestart && !btnRestart.hidden) btnRestart.click();
+  }
+};

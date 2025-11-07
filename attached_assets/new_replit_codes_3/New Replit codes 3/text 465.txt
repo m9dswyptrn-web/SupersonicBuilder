@@ -1,0 +1,9 @@
+async function runBench(){
+  await withHeaderLock(async () => {
+    await fetch('/api/bench', {method:'POST'});
+    await loadBench();
+    await refreshReady();
+    showToast('Bench complete');
+    playChime(true, 'bench complete', 'bench');
+  });
+}

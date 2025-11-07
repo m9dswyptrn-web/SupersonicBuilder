@@ -1,0 +1,7 @@
+description: Variables from text 34.txt
+variables:
+  adb_alias: headunit
+  adb_group: daily
+  select_adb: 'false'
+  no_pdf: 'false'
+source: text 34.txt

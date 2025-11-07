@@ -1,0 +1,91 @@
+import os
+import json
+import platform
+import socket
+import subprocess
+from datetime import datetime, timezone
+from pathlib import Path
+from flask import Flask, request, render_template_string, jsonify, Response
+from dotenv import load_dotenv
+load_dotenv()
+
+import sys, time, re
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from desktop.webui.agent_loader import load_agent
+
+PORT = int(os.getenv("PORT", "7860"))
+agent = load_agent()
+
+CACHE_DIR = Path(".supersonic_cache")
+CACHE_DIR.mkdir(exist_ok=True)
+BENCH_JSON = CACHE_DIR / "bench.json"
+BENCH_ONCE = CACHE_DIR / "bench_once.json"
+
+# ---------- tiny utils ----------
+def read_env_var(key, default=""):
+    val = os.getenv(key)
+    if val is not None:
+        return val
+    envp = Path(".env")
+    if envp.exists():
+        for line in envp.read_text(encoding="utf-8").splitlines():
+            if "=" in line and not line.strip().startswith("#"):
+                k, v = line.split(":", 1) if ":" in line and "=" not in line else line.split("=", 1)
+                if k.strip() == key:
+                    return v.strip()
+    return default
+
+def detect_status():
+    """
+    Returns:
+      {"status":"ok|cpu|missing|error", "backend":"cuda|rocm|metal|cpu|unknown",
+       "model":"name", "details":"..."}
+    """
+    model_path = read_env_var("AGENT_MODEL", "gguf/llama-3.1-8b-q4_0.gguf")
+    backend = "unknown"
+    details = ""
+    try:
+        out = subprocess.check_output([sys.executable, "scripts/gpu_detect.py"], text=True, timeout=6)
+        for line in out.splitlines():
+            if line.startswith("Backend:"):
+                backend = line.split(":", 1)[1].strip()
+                break
+    except Exception as e:
+        details = f"gpu_detect error: {e}"
+
+    model_exists = Path(model_path).exists()
+    if not model_exists:
+        return {"status": "missing", "backend": backend, "model": Path(model_path).name, "details": "Model file not found"}
+
+    if backend in ("cuda", "rocm", "metal"):
+        return {"status": "ok", "backend": backend, "model": Path(model_path).name, "details": details or "accelerated"}
+    if backend in ("cpu", "unknown"):
+        return {"status": "cpu", "backend": backend, "model": Path(model_path).name, "details": details or "CPU mode"}
+    return {"status": "error", "backend": backend, "model": Path(model_path).name, "details": details or "unknown"}
+
+def play_ping(ok: bool, msg: str = ""):
+    script = Path("scripts/post_tune_ping.py")
+    if not script.exists():
+        return {"played": False, "reason": "post_tune_ping.py not found"}
+    try:
+        if ok:
+            subprocess.run([sys.executable, str(script)], check=False)
+        else:
+            subprocess.run([sys.executable, str(script), "--error", msg or "Triggered error ping"], check=False)
+        return {"played": True}
+    except Exception as e:
+        return {"played": False, "reason": str(e)}
+
+def speak_status_message():
+    stat = detect_status()
+    ctx = read_env_var("LLM_CTX", "n/a")
+    th  = read_env_var("LLM_THREADS", "n/a")
+    msg = (
+        f"Supersonic status {stat['status']}. "
+        f"Backend {stat['backend']}. "
+        f"Model {stat['model']}. "
+        f"Context {ctx}. Threads {th}."
+    )
+    script = Path("scripts/post_tune_ping.py")
+    if not script.exists():
+        return {"spoken": False, "reason": "post_tune_ping.py not found"}

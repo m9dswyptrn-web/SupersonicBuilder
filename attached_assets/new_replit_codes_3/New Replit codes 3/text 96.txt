@@ -1,0 +1,2 @@
+#theme-toggle { display:inline-flex; align-items:center; gap:.35rem; }
+#theme-label { font-size:.9rem; opacity:.85; }
