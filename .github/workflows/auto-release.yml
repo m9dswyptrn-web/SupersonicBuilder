@@ -103,3 +103,82 @@
         CHANGELOG.md
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  - name: Generate CHANGELOG for this version
+    run: |
+      VER="${{ github.ref_name }}"
+      [[ "$VER" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || VER="v${VER}"
+      tools/changelog.sh "$VER"
+      git config user.name "github-actions[bot]"
+      git config user.email "github-actions[bot]@users.noreply.github.com"
+      git add CHANGELOG.md
+      git commit -m "docs(changelog): update for $VER" || echo "No changelog changes"
+      git push
+
+  - name: Attach CHANGELOG to GitHub Release
+    uses: softprops/action-gh-release@v2
+    with:
+      files: |
+        CHANGELOG.md
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  - name: Generate CHANGELOG (Conventional Commits)
+    run: |
+      VER="${{ github.ref_name }}"
+      [[ "$VER" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || VER="v${VER}"
+      tools/changelog.sh "$VER"
+      git config user.name "github-actions[bot]"
+      git config user.email "github-actions[bot]@users.noreply.github.com"
+      git add CHANGELOG.md
+      git commit -m "docs(changelog): update for $VER" || echo "No changelog changes"
+      git push
+
+  - name: Attach CHANGELOG to GitHub Release
+    uses: softprops/action-gh-release@v2
+    with:
+      files: |
+        CHANGELOG.md
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  - name: Polish changelog (banner + remove empty "Other")
+    shell: bash
+    run: |
+      set -euo pipefail
+      # If Breaking Changes exist, prepend a warning banner to the file
+      if grep -q '^### Breaking Changes' CHANGELOG.md; then
+        printf "%s\n\n" "> **⚠️ Breaking changes in this release—read before updating.**" | cat - CHANGELOG.md > CHANGELOG.md.tmp
+        mv CHANGELOG.md.tmp CHANGELOG.md
+      fi
+      # Drop an 'Other' section if it has no bullet items
+      awk '
+        BEGIN{in_other=0; saw_bullet=0}
+        /^### Other$/ {flush(); in_other=1; saw_bullet=0; next}
+        /^### / {
+          if (in_other) {flush(); in_other=0}
+          print; next
+        }
+        {
+          if (in_other) {
+            if ($0 ~ /^[ \t]*([-*]|[0-9]+\.)[ \t]/) saw_bullet=1
+            buf = buf $0 ORS
+            next
+          }
+          print
+        }
+        END{ if (in_other) flush() }
+        function flush(){
+          if (saw_bullet) printf("### Other\n%s", buf)
+          buf=""
+        }
+      ' CHANGELOG.md > CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
+
+  - name: Publish GitHub Release with changelog body
+    uses: softprops/action-gh-release@v2
+    with:
+      body_path: CHANGELOG.md
+      files: |
+        CHANGELOG.md
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
