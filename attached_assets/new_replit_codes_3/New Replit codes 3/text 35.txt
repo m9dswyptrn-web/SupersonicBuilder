@@ -1,0 +1,87 @@
+  // NEW: download/print controls
+  const btnDlPNG = $("dp-download-png");
+  const btnDlPDF = $("dp-download-pdf");
+  const btnPrint = $("dp-print");
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+
+  // Download current canvas as PNG (PDF mode) or the <img> (PNG mode)
+  btnDlPNG?.addEventListener("click", async () => {
+    try {
+      if (!wrap || wrap.hidden) return;
+      if (!image.hidden) {
+        // PNG preview mode — fetch the image and re-save it (keeps a clean filename)
+        const res = await fetch(image.src, { cache: "no-store" });
+        const blob = await res.blob();
+        downloadBlob(blob, `${selMake.value}_${selModel.value}_${selYear.value}_${selDiag.value}.png`);
+        return;
+      }
+      if (canvas.hidden) return; // nothing visible
+      // PDF mode — export the current rendered page
+      // Use toBlob for memory-friendly save (works in modern browsers)
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        downloadBlob(blob, `${selMake.value}_${selModel.value}_${selYear.value}_${selDiag.value}_p${page}.png`);
+      }, "image/png", 1.0);
+    } catch (e) {
+      console.error(e); status("PNG download failed.");
+    }
+  });
+
+  // Download the original PDF (not just current page)
+  btnDlPDF?.addEventListener("click", async () => {
+    try {
+      // If we’re in PDF mode we already have pdfURL; otherwise build it explicitly
+      const url = (pdfDoc && pdfURL) ? pdfURL : buildURL(true).replace("format=png", "format=pdf");
+      const res = await fetch(url, { cache: "no-store" });
+      const blob = await res.blob();
+      downloadBlob(blob, `${selMake.value}_${selModel.value}_${selYear.value}_${selDiag.value}.pdf`);
+    } catch (e) {
+      console.error(e); status("PDF download failed.");
+    }
+  });
+
+  // Print (PDF preferred; fallback prints canvas/image)
+  btnPrint?.addEventListener("click", async () => {
+    try {
+      // Preferred: open the original PDF in a new tab and call print there (lets browser handle pagination)
+      const url = buildURL().replace("format=png", "format=pdf");
+      const w = window.open(url, "_blank", "noopener");
+      if (w) {
+        // Some browsers need a short delay before print
+        const kick = () => { try { w.focus(); w.print(); } catch {} };
+        setTimeout(kick, 600);
+        return;
+      }
+    } catch {}
+    // Fallback: print whatever is on screen (canvas or <img>)
+    const srcNode = (!image.hidden) ? image : (!canvas.hidden ? canvas : null);
+    if (!srcNode) return;
+    const html = `
+      <html>
+        <head><meta charset="utf-8"><title>Print</title>
+        <style>body{margin:0;background:#fff;text-align:center} img,canvas{max-width:100%;}</style>
+        </head>
+        <body>${srcNode.outerHTML || ""}</body>
+      </html>`;
+    const p = window.open("", "_blank");
+    if (!p) return;
+    p.document.open(); p.document.write(html); p.document.close();
+    p.focus(); setTimeout(() => { try { p.print(); } catch {} }, 400);
+  });
+
+  // Enable/disable based on selection like others
+  function updateActionStates() {
+    const ok = canAct();
+    [btnPrev, btnOpen, btnCopy, btnDlPNG, btnDlPDF, btnPrint].forEach(b => { if (b) b.disabled = !ok; });
+  }
+  selDiag?.addEventListener("change", () => { updateActionStates(); hidePreview(); });
+  updateActionStates();

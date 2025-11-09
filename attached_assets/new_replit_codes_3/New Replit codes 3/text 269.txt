@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+import os, subprocess, sys
+os.environ.setdefault("APP_MODE", "offline")
+# ensure the model path is set (can be changed in .env)
+os.environ.setdefault("AGENT_MODEL", "gguf/llama-3.1-8b-q4_0.gguf")
+subprocess.run([sys.executable, "desktop/webui/app.py"], check=False)

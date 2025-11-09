@@ -1,0 +1,11 @@
+# 1) Set your details (edit here or export envs)
+export GITHUB_OWNER="YOUR_GH_USERNAME_OR_ORG"
+export GITHUB_REPO="SonicBuilder"
+export GIT_AUTHOR_NAME="Christopher Elgin"
+export GIT_AUTHOR_EMAIL="you@example.com"
+export VISIBILITY="private"      # or "public"
+# If you're not using `gh auth login`, provide a PAT:
+# export GITHUB_TOKEN="ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+
+# 2) Run
+python3 deploy_github.py

@@ -1,0 +1,19 @@
+import os, hashlib, json
+from flask import jsonify
+
+CATALOG_TTL_HOURS = float(os.getenv("CATALOG_TTL_HOURS", "6"))  # e.g., 0.17=10min, 24=one day
+
+def _catalog_version():
+    try:
+        raw = DIAGRAM_INDEX.read_bytes()
+        return hashlib.sha1(raw).hexdigest()[:12]
+    except Exception:
+        return "unknown"
+
+@app.get("/api/diagrams/catalog-config")
+def diagrams_catalog_config():
+    """Frontend reads this if no meta tag is present (e.g., static hosting)."""
+    return jsonify({
+        "version": _catalog_version(),
+        "ttl_ms": int(CATALOG_TTL_HOURS * 60 * 60 * 1000),
+    }), 200

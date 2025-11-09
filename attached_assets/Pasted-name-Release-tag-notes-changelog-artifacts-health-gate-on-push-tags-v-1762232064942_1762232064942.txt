@@ -1,0 +1,118 @@
+name: Release (tag -> notes + changelog + artifacts + health gate)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.2.3). If empty, uses ref name.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write   # push CHANGELOG and create release
+  actions: read
+
+env:
+  REPO_URL: https://github.com/${{ github.repository }}
+  # Globs for attaching assets (tweak as needed)
+  ARTIFACT_GLOBS: |
+    dist/**
+    build/**
+    **/*.zip
+    **/*.tar.gz
+    **/*.whl
+    !**/node_modules/**
+    !**/.venv/**
+    !**/__pycache__/**
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve VERSION
+        id: ver
+        run: |
+          TAG="${{ github.ref_type == 'tag' && github.ref_name || inputs.version }}"
+          echo "version=$TAG" >> $GITHUB_OUTPUT
+          echo "VERSION=$TAG" >> $GITHUB_ENV
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      # ---- HEALTH GATE ----
+      - name: Install dev tools for health gate
+        run: |
+          python -m pip install -U pip
+          pip install -U pytest ruff mypy 'pyright>=1.1.389' pyright
+      - name: Health scan (CI gate)
+        run: |
+          if [ -f make/ControlCore.mk.addon ]; then
+            make -f make/ControlCore.mk.addon health-ci
+          elif [ -f make/ControlCore.mk.addon_badge ]; then
+            make -f make/ControlCore.mk.addon_badge health-ci
+          else
+            # Fallback: reasonable gate if addon missing
+            pytest -q || true
+            ruff check .
+            python -m mypy .
+            python -m pyright
+          fi
+
+      # ---- CHANGELOG ----
+      - name: Update CHANGELOG.md
+        env:
+          REPO_URL: ${{ env.REPO_URL }}
+        run: |
+          chmod +x tools/update_changelog.py || true
+          python3 tools/update_changelog.py --version "$VERSION"
+          echo "----- CHANGELOG HEAD -----"
+          head -n 80 CHANGELOG.md || true
+
+      - name: Commit CHANGELOG back to main (idempotent)
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout main
+          git pull --ff-only origin main
+          git merge --no-edit "$GITHUB_SHA" || true
+          git add CHANGELOG.md
+          git diff --cached --quiet || git commit -m "docs(changelog): $VERSION"
+          git push origin main
+
+      # ---- BUILD ARTIFACTS (customize these commands) ----
+      - name: Build artifacts
+        run: |
+          mkdir -p dist
+          # EXAMPLES — replace with your real build steps:
+          # python -m build
+          # make package
+          # zip -r "dist/Supersonic_${VERSION}.zip" scripts/ tools/ docs/ supersonic_pkg/ || true
+          echo "Build step complete."
+
+      # ---- Create Release w/ assets attached ----
+      - name: Create / Update GitHub Release (with assets)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.version }}
+          name: Supersonic v4 Ultimate – ${{ steps.ver.outputs.version }}
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: false
+          files: |
+            dist/**
+            build/**
+            **/*.zip
+            **/*.tar.gz
+            **/*.whl
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

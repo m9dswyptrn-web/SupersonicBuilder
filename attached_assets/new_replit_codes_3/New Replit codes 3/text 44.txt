@@ -1,0 +1,53 @@
+  btnZip?.addEventListener("click", async () => {
+    try {
+      if (selFmt.value !== "pdf") {
+        status("Switching to PDF for multi-page export…");
+      }
+      // Ensure we have the PDF loaded
+      const url = buildURL(true).replace("format=png", "format=pdf");
+      if (!pdfDoc || !pdfURL || pdfURL !== url) {
+        wrap.hidden = false; showSpinner(true);
+        pdfURL = url; await loadPDF(pdfURL);
+      }
+
+      const zip = new JSZip();
+      const surface = canvas.parentElement;
+      const sw = surface.clientWidth || 900;
+      const sh = surface.clientHeight || Math.round(window.innerHeight * 0.6);
+
+      // Render each page at width-fit scale (nice quality, not insane size)
+      const tmpCanvas = document.createElement("canvas");
+      const tctx = tmpCanvas.getContext("2d");
+
+      for (let p = 1; p <= pdfDoc.numPages; p++) {
+        status(`Rendering page ${p}/${pdfDoc.numPages}…`);
+        const pdfPage = await pdfDoc.getPage(p);
+
+        // width-fit baseline; bump a bit for crispness
+        const v1 = pdfPage.getViewport({ scale: 1, rotation });
+        const fitW = sw / v1.width;
+        const exportScale = fitW * 1.5;  // 1.5x width-fit ≈ crisp PNG without huge files
+        const vp = pdfPage.getViewport({ scale: exportScale, rotation });
+
+        tmpCanvas.width = vp.width;
+        tmpCanvas.height = vp.height;
+        await pdfPage.render({ canvasContext: tctx, viewport: vp }).promise;
+
+        const blob = await new Promise(res => tmpCanvas.toBlob(res, "image/png", 1.0));
+        const arrBuf = await blob.arrayBuffer();
+        const fname = `${selMake.value}_${selModel.value}_${selYear.value}_${selDiag.value}_p${String(p).padStart(2,"0")}.png`;
+        zip.file(fname, arrBuf);
+      }
+
+      status("Zipping…");
+      const zipBlob = await zip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 9 } });
+      const base = `${selMake.value}_${selModel.value}_${selYear.value}_${selDiag.value}`;
+      downloadBlob(zipBlob, `${base}_all_pages.zip`);
+      status("ZIP ready.");
+      showSpinner(false);
+    } catch (e) {
+      console.error(e);
+      showSpinner(false);
+      status("ZIP export failed.");
+    }
+  });

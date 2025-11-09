@@ -1,0 +1,3 @@
+![Status Banner](https://img.shields.io/badge/Supersonic-Ready_for_Production-1abc9c)
+[![Build & Release](https://github.com/<you>/<repo>/actions/workflows/release-autopublish.yml/badge.svg)](https://github.com/<you>/<repo>/actions/workflows/release-autopublish.yml)
+[Open Last Known Good](https://<you>.github.io/<repo>/latest/) <!-- if your workflow writes latest/ symlink -->

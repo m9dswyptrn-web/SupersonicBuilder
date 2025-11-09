@@ -1,0 +1,3 @@
+cd SonicBuilder
+chmod +x install_sonicbuilder_dark.sh
+./install_sonicbuilder_dark.sh

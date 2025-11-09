@@ -1,0 +1,120 @@
+name: Build Appendix C
+
+on:
+  push:
+    paths:
+      - 'Appendix/C_I2S_Integration/PCB_Photos/**'
+      - 'Appendix/C_I2S_Integration/Tap_Diagrams/**'
+      - 'scripts/i2s_*.py'
+      - 'scripts/appendix_c_*.py'
+      - 'make_patches/MAKEFRAG.onebutton'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version string (e.g., v2.0.9)'
+        required: false
+        default: 'v2.0.9'
+
+permissions:
+  contents: write
+
+jobs:
+  setup-url:
+    uses: ./.github/workflows/repo-url-setup.yml
+
+  build-appendix-c:
+    runs-on: ubuntu-latest
+    needs: [setup-url]
+    env:
+      SB_REPO_URL: ${{ needs.setup-url.outputs.SB_REPO_URL }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install reportlab pypdf pillow qrcode pdf2image
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -f VERSION ]; then
+            VERSION=$(cat VERSION | tr -d '\n' | sed 's/^/v/' | sed 's/^vv/v/')
+          else
+            VERSION="${{ github.event.inputs.version || 'v2.0.9' }}"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Using version: $VERSION"
+
+      - name: Index Appendix C files
+        run: |
+          python scripts/i2s_index.py --root Appendix/C_I2S_Integration
+          echo "✅ Indexed files"
+
+      - name: Generate QR gallery
+        run: |
+          python scripts/i2s_qr.py
+          echo "✅ Generated QR gallery"
+
+      - name: Generate 2-up QR sheet
+        run: |
+          python scripts/i2s_qr_2up.py
+          echo "✅ Generated 2-up QR sheet"
+
+      - name: Generate Appendix C index PDF
+        run: |
+          python scripts/appendix_c_index_pdf.py \
+            --csv Appendix/C_I2S_Integration/03_Photo_Index.csv \
+            --out Appendix/C_I2S_Integration/Appendix_C_I2S_Index.pdf \
+            --version ${{ steps.version.outputs.VERSION }}
+          echo "✅ Generated index PDF"
+
+      - name: List generated files
+        run: |
+          echo "=== Generated Appendix C Files ==="
+          ls -lh Appendix/C_I2S_Integration/*.{csv,pdf,json,txt} 2>/dev/null || true
+
+      - name: Upload Appendix C artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: appendix-c-${{ steps.version.outputs.VERSION }}
+          path: |
+            Appendix/C_I2S_Integration/03_Photo_Index.csv
+            Appendix/C_I2S_Integration/QR_Index.pdf
+            Appendix/C_I2S_Integration/QR_Index_2UP.pdf
+            Appendix/C_I2S_Integration/Appendix_C_I2S_Index.pdf
+            Appendix/C_I2S_Integration/metadata.json
+            Appendix/C_I2S_Integration/Auto_Notes.txt
+          retention-days: 90
+
+      - name: Create build summary
+        run: |
+          echo "## Appendix C Build Complete 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Base URL:** ${{ env.SB_REPO_URL }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Generated Files" >> $GITHUB_STEP_SUMMARY
+          echo "- 03_Photo_Index.csv" >> $GITHUB_STEP_SUMMARY
+          echo "- QR_Index.pdf (dark mode QR gallery)" >> $GITHUB_STEP_SUMMARY
+          echo "- QR_Index_2UP.pdf (2-up laminated sheet)" >> $GITHUB_STEP_SUMMARY
+          echo "- Appendix_C_I2S_Index.pdf (professional index)" >> $GITHUB_STEP_SUMMARY
+          echo "- metadata.json" >> $GITHUB_STEP_SUMMARY
+          echo "- Auto_Notes.txt" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f Appendix/C_I2S_Integration/metadata.json ]; then
+            FILE_COUNT=$(python -c "import json; print(json.load(open('Appendix/C_I2S_Integration/metadata.json'))['count'])" 2>/dev/null || echo "N/A")
+            echo "**Files Indexed:** $FILE_COUNT" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Artifacts uploaded and ready for download!" >> $GITHUB_STEP_SUMMARY

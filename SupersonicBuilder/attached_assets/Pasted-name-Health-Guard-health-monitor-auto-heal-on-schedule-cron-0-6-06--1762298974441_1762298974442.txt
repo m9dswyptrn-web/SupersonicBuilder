@@ -1,0 +1,134 @@
+name: Health Guard (/health monitor + auto-heal)
+
+on:
+  schedule:
+    - cron: "0 6 * * *"      # 06:00 UTC ≈ 12:00 AM CST (CST/CDT)
+  workflow_dispatch:
+    inputs:
+      min_free_mb:
+        description: "Min free disk (MB)"
+        required: false
+        default: "500"
+      max_uptime_h:
+        description: "Max uptime (hours) before warn"
+        required: false
+        default: "168"
+      auto_heal:
+        description: "Attempt auto-heal via POST /sync/restart on issues"
+        required: false
+        default: "true"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+      DOCTOR_KEY:   ${{ secrets.DOCTOR_KEY }}
+      SLACK_WEBHOOK_URL:   ${{ secrets.SLACK_WEBHOOK_URL }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+    steps:
+      - name: Fetch /health (baseline)
+        id: health0
+        run: |
+          [ -n "${APP_BASE_URL}" ] || (echo "APP_BASE_URL secret missing" && exit 1)
+          curl -fsS -H "X-Doctor-Key: ${DOCTOR_KEY}" "${APP_BASE_URL}/health" > health0.json || echo '{}' > health0.json
+          cat health0.json
+
+      - name: Evaluate thresholds
+        id: eval
+        env:
+          L_FREE_MB: "${{ github.event.inputs.min_free_mb || '500' }}"
+          L_UP_H:    "${{ github.event.inputs.max_uptime_h || '168' }}"
+        run: |
+          python3 - <<'PY'
+import json, os, sys
+j = json.load(open("health0.json"))
+status = j.get("status", "unknown")
+disk = j.get("disk", {})
+free = int(disk.get("free", 0))//(1024*1024)
+uptime = float(j.get("uptime_sec", 0))/3600.0
+checks = j.get("checks", {})
+issues = []
+if status != "ok": issues.append(f"status={status}")
+if free < int(os.environ.get("L_FREE_MB","500")): issues.append(f"low_disk={free}MB")
+if uptime > float(os.environ.get("L_UP_H","168")): issues.append(f"uptime_h={uptime:.1f}")
+if not checks.get("git_present", False): issues.append("git_missing")
+if not checks.get("make_present", False): issues.append("make_missing")
+open("issues.txt","w").write("\n".join(issues))
+print("Issues:", issues)
+sys.exit(2 if issues else 0)
+PY
+        continue-on-error: true
+
+      - name: Upload baseline health
+        uses: actions/upload-artifact@v4
+        with:
+          name: health-baseline-${{ github.run_id }}
+          path: health0.json
+
+      # ---------- AUTO-HEAL (conditional) ----------
+      - name: Auto-heal (POST /sync/restart + backoff rechecks)
+        id: heal
+        if: ${{ steps.eval.outcome == 'failure' && (github.event.inputs.auto_heal == 'true' || github.event_name == 'schedule') }}
+        env:
+          APP_BASE_URL: ${{ env.APP_BASE_URL }}
+          DOCTOR_KEY:   ${{ env.DOCTOR_KEY }}
+        run: |
+          set -e
+          echo "Attempting auto-heal…"
+          curl -fsS -X POST -H "X-Doctor-Key: ${DOCTOR_KEY}" "${APP_BASE_URL}/sync/restart" -o heal.json || echo '{}' > heal.json
+          cat heal.json || true
+          # Backoff windows (s)
+          for DELAY in 15 45 90; do
+            echo "Waiting ${DELAY}s…"; sleep ${DELAY}
+            curl -fsS -H "X-Doctor-Key: ${DOCTOR_KEY}" "${APP_BASE_URL}/health" > "health_recheck_${DELAY}.json" || echo '{}' > "health_recheck_${DELAY}.json"
+            STATUS=$(jq -r '.status // "unknown"' "health_recheck_${DELAY}.json")
+            echo "Recheck(${DELAY}s): status=${STATUS}"
+            if [ "${STATUS}" = "ok" ]; then
+              echo "healed=true" >> $GITHUB_OUTPUT
+              echo "delay=${DELAY}" >> $GITHUB_OUTPUT
+              break
+            fi
+          done
+          true
+
+      - name: Upload recheck snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: health-rechecks-${{ github.run_id }}
+          path: |
+            heal.json
+            health_recheck_15.json
+            health_recheck_45.json
+            health_recheck_90.json
+          if-no-files-found: ignore
+
+      # ---------- NOTIFY ----------
+      - name: Notify Slack (auto-heal result)
+        if: ${{ env.SLACK_WEBHOOK_URL != '' && steps.eval.outcome == 'failure' }}
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "${{ steps.heal.outputs.healed }}" = "true" ]; then
+            MSG="🛠️ *Auto-heal succeeded* after ${{ steps.heal.outputs.delay }}s — <${RUN_URL}|Open run>"
+          else
+            MSG="🚨 *Health degraded* and auto-heal did not confirm recovery — <${RUN_URL}|Open run>"
+          fi
+          curl -fsS -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"${MSG}\"}" \
+            "$SLACK_WEBHOOK_URL"
+
+      - name: Notify Discord (auto-heal result)
+        if: ${{ env.DISCORD_WEBHOOK_URL != '' && steps.eval.outcome == 'failure' }}
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "${{ steps.heal.outputs.healed }}" = "true" ]; then
+            CONTENT="🛠️ **Auto-heal succeeded** after ${{ steps.heal.outputs.delay }}s — <${RUN_URL}>"
+          else
+            CONTENT="🚨 **Health degraded** and auto-heal did not confirm recovery — <${RUN_URL}>"
+          fi
+          curl -fsS -H "Content-Type: application/json" -X POST \
+            -d "$(jq -n --arg c "$CONTENT" '{content:$c}')" \
+            "$DISCORD_WEBHOOK_URL"

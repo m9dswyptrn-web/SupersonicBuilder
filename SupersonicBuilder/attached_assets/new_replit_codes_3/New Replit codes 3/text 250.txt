@@ -1,0 +1,4 @@
+python3 docs_footer_bootstrap.py
+git add -A
+git commit -m "Docs: footer with build time + commit + latest release"
+git push

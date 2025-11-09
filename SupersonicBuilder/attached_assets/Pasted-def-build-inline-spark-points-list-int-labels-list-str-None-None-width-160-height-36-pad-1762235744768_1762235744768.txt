@@ -1,0 +1,61 @@
+def build_inline_spark(points: list[int], labels: list[str] | None = None, width=160, height=36, pad=4) -> str:
+    """
+    Render a tiny sparkline with per-point <title> tooltips.
+    points: list of sizes in BYTES, oldest -> newest.
+    labels: parallel list of release tags (oldest -> newest); optional.
+    """
+    # guard
+    if not points:
+        points = [0]
+    n = len(points)
+    if not labels:
+        labels = [f"#{i+1}" for i in range(n)]
+    else:
+        # keep only the last N labels to match points length
+        if len(labels) > n:
+            labels = labels[-n:]
+        elif len(labels) < n:
+            # left-pad with blanks if labels shorter
+            labels = ([""] * (n - len(labels))) + labels
+
+    lo, hi = min(points), max(points)
+    span = max(1, hi - lo)
+
+    xs = [pad + (width - 2*pad) * (i / max(1, n-1)) for i in range(n)]
+    ys = [height - pad - (p - lo) * (height - 2*pad) / span for p in points]
+    path_d = " ".join([f"{'M' if i==0 else 'L'}{xs[i]:.2f},{ys[i]:.2f}" for i in range(n)])
+    area_d = f"M{xs[0]:.2f},{height-pad:.2f} " + " ".join([f"L{xs[i]:.2f},{ys[i]:.2f}" for i in range(n)]) + f" L{xs[-1]:.2f},{height-pad:.2f} Z"
+
+    # helper: human bytes
+    def human(n:int)->str:
+        u=["B","KB","MB","GB","TB"]; i=0; f=float(n)
+        while f>=1024 and i<len(u)-1: f/=1024; i+=1
+        return f"{f:.2f} {u[i]}"
+
+    # circles with per-point <title> tooltips
+    circles = []
+    for i,(x,y) in enumerate(zip(xs, ys)):
+        size_txt = "not present" if points[i] == 0 else human(points[i])
+        tag = labels[i] or f"#{i+1}"
+        title = f"{tag} — {size_txt}"
+        circles.append(
+            f'<g><circle cx="{x:.2f}" cy="{y:.2f}" r="2.8" fill="#86c5ff" stroke="#e6eef8" stroke-width="1">'
+            f'<title>{title}</title></circle></g>'
+        )
+
+    svg = f'''<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}"
+  xmlns="http://www.w3.org/2000/svg" role="img" aria-label="artifact history">
+  <defs>
+    <linearGradient id="ga" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0%" stop-color="#4ea8ff" stop-opacity="0.36"/>
+      <stop offset="100%" stop-color="#4ea8ff" stop-opacity="0.06"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="{width}" height="{height}" fill="transparent"/>
+  <path d="{area_d}" fill="url(#ga)"/>
+  <path d="{path_d}" fill="none" stroke="#86c5ff" stroke-width="2"/>
+  {''.join(circles)}
+</svg>'''
+    import base64
+    encoded = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+    return f'<img alt="history" src="data:image/svg+xml;base64,{encoded}" style="display:block;opacity:.95"/>'

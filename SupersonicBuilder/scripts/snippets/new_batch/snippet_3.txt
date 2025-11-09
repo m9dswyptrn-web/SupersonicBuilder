@@ -1,0 +1,8 @@
+# Full build + manifest (one command)
+bash /mnt/data/build.sh --render-manifest
+
+# Manifest only (skip build)
+bash /mnt/data/build.sh --manifest-only
+
+# Pass your usual flags through to your builder and also make the manifest
+bash /mnt/data/build.sh --mode release --zip-group-only --render-manifest

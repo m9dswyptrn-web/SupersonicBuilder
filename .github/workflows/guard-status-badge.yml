@@ -1,0 +1,35 @@
+name: Guard Status Badge
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}
+  workflow_run:
+    workflows: ["Post-Release Guard"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  badge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Guard Status badge JSON
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          python3 scripts/guards/guard_status_badge.py
+      - name: Commit badge JSON
+        run: |
+          if ! git diff --quiet -- docs/badges/guard_status.json; then
+            git config user.name  "sonicbuilder-bot"
+            git config user.email "sonicbuilder@users.noreply.github.com"
+            git add docs/badges/guard_status.json
+            git commit -m "chore(badge): update guard status"
+            git push
+          else
+            echo "No badge change."

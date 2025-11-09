@@ -1,0 +1,22 @@
+function showRestart(show=true) {
+  if (btnRestart) btnRestart.hidden = !show;
+  if (lblRestart) {
+    lblRestart.textContent = lastLabelText();
+    lblRestart.hidden = !show;
+  }
+}
+function rememberState() {
+  LAST = {
+    has: true,
+    fmt: selFmt.value,
+    url: buildURL(),                  // no cache-bust
+    make: selMake.value, model: selModel.value, year: selYear.value, id: selDiag.value,
+    variant: selVar.value,
+    page, scale, rotation
+  };
+  showRestart(true);
+}
+function forgetState() {
+  LAST.has = false;
+  showRestart(false);
+}

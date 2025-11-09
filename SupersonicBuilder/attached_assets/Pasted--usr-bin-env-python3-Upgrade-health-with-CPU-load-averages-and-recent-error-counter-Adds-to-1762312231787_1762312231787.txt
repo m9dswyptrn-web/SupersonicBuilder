@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""
+Upgrade /health with CPU load averages and recent error counter.
+
+Adds to /health JSON:
+  "cpu_count": <int>,
+  "loadavg": {
+      "raw": [l1, l5, l15],
+      "per_cpu": [l1/cpus, l5/cpus, l15/cpus]
+  },
+  "errors_last_5m": <int>,        # parsed from supersonic.log
+  "log_file": "<path>"
+
+Respects env:
+  SUPERSONIC_LOG_FILE  (default: supersonic.log)
+  HEALTH_ERROR_PATTERNS (regex, default: "(?i)\\bERROR\\b|\\bTraceback\\b")
+"""
+
+import os, re, shutil, datetime
+from pathlib import Path
+
+ROOT   = Path(os.getcwd())
+SERVER = ROOT / "serve_pdfs.py"
+STAMP  = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+
+def backup(p: Path):
+    dst = p.with_suffix(p.suffix + f".bak.{STAMP}")
+    shutil.copy2(p, dst)
+    print(f"🧾 Backup => {dst.name}")
+    return dst
+
+PATCH_SNIPPET = r"""
+    # --- Supersonic: CPU + error metrics extension ---
+    _cpu_count = 0
+    try:
+        import os as _os
+        _cpu_count = max(1, (_os.cpu_count() or 1))
+    except Exception:
+        _cpu_count = 1
+
+    _load_raw = None
+    _load_per_cpu = None
+    try:
+        import os as _os
+        if hasattr(_os, "getloadavg"):
+            _l1, _l5, _l15 = _os.getloadavg()
+            _load_raw = [_l1, _l5, _l15]
+            _load_per_cpu = [round(_l1/_cpu_count, 4), round(_l5/_cpu_count, 4), round(_l15/_cpu_count, 4)]
+    except Exception:
+        _load_raw = None
+        _load_per_cpu = None
+
+    # Count recent errors from log (last ~5 minutes by timestamp, best-effort)
+    _log_path = _os.getenv("SUPERSONIC_LOG_FILE", "supersonic.log")
+    _err_rx = _os.getenv("HEALTH_ERROR_PATTERNS", r"(?i)\\bERROR\\b|\\bTraceback\\b")
+    _err_re = None
+    try:
+        _err_re = __import__("re").compile(_err_rx)
+    except Exception:
+        _err_re = None
+
+    _errors_last_5m = 0
+    try:
+        import time as _time
+        _now = _time.time()
+        # Quick scan of the tail of the file (avoid loading huge logs)
+        _max_bytes = 200_000  # ~200KB from end
+        with open(_log_path, "r", encoding="utf-8", errors="replace") as _f:
+            _f.seek(0, _os.SEEK_END)
+            _size = _f.tell()
+            _pos = max(0, _size - _max_bytes)
+            _f.seek(_pos)
+            _chunk = _f.read()
+        # Try to parse timestamps in the standard logging format "YYYY-MM-DD HH:MM:SS"
+        _cutoff = _now - 300.0  # 5 minutes
+        _ts_re = __import__("re").compile(r"(20\\d\\d-\\d\\d-\\d\\d \\d\\d:\\d\\d:\\d\\d)")
+        _from_ts = None
+        for _ln in _chunk.splitlines():
+            if _err_re and _err_re.search(_ln):
+                # If line has a timestamp, only count if newer than cutoff; else count anyway (best-effort)
+                _m = _ts_re.search(_ln)
+                if _m:
+                    try:
+                        import datetime as _dt, time as _time
+                        _dt_obj = _dt.datetime.strptime(_m.group(1), "%Y-%m-%d %H:%M:%S")
+                        _t = _time.mktime(_dt_obj.timetuple())
+                        if _t >= _cutoff:
+                            _errors_last_5m += 1
+                    except Exception:
+                        _errors_last_5m += 1
+                else:
+                    _errors_last_5m += 1
+    except FileNotFoundError:
+        _errors_last_5m = 0
+    except Exception:
+        # leave metric absent if parsing fails badly
+        pass
+    # --- end Supersonic metrics extension ---
+"""
+
+def inject_metrics_into_health(src: str) -> str:
+    """
+    Locate the enhanced /health function (from the previous upgrade) and
+    inject the metrics snippet before 'return jsonify({...})', then include
+    the new fields in the returned dict.
+    """
+    # Find the /health route definition
+    import re
+    # match def supersonic_health(): block
+    rx_def = re.compile(r"@app\.route\(\s*[\"']\/health[\"']\s*\)\s*def\s+supersonic_health\s*\(\s*\)\s*:\s*(?:\n|\r\n)", re.MULTILINE)
+    m = rx_def.search(src)
+    if not m:
+        print("❌ Could not find supersonic_health() route. Run previous health upgrader first.")
+        return src
+
+    start = m.end()  # position after function signature line
+    # Find the first 'return jsonify({' within this function scope
+    rx_ret = re.compile(r"return\s+jsonify\s*\(\s*\{", re.MULTILINE)
+    mret = rx_ret.search(src, pos=start)
+    if not mret:
+        print("❌ Could not locate return jsonify({ inside supersonic_health().")
+        return src
+
+    # Insert the metrics snippet just before the 'return jsonify({'
+    patched = src[:mret.start()] + PATCH_SNIPPET + src[mret.start():]
+
+    # Now add fields into the JSON dict: cpu_count, loadavg, errors_last_5m, log_file
+    # We’ll carefully insert after opening '{' of jsonify to avoid heavy parsing.
+    insert_fields = (
+        '        "cpu_count": int(_cpu_count),\n'
+        '        "loadavg": {\n'
+        '            "raw": _load_raw,\n'
+        '            "per_cpu": _load_per_cpu\n'
+        '        },\n'
+        '        "errors_last_5m": int(_errors_last_5m),\n'
+        '        "log_file": _log_path,\n'
+    )
+    # Find the exact place (the '{' we matched)
+    brace_pos = patched.find("{", mret.start())
+    if brace_pos != -1:
+        patched = patched[:brace_pos+1] + "\n" + insert_fields + patched[brace_pos+1:]
+    else:
+        print("⚠️ Could not find opening '{' of jsonify dict to insert fields cleanly; leaving snippet only.")
+    return patched
+
+def main():
+    if not SERVER.exists():
+        print("❌ serve_pdfs.py not found.")
+        return
+    backup(SERVER)
+    src = SERVER.read_text(encoding="utf-8", errors="ignore")
+    out = inject_metrics_into_health(src)
+    if out != src:
+        SERVER.write_text(out, encoding="utf-8")
+        print("✅ /health upgraded with CPU load + recent error metrics.")
+        print("   Env overrides: SUPERSONIC_LOG_FILE, HEALTH_ERROR_PATTERNS")
+        print("\n🧪 Try:")
+        print("  curl -s -H \"X-Doctor-Key: $DOCTOR_KEY\" $APP_URL/health | jq .")
+    else:
+        print("⚠️ No changes applied (pattern not found).")
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,86 @@
+name: Auto-mint CoA on Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  setup-url:
+    uses: ./.github/workflows/repo-url-setup.yml
+
+  mint-coa:
+    needs: [setup-url]
+    runs-on: ubuntu-latest
+    env:
+      SB_REPO_URL: ${{ needs.setup-url.outputs.SB_REPO_URL }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install reportlab qrcode pillow
+      
+      - name: Read VERSION.txt
+        id: version
+        run: |
+          VERSION=$(head -n1 VERSION.txt | cut -d':' -f2 | xargs)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Using version: $VERSION"
+      
+      - name: Generate CoA
+        run: |
+          cd tools/CoA_Generator
+          python generate_coa.py \
+            --auto-increment \
+            --version "${{ steps.version.outputs.version }}" \
+            --customer "GitHub Release ${{ github.event.release.tag_name }}" \
+            --date "$(date +%Y-%m-%d)"
+        
+      - name: Get generated serial
+        id: serial
+        run: |
+          SERIAL=$(tail -1 tools/CoA_Generator/CoA_Log.csv | cut -d',' -f1)
+          echo "serial=$SERIAL" >> $GITHUB_OUTPUT
+          echo "Generated CoA #$SERIAL"
+      
+      - name: Commit and push CoA
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add tools/CoA_Generator/CoA_Log.csv
+          git add tools/CoA_Generator/output/
+          git commit -m "chore(coa): auto-mint CoA #${{ steps.serial.outputs.serial }} for release ${{ github.event.release.tag_name }}"
+          git push
+      
+      - name: Upload CoA to release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: tools/CoA_Generator/output/SonicBuilder_CoA_#*.pdf
+      
+      - name: Comment on release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.repos.createReleaseComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: context.payload.release.id,
+              body: `✅ **Certificate of Authenticity Generated**\n\n` +
+                    `Serial: ${{ steps.serial.outputs.serial }}\n` +
+                    `Version: ${{ steps.version.outputs.version }}\n` +
+                    `QR URL: ${process.env.SB_REPO_URL}\n` +
+                    `Date: ${new Date().toISOString().split('T')[0]}\n\n` +
+                    `Certificate attached to release assets.`
+            })

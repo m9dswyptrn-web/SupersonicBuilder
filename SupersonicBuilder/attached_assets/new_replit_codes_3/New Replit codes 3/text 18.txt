@@ -1,0 +1,8 @@
+#diagram-picker .dp-row { display:flex; gap:.75rem; align-items:center; margin:.5rem 0; }
+#diagram-picker label { width:90px; color: var(--muted, #9aa3af); }
+#diagram-picker select { flex:1; padding:.4rem .5rem; }
+#diagram-picker .dp-sep { border:0; border-top:1px solid #2b2f36; margin:.75rem 0; }
+#diagram-picker .dp-actions { display:flex; gap:.5rem; margin-top:.5rem; }
+#diagram-picker .btn { padding:.5rem .75rem; cursor:pointer; }
+#diagram-picker .btn.primary { font-weight:600; }
+#dp-status { margin-top:.5rem; font-size:.9rem; }

@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+import argparse, re, html
+from pathlib import Path
+
+CSS = r"""
+:root {
+  --bg: #0b0d10;
+  --panel: #12151a;
+  --ink: #e7eaf1;
+  --muted: #a9b2c0;
+  --accent: #00d1d1; /* cyan */
+  --accent2: #ffc857; /* amber */
+  --border: #1c222a;
+  --code-bg: #0f1115;
+}
+/* Light theme vars */
+:root[data-theme="light"] {
+  --bg: #fafafa;
+  --panel: #ffffff;
+  --ink: #121212;
+  --muted: #2e3440;
+  --accent: #006d6d;
+  --accent2: #b88000;
+  --border: #e6e6e6;
+  --code-bg: #f5f7fb;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+}
+header {
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  color: var(--ink);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+header strong { letter-spacing: 0.3px; }
+.badge {
+  display: inline-block;
+  background: rgba(0, 209, 209, 0.12);
+  color: var(--accent);
+  padding: 2px 8px;
+  border: 1px solid rgba(0, 209, 209, 0.35);
+  border-radius: 12px;
+  font-size: 12px;
+  margin-left: 8px;
+}
+:root[data-theme="light"] .badge {
+  background: rgba(0, 109, 109, 0.08);
+  border-color: rgba(0, 109, 109, 0.25);
+}
+.spacer { flex: 1 1 auto; }
+.action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  border-radius: 16px;
+}
+main { max-width: 980px; margin: 24px auto; padding: 0 16px; }
+h1, h2, h3 { color: var(--ink); }
+h1 { border-left: 4px solid var(--accent); padding-left: 10px; }
+h2 { margin-top: 24px; border-left: 3px solid var(--accent2); padding-left: 10px; }
+p { color: var(--muted); }
+ul { padding-left: 22px; }
+li { margin: 4px 0; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre {
+  background: var(--code-bg);
+  color: var(--ink);
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+pre { padding: 12px; overflow: auto; }
+hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
+.footer {
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  margin-top: 32px;
+  padding-top: 12px;
+  font-size: 12px;
+}
+
+/* Print: force pure black-on-white, hide chrome */
+@media print {
+  :root, :root[data-theme="light"] {
+    --bg: #ffffff !important;
+    --panel: #ffffff !important;
+    --ink: #000000 !important;
+    --muted: #000000 !important;
+    --accent: #000000 !important;
+    --accent2: #000000 !important;
+    --border: #000000 !important;
+    --code-bg: #f2f2f2 !important;
+  }
+  body { background: #ffffff !important; color: #000000 !important; }
+  header, .footer { display: none !important; }
+  a { color: #000 !important; text-decoration: underline !important; }
+  code, pre { background: #f2f2f2 !important; color: #000 !important; border: 1px solid #999 !important; }
+  h1 { border-left: 4px solid #000 !important; }
+  h2 { border-left: 3px solid #000 !important; }
+}
+"""
+
+SCRIPT = r"""
+(function(){
+  const root = document.documentElement;
+  const themeKey = 'sb-diff-theme';
+
+  function currentMode(){
+    return (root.getAttribute('data-theme') === 'light') ? 'light' : 'dark';
+  }
+  function apply(mode){
+    if(mode==='light'){ root.setAttribute('data-theme','light'); }
+    else { root.removeAttribute('data-theme'); }
+    try { localStorage.setItem(themeKey, mode); } catch(e){}
+    const lab = document.getElementById('sb-toggle-label');
+    if (lab) lab.textContent = (mode==='light') ? 'Light' : 'Dark';
+  }
+
+  // Initialize theme
+  let mode = 'dark';
+  try {
+    const saved = localStorage.getItem(themeKey);
+    if(saved==='light' || saved==='dark') mode = saved;
+    else if(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) mode = 'light';
+  } catch(e){}
+  apply(mode);
+
+  // Toggle action
+  const tgl = document.getElementById('sb-toggle');
+  if (tgl) tgl.addEventListener('click', function(){
+    mode = (currentMode()==='light') ? 'dark' : 'light';
+    apply(mode);
+  });
+
+  // Print action: force Light for print, then restore after printing
+  const prn = document.getElementById('sb-print');
+  if (prn) prn.addEventListener('click', function(){
+    const before = currentMode();
+    // Force light for print
+    apply('light');
+    // After print restore original mode
+    const restore = function(){
+      apply(before);
+      window.removeEventListener('afterprint', restore);
+    };
+    window.addEventListener('afterprint', restore, { once: true });
+    // Give the browser a tick to apply light theme, then print
+    setTimeout(() => window.print(), 20);
+  });
+})();
+"""
+
+def md_to_html(md: str) -> str:
+    lines = md.splitlines()
+    out = []
+    in_list = False
+    for ln in lines:
+        if ln.startswith("# "):
+            if in_list: out.append("</ul>"); in_list=False
+            out.append(f"<h1>{html.escape(ln[2:].strip())}</h1>")
+        elif ln.startswith("## "):
+            if in_list: out.append("</ul>"); in_list=False
+            anchor = re.sub(r'[^a-z0-9\-]+', '-', ln[3:].strip().lower())
+            out.append(f'<h2 id="{anchor}">{html.escape(ln[3:].strip())}</h2>')
+        elif ln.startswith("- "):
+            if not in_list:
+                out.append("<ul>"); in_list=True
+            out.append(f"<li>{html.escape(ln[2:].strip())}</li>")
+        elif ln.startswith("> "):
+            if in_list: out.append("</ul>"); in_list=False
+            out.append(f'<blockquote>{html.escape(ln[2:].strip())}</blockquote>')
+        elif ln.strip() == "":
+            if in_list: out.append("</ul>"); in_list=False
+            out.append("<br/>")
+        else:
+            if in_list: out.append("</ul>"); in_list=False
+            out.append(f"<p>{html.escape(ln)}</p>")
+    if in_list: out.append("</ul>")
+    return "\n".join(out)
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--md", required=True)
+    ap.add_argument("--out", default="")
+    args = ap.parse_args()
+
+    md_path = Path(args.md)
+    if not md_path.exists():
+        raise SystemExit(f"[x] Markdown file not found: {md_path}")
+    html_path = Path(args.out) if args.out else md_path.with_suffix(".html")
+
+    md = md_path.read_text(encoding="utf-8")
+    body = md_to_html(md)
+    title = "Pre-publish Diff - " + md_path.stem
+    doc = f"""<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<style>{CSS}</style>
+<body>
+<header>
+  <strong>Pre-publish Diff</strong>
+  <span class="badge">{html.escape(md_path.stem)}</span>
+  <span class="spacer"></span>
+  <span class="action" id="sb-toggle">Theme: <b id="sb-toggle-label"></b></span>
+  <span class="action" id="sb-print">Print</span>
+</header>
+<main>
+{body}
+<div class="footer">Generated by SonicBuilder diff renderer</div>
+</main>
+<script>{SCRIPT}</script>
+</body></html>
+"""
+    html_path.write_text(doc, encoding="utf-8")
+    print(str(html_path))
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,13 @@
+# MAKEFRAG.two_up_qr — include from your Makefile:  -include MAKEFRAG.two_up_qr
+# Targets for two-up raster and QR gallery using SB_REPO_URL
+
+SB_REPO_URL ?= https://08abbd3d-777f-4af5-b274-466c8cc1c573-00-1ko1zjf07c39i.riker.replit.dev
+PY ?= python
+
+two_up:
+	$(PY) scripts/two_up_raster.py --in QuickStart_Field_Card.pdf --out dist/two_up_field_card.pdf --qr
+
+qr_gallery:
+	$(PY) scripts/qr_gallery.py --out Parts_Index/QR_Gallery.pdf
+
+.PHONY: two_up qr_gallery

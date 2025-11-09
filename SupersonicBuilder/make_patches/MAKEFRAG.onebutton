@@ -1,0 +1,14 @@
+# MAKEFRAG.onebutton — One-button build pipeline
+PY ?= python
+all: i2s_index i2s_qr i2s_qr_2up appendix_pdf stamp_meta_default
+i2s_index:
+	$(PY) scripts/i2s_index.py --root Appendix/C_I2S_Integration
+i2s_qr:
+	$(PY) scripts/i2s_qr.py
+i2s_qr_2up:
+	$(PY) scripts/i2s_qr_2up.py
+appendix_pdf:
+	$(PY) scripts/appendix_c_index_pdf.py --csv Appendix/C_I2S_Integration/03_Photo_Index.csv --out Appendix/C_I2S_Integration/Appendix_C_I2S_Index.pdf --version $(VERSION)
+stamp_meta_default:
+	-$(PY) scripts/pdf_meta_stamp.py --in dist/manual.pdf --out dist/manual.pdf --version $(VERSION)
+.PHONY: all i2s_index i2s_qr i2s_qr_2up appendix_pdf stamp_meta_default

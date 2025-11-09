@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+"""
+Continuous sync service for Replit ⇄ GitHub.
+
+- POST /api/sync    : run immediate sync (commit untracked changes, pull, auto-merge/rebase as needed, push)
+- GET  /api/status  : quick status (last run, last result)
+
+Requires env:
+  GITHUB_REPOSITORY = "owner/repo"
+  GH_TOKEN          = <token with repo + workflow scopes>   # already in your Replit secrets
+  GIT_AUTHOR_NAME / GIT_AUTHOR_EMAIL (optional; sensible defaults used)
+"""
+import os, subprocess, json, time, threading, hashlib
+from datetime import datetime
+from functools import wraps
+from flask import Blueprint, request, jsonify
+
+bp_sync = Blueprint("sync", __name__)
+
+STATE = {
+    "last_started": None,
+    "last_finished": None,
+    "last_ok": None,
+    "last_msg": "never run",
+    "last_commit": None,
+}
+
+def sh(cmd, cwd=None, env=None, check=True):
+    p = subprocess.run(cmd, cwd=cwd, env=env, text=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+    if check and p.returncode != 0:
+        raise RuntimeError(f"$ {cmd}\n{p.stdout}")
+    return p.stdout
+
+def _ensure_git_identity():
+    name  = os.getenv("GIT_AUTHOR_NAME",  "SonicBuilder Bot")
+    email = os.getenv("GIT_AUTHOR_EMAIL", "bot@sonicbuilder.local")
+    sh(f'git config user.name "{name}"')
+    sh(f'git config user.email "{email}"')
+
+def _detect_default_branch():
+    # Try to detect, fallback to main
+    try:
+        out = sh("git symbolic-ref refs/remotes/origin/HEAD", check=False).strip()
+        if out and "/" in out:
+            return out.split("/")[-1]
+    except Exception:
+        pass
+    return "main"
+
+def _commit_any_changes():
+    # Stage everything, but only commit if changes exist
+    sh("git add -A")
+    status = sh("git status --porcelain").strip()
+    if status:
+        ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+        # Deterministic short hash of current tree for traceability
+        tree = sh("git write-tree").strip()
+        digest = hashlib.sha1(tree.encode()).hexdigest()[:8]
+        msg = f"[sync] Replit auto-sync @ {ts} (tree {digest})"
+        sh(f'git commit -m "{msg}"')
+        STATE["last_commit"] = msg
+    else:
+        STATE["last_commit"] = "(no local changes)"
+
+def _pull_reconcile_push(branch):
+    # Fetch remote updates, try fast-forward first, then gentle rebase, finally merge as last resort
+    sh("git fetch --prune")
+    # Ensure we’re on target branch
+    sh(f"git checkout -B {branch}")
+    # Try fast-forward
+    out = sh(f"git merge --ff-only origin/{branch}", check=False)
+    if "fatal:" in out or "not something we can merge" in out:
+        # Try rebase
+        rebase = sh(f"git rebase origin/{branch}", check=False)
+        if "CONFLICT" in rebase:
+            # Abort and use merge if conflicts
+            sh("git rebase --abort", check=False)
+            sh(f"git merge --no-edit origin/{branch}", check=True)
+    # Push with upstream
+    sh(f"git push --set-upstream origin {branch}")
+
+def run_sync():
+    _ensure_git_identity()
+    branch = _detect_default_branch()
+    _commit_any_changes()
+    _pull_reconcile_push(branch)
+
+def background(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        t = threading.Thread(target=f, args=args, kwargs=kwargs, daemon=True)
+        t.start()
+        return t
+    return wrapper
+
+@background
+def _sync_job():
+    try:
+        STATE["last_started"] = datetime.utcnow().isoformat() + "Z"
+        run_sync()
+        STATE["last_ok"] = True
+        STATE["last_msg"] = "sync completed"
+    except Exception as e:
+        STATE["last_ok"] = False
+        STATE["last_msg"] = str(e)
+    finally:
+        STATE["last_finished"] = datetime.utcnow().isoformat() + "Z"
+
+@bp_sync.route("/api/sync", methods=["POST"])
+def api_sync_now():
+    _sync_job()
+    return jsonify({"queued": True, "message": "Sync started"}), 202
+
+@bp_sync.route("/api/status", methods=["GET"])
+def api_status():
+    return jsonify(STATE), 200

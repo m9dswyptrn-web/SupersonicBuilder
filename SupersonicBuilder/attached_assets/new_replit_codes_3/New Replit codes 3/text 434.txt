@@ -1,0 +1,8 @@
+# 1) Default: supervise only
+python supervisor.py
+
+# 2) Watch the whole repo
+python supervisor.py --watch .
+
+# 3) Watch specific dirs with custom patterns
+python supervisor.py --watch desktop --watch scripts --include "**/*.py" --include ".env" --exclude ".git/**" --exclude "**/__pycache__/**" -- python scripts/run_offline_llm.py

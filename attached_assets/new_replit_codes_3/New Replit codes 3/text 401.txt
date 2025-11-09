@@ -1,0 +1,39 @@
+<script>
+async function refreshStatus(){
+  try{
+    const r = await fetch('/api/status');
+    const j = await r.json();
+    const led = document.getElementById('led');
+    const st  = document.getElementById('statusText');
+    const be  = document.getElementById('backend');
+    const md  = document.getElementById('model');
+
+    const details = (j.details || '').trim();
+    led.className = 'led ' + j.status;
+
+    // LED + label titles
+    const statusTip = [
+      `status=${j.status}`,
+      j.backend ? `backend=${j.backend}` : null,
+      j.model   ? `model=${j.model}`     : null,
+      details   ? `details=${details}`   : null
+    ].filter(Boolean).join(' · ');
+
+    led.title = statusTip || 'Status LED';
+    st.title  = statusTip || 'Status';
+    be.title  = `backend=${j.backend || 'unknown'}`;
+    md.title  = `model=${j.model || 'n/a'}`;
+
+    st.textContent = `Status: ${j.status}${details ? ' — ' + details : ''}`;
+    be.textContent = `backend: ${j.backend || 'unknown'}`;
+    md.textContent = `model: ${j.model || 'n/a'}`;
+  }catch(e){
+    const led = document.getElementById('led');
+    const st  = document.getElementById('statusText');
+    led.className = 'led error';
+    led.title = 'Status: unreachable';
+    st.textContent = 'Status: error — cannot reach /api/status';
+    st.title = 'Cannot reach /api/status';
+  }
+}
+</script>

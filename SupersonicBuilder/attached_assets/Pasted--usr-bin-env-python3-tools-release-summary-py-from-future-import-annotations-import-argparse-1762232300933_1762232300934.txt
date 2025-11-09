@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+# tools/release_summary.py
+from __future__ import annotations
+import argparse, hashlib, os, re, sys, json
+from pathlib import Path
+from glob import glob
+
+ROOT = Path(__file__).resolve().parents[1]
+HEALTH = ROOT / "docs" / "HEALTH_REPORT.md"
+
+def parse_health(text: str) -> dict:
+    # Extremely forgiving extraction from the health report
+    def grab(pat, default=0, cast=int):
+        m = re.search(pat, text, re.I)
+        if not m: return default
+        try: return cast(m.group(1))
+        except Exception: return default
+    files = grab(r"Python files:\s*\**(\d+)\**", 0)
+    unique = grab(r"unique:\s*\**(\d+)\**", 0)
+    dups = grab(r"Duplicates:\s*\**(\d+)\**", 0)
+    comp_err = grab(r"Compile errors:\s*\**(\d+)\**", 0)
+    orphans = grab(r"Orphan.*:\s*\**(\d+)\**", 0)
+    missing = grab(r"Missing Required/Expected Files.*?(\d+)", 0)  # rough
+    large = grab(r"Large Assets.*?(\d+)", 0)
+    stale = grab(r"Stale 'Last updated' Stamps.*?(\d+)", 0)
+    status = "passing" if comp_err == 0 and dups == 0 else "warnings" if comp_err == 0 else "failing"
+    return {
+        "files": files, "unique": unique, "duplicates": dups, "compile_errors": comp_err,
+        "orphans": orphans, "missing_expected": missing, "large_assets": large,
+        "stale_stamps": stale, "status": status
+    }
+
+def sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1<<20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+def expand_globs(glob_lines: list[str]) -> list[Path]:
+    incl, excl = [], []
+    for raw in glob_lines:
+        g = raw.strip()
+        if not g: continue
+        if g.startswith("!"): excl.append(g[1:])
+        else: incl.append(g)
+    files: set[Path] = set()
+    for pattern in incl:
+        for m in glob(pattern, recursive=True):
+            p = Path(m)
+            if p.is_file(): files.add(p.resolve())
+    # apply exclusions
+    exc_files: set[Path] = set()
+    for pattern in excl:
+        for m in glob(pattern, recursive=True):
+            p = Path(m)
+            if p.is_file(): exc_files.add(p.resolve())
+    return sorted([p for p in files if p not in exc_files])
+
+def human(n: int) -> str:
+    return f"{n/1024/1024:.2f} MB" if n >= 1024*1024 else f"{n/1024:.1f} KB"
+
+def main():
+    ap = argparse.ArgumentParser(description="Emit a pre-flight release summary markdown.")
+    ap.add_argument("--version", required=True)
+    ap.add_argument("--globs", help="newline-delimited glob patterns; use '!' to exclude", required=True)
+    ap.add_argument("--out", default="RELEASE_SUMMARY.md")
+    args = ap.parse_args()
+
+    health = {}
+    if HEALTH.exists():
+        health = parse_health(HEALTH.read_text(encoding="utf-8", errors="ignore"))
+
+    patterns = [s for s in args.globs.splitlines()]
+    files = expand_globs(patterns)
+
+    rows = []
+    total = 0
+    for p in files:
+        try:
+            sz = p.stat().st_size
+            total += sz
+            rows.append((p, sz, sha256(p)))
+        except Exception:
+            pass
+
+    md = []
+    md.append(f"## Pre-flight Summary — {args.version}")
+    if health:
+        emoji = {"passing":"✅", "warnings":"⚠️", "failing":"❌"}.get(health["status"], "ℹ️")
+        md.append("")
+        md.append(f"**Health:** {emoji} `{health['status']}` — "
+                  f"files: {health['files']}, unique: {health['unique']}, "
+                  f"dups: {health['duplicates']}, compile errors: {health['compile_errors']}, "
+                  f"orphans: {health['orphans']}")
+    md.append("")
+    md.append(f"**Artifacts:** {len(rows)} file(s), total size: **{human(total)}**")
+    if rows:
+        md.append("")
+        md.append("| File | Size | SHA-256 |")
+        md.append("|------|------|--------|")
+        for p, sz, digest in rows:
+            rel = p.relative_to(ROOT) if str(p).startswith(str(ROOT)) else p.name
+            md.append(f"| `{rel}` | {human(sz)} | `{digest[:12]}…` |")
+    md.append("")
+    Path(args.out).write_text("\n".join(md).strip() + "\n", encoding="utf-8")
+    print(f"Wrote {args.out}")
+
+if __name__ == "__main__":
+    main()

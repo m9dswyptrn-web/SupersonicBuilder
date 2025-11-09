@@ -1,0 +1,21 @@
+// Health down -> up
+if (wasUp === false && nowUp === true) {
+  playChime(true, 'service restored', 'online');
+  if (window.VOICE_CUES && SETTINGS.autoSpeakOnReady) { /* not ready yet, so skip speak */ }
+}
+
+// Health up -> down
+if (wasUp === true && nowUp === false) {
+  playChime(false, 'service lost', 'error');
+}
+
+// Ready false -> true
+if (wasReady === false && nowReady === true) {
+  playChime(true, 'system ready', 'ready');
+  if (window.VOICE_CUES && SETTINGS.autoSpeakOnReady) { speakOnce('voice'); }
+}
+
+// Ready true -> false (but still up)
+if (wasReady === true && nowReady === false && nowUp) {
+  playChime(false, 'not ready', 'error');
+}

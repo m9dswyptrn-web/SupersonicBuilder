@@ -1,0 +1,47 @@
+# --- Health endpoints (liveness / readiness) ---
+
+@app.route("/api/healthz", methods=["GET", "HEAD"])
+@app.route("/api/livez",  methods=["GET", "HEAD"])
+def api_healthz():
+    # If we can execute this, the server is alive.
+    return jsonify({"ok": True, "ts": int(__import__("time").time())})
+
+@app.route("/api/readyz", methods=["GET"])
+def api_readyz():
+    """
+    Readiness: require model to be present and backend known (ok/cpu/metal/cuda/rocm).
+    Optionally require a recent bench result (last 12h) if you flip REQUIRE_RECENT_BENCH=1 in env.
+    """
+    import time
+    REQUIRE_RECENT_BENCH = os.getenv("REQUIRE_RECENT_BENCH", "0") in ("1", "true", "True", "yes", "y")
+    BENCH_FRESH_SEC = int(os.getenv("BENCH_FRESH_SEC", "43200"))  # 12h default
+
+    stat = detect_status()  # already defined above
+    backend = stat.get("backend")
+    status  = stat.get("status")
+
+    model_ready   = status in ("ok", "cpu")  # model file present; CPU is acceptable for readiness
+    backend_known = backend in ("cuda", "rocm", "metal", "cpu")
+
+    bench_ok = True
+    bench_age = None
+    if REQUIRE_RECENT_BENCH:
+        cache = read_bench_cache()  # already defined above
+        if cache and isinstance(cache, dict) and cache.get("ts"):
+            bench_age = int(time.time()) - int(cache["ts"])
+            bench_ok = bench_age <= BENCH_FRESH_SEC
+        else:
+            bench_ok = False
+
+    ok = bool(model_ready and backend_known and bench_ok)
+    return jsonify({
+        "ok": ok,
+        "model_ready": model_ready,
+        "backend_known": backend_known,
+        "backend": backend,
+        "status": status,
+        "require_recent_bench": REQUIRE_RECENT_BENCH,
+        "bench_fresh_sec": BENCH_FRESH_SEC,
+        "bench_ok": bench_ok,
+        "bench_age_sec": bench_age
+    })

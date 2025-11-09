@@ -1,0 +1,8 @@
+# GitHub release (recommended default)
+make release VERSION=5.0.0 OUT=/mnt/data PUSH=github
+
+# S3 mirror (requires aws + AWS_BUCKET env)
+make release VERSION=5.0.0 OUT=/mnt/data PUSH=s3
+
+# Do both (tries GitHub first, then S3)
+make release VERSION=5.0.0 OUT=/mnt/data PUSH=both

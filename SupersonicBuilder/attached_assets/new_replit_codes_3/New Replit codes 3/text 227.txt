@@ -1,0 +1,1 @@
+If you want, I can also ship a tiny **“Docs health check”** workflow that lints Markdown, verifies links, and fails on broken anchors — say the word and I’ll add it.

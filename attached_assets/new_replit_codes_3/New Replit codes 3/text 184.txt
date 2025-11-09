@@ -1,0 +1,14 @@
+> After running, do a quick search/replace: `OWNER` → your GitHub username/org, `REPO` → your repo name (e.g., `SonicBuilder`).  
+
+---
+
+## 2) Build & publish
+
+```bash
+python3 mkdocs_bootstrap.py
+# replace OWNER/REPO placeholders (Linux/macOS):
+sed -i '' 's/OWNER/YourUser/g; s/REPO/SonicBuilder/g' mkdocs.yml docs/*.md docs/*/*.md README_badges_snippet.md || true
+
+git add -A
+git commit -m "Docs: MkDocs Material + CI to gh-pages"
+git push origin main

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SonicBuilder Uptime Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  :root {
+    --bg-dark: #111;
+    --bg-light: #f9f9f9;
+    --fg-dark: #eee;
+    --fg-light: #111;
+    --accent-dark: #00ffcc;
+    --accent-light: #009688;
+  }
+  body {
+    font-family: Arial, sans-serif;
+    margin: 40px;
+    transition: background 0.4s, color 0.4s;
+  }
+  h1 {
+    text-align: center;
+    transition: color 0.4s;
+  }
+  .status {
+    text-align: center;
+    margin: 10px 0 30px;
+  }
+  .status span {
+    font-weight: bold;
+  }
+  canvas {
+    display: block;
+    margin: auto;
+    border-radius: 8px;
+    padding: 10px;
+    transition: background 0.4s;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: var(--bg-dark); color: var(--fg-dark); }
+    h1 { color: var(--accent-dark); }
+    canvas { background: #222; }
+  }
+  @media (prefers-color-scheme: light) {
+    body { background: var(--bg-light); color: var(--fg-light); }
+    h1 { color: var(--accent-light); }
+    canvas { background: #fff; }
+  }
+</style>
+</head>
+<body>
+  <h1>🩺 SonicBuilder Uptime Dashboard</h1>
+  <div class="status">
+    Last Ping: <span id="lastPing">Loading...</span><br>
+    System Status: <span id="status">Checking...</span>
+  </div>
+  <canvas id="uptimeChart" height="100"></canvas>
+
+  <script>
+    async function fetchData() {
+      const res = await fetch('../status/uptime_log.json');
+      const data = await res.json();
+      const labels = data.map(d => d.timestamp);
+      const values = data.map(() => 1);
+      const last = data[data.length - 1] || {};
+      document.getElementById('lastPing').innerText = last.timestamp || 'No data';
+      document.getElementById('status').innerText = last.status === 'up' ? '🟢 Online' : '🔴 Offline';
+
+      const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const accent = isDark ? '#00ffcc' : '#009688';
+      const textColor = isDark ? '#eee' : '#111';
+      const gridColor = isDark ? '#333' : '#ddd';
+
+      new Chart(document.getElementById('uptimeChart'), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Heartbeat Activity (Past 7 Days)',
+            data: values,
+            backgroundColor: accent + '99',
+            borderColor: accent,
+            borderWidth: 1
+          }]
+        },
+        options: {
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: {
+                color: textColor,
+                stepSize: 1,
+                callback: v => v ? 'Ping' : ' '
+              },
+              grid: { color: gridColor }
+            },
+            x: { ticks: { color: textColor }, grid: { color: gridColor } }
+          },
+          plugins: { legend: { labels: { color: textColor } } }
+        }
+      });
+    }
+    fetchData();
+  </script>
+</body>
+</html>

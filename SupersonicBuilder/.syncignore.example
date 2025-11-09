@@ -1,0 +1,57 @@
+# .syncignore - Pattern-based exclusion for auto-sync
+# Syntax similar to .gitignore:
+#   - * matches any characters except /
+#   - ** matches any characters including /
+#   - / suffix matches directories only
+#   - ! prefix negates the pattern
+
+# Build artifacts
+build/
+output/
+dist/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Logs and temporary files
+logs/
+*.log
+logs/archive/
+.cache/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Node modules (if using npm)
+node_modules/
+package-lock.json
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Large files (configure as needed)
+*.zip
+*.tar.gz
+*.pdf
+
+# Sync system itself (prevent recursion)
+.cache/sync_*.log
+.cache/sync_*.json
+.cache/sync_*.jsonl
+
+# Example: Include specific files even if pattern matches
+# !important.log

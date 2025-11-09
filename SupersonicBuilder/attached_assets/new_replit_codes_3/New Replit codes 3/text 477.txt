@@ -1,0 +1,14 @@
+async function unsnooze(){
+  try{
+    await fetch('/api/unmute', {method:'POST'});
+    const sw = document.getElementById('optMuteSwitch');
+    if (sw) sw.checked = false;
+    SETTINGS.muteSwitch = false; saveSettings();
+    showToast('Unmuted');
+    stopSnoozeTicker();
+    const box = document.getElementById('snoozeLeft');
+    if (box) box.textContent = 'Muted: —';
+  }catch(e){
+    showToast('Unmute failed');
+  }
+}

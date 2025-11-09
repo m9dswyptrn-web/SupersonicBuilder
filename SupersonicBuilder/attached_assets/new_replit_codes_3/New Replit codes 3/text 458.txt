@@ -1,0 +1,91 @@
+<script>
+// Extend default SETTINGS
+SETTINGS = Object.assign({ sound:true, voice:true, autoSpeakOnReady:true, volume: 1.0 }, SETTINGS || {});
+
+function applySettingsToUI(){
+  const m = document.getElementById('settingsMenu'); if(!m) return;
+  const $ = (id)=> m.querySelector('#'+id);
+  $('#optSound').checked = !!SETTINGS.sound;
+  $('#optVoice').checked = !!SETTINGS.voice;
+  $('#optAutoSpeak').checked = !!SETTINGS.autoSpeakOnReady;
+  const pct = Math.round((SETTINGS.volume ?? 1.0) * 100);
+  $('#optVolume').value = String(pct);
+  document.getElementById('volPct').textContent = pct + '%';
+}
+
+function initSettingsBindings(){
+  const m = document.getElementById('settingsMenu'); if(!m) return;
+  m.querySelector('#optSound').addEventListener('change', (e)=>{ SETTINGS.sound = e.target.checked; saveSettings(); applySettingsToRuntime(); showToast('Sound cues ' + (SETTINGS.sound?'on':'off')); });
+  m.querySelector('#optVoice').addEventListener('change', (e)=>{ SETTINGS.voice = e.target.checked; saveSettings(); applySettingsToRuntime(); showToast('Voice cues ' + (SETTINGS.voice?'on':'off')); });
+  m.querySelector('#optAutoSpeak').addEventListener('change', (e)=>{ SETTINGS.autoSpeakOnReady = e.target.checked; saveSettings(); showToast('Auto-speak ' + (SETTINGS.autoSpeakOnReady?'on':'off')); });
+  m.querySelector('#optVolume').addEventListener('input', (e)=>{
+    const v = Math.max(0, Math.min(100, parseInt(e.target.value||"100",10)));
+    SETTINGS.volume = v / 100.0;
+    document.getElementById('volPct').textContent = v + '%';
+    saveSettings();
+  });
+}
+
+// Helpers to include volume header
+async function fetchWithVol(url, opts={}){
+  opts = Object.assign({method:'POST', headers:{}}, opts);
+  opts.headers = Object.assign({}, opts.headers, {'X-Volume': String(SETTINGS.volume ?? 1.0)});
+  return fetch(url, opts);
+}
+
+// Replace cue senders to include volume
+async function playChime(ok, msg){
+  if (!SETTINGS.sound) return;
+  try { await fetchWithVol(`/api/status/sound?ok=${ok?1:0}${msg?('&msg='+encodeURIComponent(msg)):""}`); } catch(e){}
+}
+async function speakOnce(){
+  if (!SETTINGS.voice) return;
+  try { await fetchWithVol('/api/status/speak'); } catch(e){}
+}
+
+// Snooze controls
+let _snoozeTimer = null;
+async function snooze(min){
+  try{
+    await fetch(`/api/mute?minutes=${encodeURIComponent(min)}`, {method:'POST'});
+    showToast(`Muted for ${min} min`);
+    startSnoozeTicker();
+  }catch(e){ showToast('Mute failed'); }
+}
+async function unsnooze(){
+  try{
+    await fetch('/api/unmute', {method:'POST'});
+    showToast('Unmuted');
+    stopSnoozeTicker();
+    document.getElementById('snoozeLeft').textContent = 'Muted: —';
+  }catch(e){ showToast('Unmute failed'); }
+}
+async function pollSnooze(){
+  try{
+    const r = await fetch('/api/mute'); const j = await r.json();
+    const left = j.remaining_sec || 0;
+    const box = document.getElementById('snoozeLeft');
+    if (!box) return;
+    if (left > 0){
+      const m = Math.floor(left/60), s = left%60;
+      box.textContent = `Muted: ${m}m ${s}s remaining`;
+    } else {
+      box.textContent = 'Muted: —';
+    }
+  }catch(e){}
+}
+function startSnoozeTicker(){
+  stopSnoozeTicker();
+  _snoozeTimer = setInterval(pollSnooze, 1000);
+  pollSnooze();
+}
+function stopSnoozeTicker(){
+  if (_snoozeTimer) clearInterval(_snoozeTimer);
+  _snoozeTimer = null;
+}
+
+// Boot: load + apply
+loadSettings(); applySettingsToUI(); applySettingsToRuntime();
+setTimeout(initSettingsBindings, 0);
+startSnoozeTicker(); // in case server already muted
+</script>

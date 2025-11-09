@@ -1,0 +1,25 @@
+<script>
+function effectiveVol(eventKey){
+  const base = _clamp01(SETTINGS.volume ?? 1.0);
+  const mult = _clamp01((SETTINGS.volumes || {})[eventKey] ?? 1.0);
+  return (base * mult);
+}
+
+async function fetchWithVol(url, opts={}, vol=1.0){
+  opts = Object.assign({method:'POST', headers:{}}, opts);
+  opts.headers = Object.assign({}, opts.headers, {'X-Volume': String(vol)});
+  return fetch(url, opts);
+}
+
+async function playChime(ok, msg, eventKey='ready'){
+  if (!SETTINGS.sound) return;
+  const vol = effectiveVol(eventKey);
+  try { await fetchWithVol(`/api/status/sound?ok=${ok?1:0}${msg?('&msg='+encodeURIComponent(msg)):""}`, {}, vol); } catch(e){}
+}
+
+async function speakOnce(eventKey='voice'){
+  if (!SETTINGS.voice) return;
+  const vol = effectiveVol(eventKey);
+  try { await fetchWithVol('/api/status/speak', {}, vol); } catch(e){}
+}
+</script>

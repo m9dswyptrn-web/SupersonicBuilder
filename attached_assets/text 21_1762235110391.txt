@@ -1,0 +1,14 @@
+<script>
+function setMsProfileLabel(){
+  const el = document.getElementById('msProfileTxt');
+  if (el) el.textContent = SETTINGS.profile || 'balanced';
+}
+document.getElementById('msProfile')?.addEventListener('click', ()=>{
+  const order = ['quiet','balanced','performance'];
+  const cur = SETTINGS.profile || 'balanced';
+  const next = order[(order.indexOf(cur)+1)%order.length];
+  applyProfile(next);
+  setMsProfileLabel();
+});
+setMsProfileLabel();
+</script>

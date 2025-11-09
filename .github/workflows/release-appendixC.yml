@@ -1,0 +1,112 @@
+name: Release Appendix C
+
+on:
+  release:
+    types: [published]
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  setup-url:
+    uses: ./.github/workflows/repo-url-setup.yml
+
+  build-and-upload:
+    runs-on: ubuntu-latest
+    needs: [setup-url]
+    env:
+      SB_REPO_URL: ${{ needs.setup-url.outputs.SB_REPO_URL }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install reportlab pypdf pillow qrcode pdf2image
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+          elif [[ "${{ github.event.release.tag_name }}" != "" ]]; then
+            VERSION=${{ github.event.release.tag_name }}
+          elif [ -f VERSION ]; then
+            VERSION=$(cat VERSION | tr -d '\n' | sed 's/^/v/' | sed 's/^vv/v/')
+          else
+            VERSION="v2.0.9"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Using version: $VERSION"
+
+      - name: Build Appendix C
+        run: |
+          echo "Building Appendix C for ${{ steps.version.outputs.VERSION }}"
+          python scripts/i2s_index.py --root Appendix/C_I2S_Integration
+          python scripts/i2s_qr.py
+          python scripts/i2s_qr_2up.py
+          python scripts/appendix_c_index_pdf.py \
+            --csv Appendix/C_I2S_Integration/03_Photo_Index.csv \
+            --out Appendix/C_I2S_Integration/Appendix_C_I2S_Index.pdf \
+            --version ${{ steps.version.outputs.VERSION }}
+
+      - name: Create release package
+        run: |
+          mkdir -p release_artifacts
+          cp Appendix/C_I2S_Integration/QR_Index.pdf release_artifacts/
+          cp Appendix/C_I2S_Integration/QR_Index_2UP.pdf release_artifacts/
+          cp Appendix/C_I2S_Integration/Appendix_C_I2S_Index.pdf release_artifacts/
+          cp Appendix/C_I2S_Integration/03_Photo_Index.csv release_artifacts/
+          cp Appendix/C_I2S_Integration/metadata.json release_artifacts/
+          
+          cd release_artifacts
+          zip -r ../AppendixC_${{ steps.version.outputs.VERSION }}.zip .
+          cd ..
+          
+          echo "✅ Created AppendixC_${{ steps.version.outputs.VERSION }}.zip"
+          ls -lh AppendixC_${{ steps.version.outputs.VERSION }}.zip
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            AppendixC_${{ steps.version.outputs.VERSION }}.zip
+            Appendix/C_I2S_Integration/QR_Index.pdf
+            Appendix/C_I2S_Integration/QR_Index_2UP.pdf
+            Appendix/C_I2S_Integration/Appendix_C_I2S_Index.pdf
+          tag_name: ${{ steps.version.outputs.VERSION }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create release summary
+        run: |
+          echo "## Appendix C Released 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository:** ${{ env.SB_REPO_URL }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Uploaded Files" >> $GITHUB_STEP_SUMMARY
+          echo "- \`AppendixC_${{ steps.version.outputs.VERSION }}.zip\` - Complete package" >> $GITHUB_STEP_SUMMARY
+          echo "- \`QR_Index.pdf\` - Dark mode QR gallery" >> $GITHUB_STEP_SUMMARY
+          echo "- \`QR_Index_2UP.pdf\` - 2-up laminated sheet" >> $GITHUB_STEP_SUMMARY
+          echo "- \`Appendix_C_I2S_Index.pdf\` - Professional index" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f Appendix/C_I2S_Integration/metadata.json ]; then
+            FILE_COUNT=$(python -c "import json; print(json.load(open('Appendix/C_I2S_Integration/metadata.json'))['count'])" 2>/dev/null || echo "N/A")
+            echo "**Files Indexed:** $FILE_COUNT" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All Appendix C documentation is now available in the release!" >> $GITHUB_STEP_SUMMARY

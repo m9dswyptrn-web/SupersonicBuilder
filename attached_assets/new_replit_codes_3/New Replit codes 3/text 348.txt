@@ -1,0 +1,2 @@
+python scripts/diagnostic_system.py
+# (it will automatically chain into gpu_detect.py and print backend + suggestions)

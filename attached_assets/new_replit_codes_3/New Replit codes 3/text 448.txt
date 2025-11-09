@@ -1,0 +1,93 @@
+<script>
+const VOICE_CUES = true;          // set false to silence TTS phrases
+const SOUND_CUES = true;          // set false to skip chimes
+let _beaconPrev = { up: null, ready: null };
+
+function setBeacon(state /* 'green'|'yellow'|'red' */, text){
+  const b = document.getElementById('beacon');
+  const t = document.getElementById('beaconText');
+  if(!b || !t) return;
+  b.className = 'beacon beacon-' + state;
+  t.textContent = text || '';
+}
+
+async function playChime(ok, msg){
+  if (!SOUND_CUES) return;
+  try { await fetch(`/api/status/sound?ok=${ok?1:0}${msg?('&msg='+encodeURIComponent(msg)):""}`, {method:'POST'}); } catch(e){}
+}
+async function speakOnce(text){
+  if (!VOICE_CUES) return;
+  try {
+    await fetch('/api/status/speak', {method:'POST', body:null});
+    // Note: your backend speak already summarizes status; if you want exact text,
+    // you could add a param later. For now we reuse status voice.
+  } catch(e){}
+}
+
+/** Decide beacon color from health + readiness */
+function computeBeacon(healthOk, ready) {
+  // health down → red; health up but not ready → yellow; ready → green
+  if (!healthOk) return { color:'red',    label:'status: offline' };
+  if (!ready.ok) return { color:'yellow', label:'status: starting…' };
+  return { color:'green', label:'status: ready' };
+}
+
+/** Poll loop */
+async function pollBeaconLoop(){
+  try {
+    // Fast health check
+    const hz = await fetch('/api/healthz', {cache:'no-store'});
+    const healthOk = hz.ok;
+
+    // Readiness details
+    let ready = { ok:false };
+    try {
+      const rz = await fetch('/api/readyz', {cache:'no-store'});
+      ready = await rz.json();
+    } catch(e) {}
+
+    // Update beacon
+    const { color, label } = computeBeacon(healthOk, ready);
+    setBeacon(color, label);
+
+    // Transition detection (fire once on change)
+    const wasUp    = _beaconPrev.up;
+    const wasReady = _beaconPrev.ready;
+    const nowUp    = !!healthOk;
+    const nowReady = !!ready.ok;
+
+    // Health down -> up
+    if (wasUp === false && nowUp === true) {
+      playChime(true, 'service restored');
+      if (VOICE_CUES) showToast('Online'); // toast hint
+    }
+    // Health up -> down
+    if (wasUp === true && nowUp === false) {
+      playChime(false, 'service lost');
+    }
+    // Ready false -> true (first time system fully ready)
+    if (wasReady === false && nowReady === true) {
+      playChime(true, 'system ready');
+      if (VOICE_CUES) showToast('Ready ✅');
+    }
+    // Ready true -> false
+    if (wasReady === true && nowReady === false && nowUp) {
+      playChime(false, 'not ready');
+    }
+
+    _beaconPrev = { up: nowUp, ready: nowReady };
+  } catch(e) {
+    // If polling fails, show red but don’t spam logs
+    setBeacon('red','status: offline');
+    if (_beaconPrev.up !== false) {
+      playChime(false, 'service lost');
+      _beaconPrev = { up:false, ready:false };
+    }
+  } finally {
+    setTimeout(pollBeaconLoop, 1100);
+  }
+}
+
+// Start the loop after page init
+pollBeaconLoop();
+</script>

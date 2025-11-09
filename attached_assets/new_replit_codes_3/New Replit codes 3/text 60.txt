@@ -1,0 +1,19 @@
+  async function cancelAll(reason = "User canceled") {
+    CANCEL.active = true;
+    status(reason);
+    // cancel render/load
+    try { currentRenderTask?.cancel(); } catch {}
+    currentRenderTask = null;
+    try { await pdfLoadingTask?.destroy?.(); } catch {}
+    pdfLoadingTask = null;
+
+    // Reset UI
+    resetProgress();
+    showSpinner(false);
+    hidePreview();  // NEW: hide and clear preview
+    canvas.width = canvas.height = 0;
+    image.src = "";
+    image.hidden = true;
+    canvas.hidden = true;
+    endLongTask();
+  }

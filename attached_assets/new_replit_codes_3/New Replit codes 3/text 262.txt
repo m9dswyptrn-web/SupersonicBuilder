@@ -1,0 +1,33 @@
+# agent
+write(ROOT / "agent" / "requirements.txt", AGENT_REQ)
+write(ROOT / "agent" / "main.py", AGENT_MAIN)
+write(ROOT / "agent" / "skills" / "wiring_mapper.yml", SKILL_EXAMPLE)
+(ROOT / "agent" / "memory").mkdir(parents=True, exist_ok=True)
+
+# local web ui
+write(ROOT / "desktop" / "webui" / "requirements.txt", WEB_REQ)
+write(ROOT / "desktop" / "webui" / "app.py", WEB_APP)
+
+# cloud assist
+write(ROOT / "cloud" / "fastapi_stub" / "requirements.txt", CLOUD_REQ)
+write(ROOT / "cloud" / "fastapi_stub" / "main.py", CLOUD_MAIN)
+
+# scripts
+write(ROOT / "scripts" / "run_offline.py", RUN_OFFLINE, executable=True)
+write(ROOT / "scripts" / "run_cloud.py", RUN_CLOUD, executable=True)
+
+# convenience docs dir if missing
+(ROOT / "docs").mkdir(parents=True, exist_ok=True)
+if not any((ROOT / "docs").glob("*.md")):
+    write(ROOT / "docs" / "hello.md", "# Hello Supersonic\\n\\nAdd your docs here for RAG.")
+
+print("\\n✅ Scaffold ready.")
+print("Next:")
+print("  python3 -m venv .venv && source .venv/bin/activate")
+print("  pip install -r agent/requirements.txt -r desktop/webui/requirements.txt")
+print("  cp .env.sample .env  # keep APP_MODE=offline")
+print("  python scripts/run_offline.py")
+print("Open http://127.0.0.1:7860 and ask the agent. (Stubbed answer + context list.)")
+print("\\nOptional cloud:")
+print("  pip install -r cloud/fastapi_stub/requirements.txt && python scripts/run_cloud.py")
+print("  export APP_MODE=online and wire the UI to call CLOUD_URL when enabled.")

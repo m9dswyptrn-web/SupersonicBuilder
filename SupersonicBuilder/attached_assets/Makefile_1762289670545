@@ -1,0 +1,23 @@
+# Supersonic Makefile
+.PHONY: preflight postinstall snapshot push verify all
+
+preflight:
+	python3 supersonic_preflight.py
+
+postinstall:
+	python3 supersonic_post_install.py
+
+snapshot:
+	python3 supersonic_post_install.py --zip
+
+push:
+	git add -A && git commit -m "[sync] supersonic snapshot $(shell date -u +%Y-%m-%dT%H:%M:%SZ)" || true
+	git fetch --prune || true
+	git pull --rebase --autostash || git merge --no-edit || true
+	git push --set-upstream origin $(shell git branch --show-current)
+
+verify:
+	bash verify_endpoints.sh
+
+all: preflight postinstall snapshot push verify
+	@echo "Supersonic full cycle completed ✅"

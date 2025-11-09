@@ -1,0 +1,79 @@
+"""
+    safe_write(ROOT/"docs/status_banner.md", status_md.strip()+"\n", dry=dry)
+
+    # Issue templates
+    bug = """---
+name: Bug report
+about: Create a report to help us improve
+labels: bug
+---
+
+**Describe the bug**
+A clear description…
+
+**To Reproduce**
+Steps…
+
+**Expected behavior**
+…
+"""
+    feature = """---
+name: Feature request
+about: Suggest an idea for this project
+labels: enhancement
+---
+
+**What problem does this solve?**
+…
+
+**Describe the solution you’d like**
+…
+
+**Additional context**
+…
+"""
+    tdir = ROOT/".github"/"ISSUE_TEMPLATE"
+    safe_write(tdir/"bug.md", bug, dry=dry)
+    safe_write(tdir/"feature.md", feature, dry=dry)
+
+def add_sbom_tools_and_ci(dry=False):
+    # SBOM script (CycloneDX for Python)
+    sbom_py = r"""#!/usr/bin/env python3
+import subprocess, sys, os
+def main():
+    try:
+        subprocess.run([sys.executable,"-m","pip","install","cyclonedx-bom"], check=True)
+        subprocess.run(["cyclonedx-py","--format","json","-o","sbom.json"], check=True)
+        print("SBOM written to sbom.json")
+    except Exception as e:
+        print("SBOM generation failed:", e); sys.exit(1)
+if __name__=="__main__": main()
+"""
+    safe_write(ROOT/"scripts/sbom_generate.py", sbom_py, dry=dry, executable=True)
+
+    # Patch release workflow to upload SBOM (if it exists)
+    wf = ROOT/".github"/"workflows"/"release-autopublish.yml"
+    if not wf.exists(): return
+    body = wf.read_text(encoding="utf-8")
+    if "SBOM" in body:  # already patched
+        return
+    insertion = """
+          - name: Generate SBOM
+            run: python3 scripts/sbom_generate.py
+
+          - name: Upload SBOM
+            uses: actions/upload-artifact@v4
+            with:
+              name: sbom
+              path: sbom.json
+              if-no-files-found: ignore
+"""
+    body = body.replace("Create GitHub Release", "Create GitHub Release")
+    # append steps right before release (simple/robust approach)
+    body = body.replace(
+        "  - name: Create GitHub Release",
+        insertion + "  - name: Create GitHub Release"
+    )
+    if not dry:
+        wf.write_text(body, encoding="utf-8")
+    print("[ok] SBOM steps added to release workflow")

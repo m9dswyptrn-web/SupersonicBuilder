@@ -1,0 +1,58 @@
+name: manual-build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  setup-url:
+    uses: ./.github/workflows/repo-url-setup.yml
+
+  build-manuals:
+    needs: [setup-url]
+    runs-on: ubuntu-latest
+    env:
+      SB_REPO_URL: ${{ needs.setup-url.outputs.SB_REPO_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build deps
+        run: |
+          pip install -r requirements.txt || true
+          pip install reportlab pypdf pillow qrcode pikepdf || true
+
+      - name: Verify environment
+        run: |
+          make verify || true
+
+      - name: Build DARK manual (with URL metadata)
+        run: |
+          export SB_REPO_URL="${{ env.SB_REPO_URL }}"
+          make build_dark
+
+      - name: Build LIGHT manual (optional)
+        if: ${{ false }}   # flip to true to enable
+        run: |
+          export SB_REPO_URL="${{ env.SB_REPO_URL }}"
+          make build_light
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist_ci
+          cp -R output/* dist_ci/ 2>/dev/null || true
+          cp -R dist/*    dist_ci/ 2>/dev/null || true
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: manuals-${{ github.sha }}
+          path: dist_ci

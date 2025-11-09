@@ -1,0 +1,3 @@
+npm i
+npm run tauri:dev        # launches the desktop shell pointing at 127.0.0.1:7860
+npm run tauri:build      # produces .app/.msi/.AppImage in src-tauri/target/release/bundle

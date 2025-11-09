@@ -1,0 +1,4 @@
+export GITHUB_OWNER="YourGitHubUserOrOrg"
+export GITHUB_REPO="SonicBuilder"
+python3 integrate_version_badge.py
+git add -A && git commit -m "Docs: add dynamic version badge" && git push

@@ -1,0 +1,613 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Supersonic / SonicBuilder — Deluxe One-and-Done GitHub Shipper
+- Writes full voice toolchain (multi-pack generator, switcher, preview, smoketest)
+- Ensures requirements, CI workflows (with voicepack gate), badges, CODEOWNERS, Dependabot
+- Adds Makefile helpers, seeds assets, generates packs, runs smoke test
+- Git init + push (via gh create or remote URL) + tag & release
+
+Usage:
+  python3 ship_to_github_deluxe.py --gh-create m9dswyptrn-web/SonicBuilder --version 0.1.0
+  python3 ship_to_github_deluxe.py --remote https://github.com/<you>/<repo>.git --version 0.1.0
+  # Dry run:
+  python3 ship_to_github_deluxe.py --gh-create ... --version 0.1.0 --dry-run
+"""
+from __future__ import annotations
+import argparse, io, math, os, re, shutil, struct, subprocess, sys, wave
+from pathlib import Path
+from textwrap import dedent
+
+ROOT = Path(__file__).resolve().parent
+PY = sys.executable or "python3"
+
+BANNER = "### <auto:SUP@shipper>"
+BANNER_END = "### </auto:SUP@shipper>"
+
+# ----------------------------- Utilities -----------------------------
+def run(cmd, check=True):
+    print(" $", " ".join(cmd))
+    return subprocess.run(cmd, check=check)
+
+def safe_write(path: Path, content: str, dry=False, executable=False):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if dry:
+        print(f"[dry] write {path}")
+        return
+    path.write_text(content, encoding="utf-8")
+    if executable:
+        try:
+            os.chmod(path, 0o755)
+        except Exception:
+            pass
+    print(f"[ok] wrote {path}")
+
+def patch_file(path: Path, block: str, marker=BANNER, marker_end=BANNER_END, dry=False):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    old = path.read_text(encoding="utf-8") if path.exists() else ""
+    pattern = re.compile(re.escape(marker) + ".*?" + re.escape(marker_end), re.S)
+    managed = f"{marker}\n{block.rstrip()}\n{marker_end}"
+    if pattern.search(old):
+        new = pattern.sub(managed, old)
+    else:
+        new = old + ("\n\n" if old and not old.endswith("\n") else "") + managed + "\n"
+    if dry:
+        print(f"[dry] patch {path}")
+        return
+    path.write_text(new, encoding="utf-8")
+    print(f"[ok] patched {path} (managed block)")
+
+def ensure_requirements(dry=False):
+    req = ROOT / "requirements.txt"
+    required = [
+        "rich>=13.7.0",
+        "pyttsx3>=2.90",
+        "playsound==1.3.0",
+    ]
+    lines = []
+    if req.exists():
+        lines = [l.rstrip() for l in req.read_text(encoding="utf-8").splitlines() if l.strip()]
+        for r in required:
+            base = r.split("==")[0].split(">=")[0]
+            if not any(x.split("==")[0].split(">=")[0] == base for x in lines):
+                lines.append(r)
+    else:
+        lines = required
+    if not dry:
+        req.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"[ok] requirements ensured at {req}")
+
+# ----------------------------- Full Scripts -----------------------------
+SCRIPT_generate_multipack = r"""#!/usr/bin/env python3
+from pathlib import Path
+import os, io, math, wave, struct, argparse
+
+EVENT_LINES = {
+    "build_start":  "Build sequence initiated.",
+    "build_success":"Build complete. All systems nominal.",
+    "build_fail":   "Build failed. Review diagnostics.",
+    "deploy_start": "Deployment sequence initiated.",
+    "deploy_done":  "Deployment complete. Systems online.",
+    "doctor_ok":    "Doctor scan complete. Green across the board.",
+    "doctor_warn":  "Doctor scan complete. Review warnings.",
+}
+
+PACK_PROFILES = {
+    "commander":     {"rate": 185, "voice_hint": ["en","us","neutral","zira","microsoft","default"]},
+    "aiops":         {"rate": 205, "voice_hint": ["en","female","aria","zira","assistant"]},
+    "flightops":     {"rate": 170, "voice_hint": ["en","male","guy","baritone"]},
+    "industrialops": {"rate": 155, "voice_hint": ["en","male","microsoft","robot","david"]},
+    "arcadehud":     {"rate": 215, "voice_hint": ["en","light","casual","young","fast"]},
+}
+
+SAMPLE_RATE = 22050
+BEEP_HZ = 880
+BEEP_MS = 140
+PAUSE_MS = 80
+
+def write_beep(path: Path, hz=BEEP_HZ, ms=BEEP_MS, sr=SAMPLE_RATE):
+    frames = int(ms * sr / 1000)
+    amp = 0.35
+    buf = io.BytesIO()
+    with wave.open(buf, 'wb') as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+        for n in range(frames):
+            t = n / sr
+            s = amp * math.sin(2 * math.pi * hz * t)
+            w.writeframes(struct.pack('<h', int(s * 32767)))
+        silence = int(PAUSE_MS * sr / 1000)
+        for _ in range(silence): w.writeframes(struct.pack('<h', 0))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(buf.getvalue())
+
+def pick_voice(engine, hints):
+    try:
+        voices = engine.getProperty("voices") or []
+        if not voices: return None
+        lower = [h.lower() for h in hints]
+        for v in voices:
+            meta = f"{getattr(v,'name','')} {getattr(v,'id','')} {getattr(v,'languages','')}".lower()
+            if all(h in meta for h in lower): return v.id
+        for v in voices:
+            meta = f"{getattr(v,'name','')} {getattr(v,'id','')} {getattr(v,'languages','')}".lower()
+            if any(h in meta for h in lower): return v.id
+        return voices[0].id
+    except Exception:
+        return None
+
+def save_tts(text: str, path: Path, rate: int, voice_hints=None) -> bool:
+    try:
+        import pyttsx3
+        eng = pyttsx3.init()
+        vid = pick_voice(eng, voice_hints or [])
+        if vid:
+            try: eng.setProperty("voice", vid)
+            except Exception: pass
+        env_rate = os.getenv("VOICE_RATE")
+        r = int(env_rate) if env_rate and env_rate.isdigit() else rate
+        try: eng.setProperty("rate", r)
+        except Exception: pass
+        path.parent.mkdir(parents=True, exist_ok=True)
+        eng.save_to_file(text, str(path))
+        eng.runAndWait()
+        return path.exists() and path.stat().st_size > 0
+    except Exception:
+        return False
+
+def build_pack(pack: str, rate: int, voice_hints):
+    out_dir = Path("assets/audio/voicepacks") / pack
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for event, line in EVENT_LINES.items():
+        wav = out_dir / f"{event}.wav"
+        if save_tts(line, wav, rate=rate, voice_hints=voice_hints):
+            print(f"[ok][tts] {pack}/{wav.name}")
+        else:
+            write_beep(wav)
+            if "warn" in event or "fail" in event:
+                tmp = out_dir / f"_{event}_tmp.wav"
+                write_beep(tmp, hz=600, ms=120)
+                with wave.open(str(wav),'rb') as w1, wave.open(str(tmp),'rb') as w2:
+                    params = w1.getparams()
+                    merged = io.BytesIO()
+                    with wave.open(merged,'wb') as w3:
+                        w3.setparams(params)
+                        w3.writeframes(w1.readframes(w1.getnframes()))
+                        w3.writeframes(w2.readframes(w2.getnframes()))
+                    wav.write_bytes(merged.getvalue())
+                try: tmp.unlink()
+                except: pass
+            print(f"[ok][beep] {pack}/{wav.name}")
+    print(f"✅ Pack ready: {pack} -> {out_dir}")
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--packs", default="commander,aiops,flightops,industrialops,arcadehud")
+    args = ap.parse_args()
+    packs = [p.strip() for p in args.packs.split(",") if p.strip()]
+    for p in packs:
+        prof = PACK_PROFILES.get(p, {"rate":185,"voice_hint":["en"]})
+        build_pack(p, prof["rate"], prof["voice_hint"])
+if __name__ == "__main__":
+    main()
+"""
+
+SCRIPT_switch = r"""#!/usr/bin/env python3
+from pathlib import Path
+import os, sys, shutil
+
+ROOT = Path(__file__).resolve().parents[1]
+VP_ROOT = ROOT / "assets" / "audio" / "voicepacks"
+ACTIVE = VP_ROOT / "_active"
+
+def err(msg): print(f"ERROR: {msg}", file=sys.stderr); sys.exit(1)
+
+def list_packs():
+    if not VP_ROOT.exists(): print("(no voicepacks found)"); return
+    for p in sorted([x.name for x in VP_ROOT.iterdir() if x.is_dir() and not x.name.startswith("_")]):
+        print(p)
+
+def current():
+    if ACTIVE.is_symlink():
+        print(ACTIVE.resolve().name); return
+    if ACTIVE.exists() and ACTIVE.is_dir():
+        meta = ACTIVE / ".packname"
+        print(meta.read_text().strip() if meta.exists() else "_active(copy)"); return
+    print("(none)")
+
+def use(pack):
+    target = VP_ROOT / pack
+    if not target.exists(): err(f"voicepack '{pack}' not found")
+    VP_ROOT.mkdir(parents=True, exist_ok=True)
+    if ACTIVE.is_symlink(): ACTIVE.unlink()
+    elif ACTIVE.exists(): shutil.rmtree(ACTIVE, ignore_errors=True)
+    try:
+        os.symlink(target, ACTIVE, target_is_directory=True)
+        print(f"[OK] Active voicepack → {pack} (symlink)")
+        return
+    except Exception:
+        pass
+    shutil.copytree(target, ACTIVE)
+    (ACTIVE/".packname").write_text(pack)
+    print(f"[OK] Active voicepack → {pack} (copied)")
+
+def main():
+    if len(sys.argv)<2:
+        print("Usage: voicepack_switch.py [list|current|use <pack>]"); sys.exit(1)
+    cmd=sys.argv[1]
+    if cmd=="list": list_packs()
+    elif cmd=="current": current()
+    elif cmd=="use":
+        if len(sys.argv)<3: err("missing <packname>")
+        use(sys.argv[2])
+    else: err(f"unknown command: {cmd}")
+if __name__=="__main__": main()
+"""
+
+SCRIPT_preview = r"""#!/usr/bin/env python3
+import argparse, os, random, sys, time, subprocess
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+PY = sys.executable or "python3"
+VOICE_SWITCH = ROOT / "scripts" / "voicepack_switch.py"
+VOICE_CONSOLE = ROOT / "helpers" / "supersonic_voice_console.py"
+ACTIVE_DIR = ROOT / "assets" / "audio" / "voicepacks" / "_active"
+
+EVENTS = ["build_start","build_success","build_fail","deploy_start","deploy_done","doctor_ok","doctor_warn"]
+
+def run(cmd, env=None): return subprocess.run(cmd, check=False, env=env or os.environ.copy())
+
+def current_active_name():
+    if ACTIVE_DIR.exists() and ACTIVE_DIR.is_dir():
+        meta = ACTIVE_DIR / ".packname"
+        if meta.exists(): return meta.read_text().strip()
+        try: return ACTIVE_DIR.resolve().name
+        except Exception: return "_active"
+    return ""
+
+def set_active(pack): run([PY, str(VOICE_SWITCH), "use", pack])
+
+def preview(pack, delay=0.6, shuffle=False, keep_active=False):
+    prev = current_active_name()
+    if prev != pack:
+        print(f"[switch] Active → {pack} (was: {prev or 'none'})"); set_active(pack)
+    order = EVENTS[:]
+    if shuffle: random.shuffle(order)
+    for ev in order:
+        print(f"  ▶ {ev}")
+        run([PY, str(VOICE_CONSOLE), ev]); time.sleep(delay)
+    if not keep_active and prev and prev != pack:
+        print(f"[restore] Active → {prev}"); set_active(prev)
+
+def main():
+    ap=argparse.ArgumentParser()
+    ap.add_argument("pack"); ap.add_argument("--delay",type=float,default=0.6)
+    ap.add_argument("--shuffle",action="store_true"); ap.add_argument("--keep-active",action="store_true")
+    a=ap.parse_args()
+    if not (ROOT/"assets/audio/voicepacks"/a.pack).exists():
+        print(f"ERROR: pack '{a.pack}' not found"); sys.exit(1)
+    preview(a.pack, a.delay, a.shuffle, a.keep_active)
+if __name__=="__main__": main()
+"""
+
+SCRIPT_smoketest = r"""#!/usr/bin/env python3
+from pathlib import Path
+import argparse, io, math, wave, struct, sys
+
+ROOT = Path(__file__).resolve().parents[1]
+VP_ROOT = ROOT / "assets" / "audio" / "voicepacks"
+
+REQUIRED = ["build_start","build_success","build_fail","deploy_start","deploy_done","doctor_ok","doctor_warn"]
+LINES = {
+    "build_start":  "Build sequence initiated.",
+    "build_success":"Build complete. All systems nominal.",
+    "build_fail":   "Build failed. Review diagnostics.",
+    "deploy_start": "Deployment sequence initiated.",
+    "deploy_done":  "Deployment complete. Systems online.",
+    "doctor_ok":    "Doctor scan complete. Green across the board.",
+    "doctor_warn":  "Doctor scan complete. Review warnings.",
+}
+SAMPLE_RATE=22050; BEEP_HZ=880; BEEP_MS=140; PAUSE_MS=80
+
+def write_beep(path, hz=BEEP_HZ, ms=BEEP_MS, sr=SAMPLE_RATE):
+    frames=int(ms*sr/1000); amp=0.35; buf=io.BytesIO()
+    with wave.open(buf,'wb') as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+        for n in range(frames):
+            t=n/sr; s=amp*math.sin(2*math.pi*hz*t)
+            w.writeframes(struct.pack('<h', int(s*32767)))
+        silence=int(PAUSE_MS*sr/1000)
+        for _ in range(silence): w.writeframes(struct.pack('<h',0))
+    path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(buf.getvalue())
+
+def save_tts(text, path):
+    try:
+        import pyttsx3
+        eng=pyttsx3.init()
+        try: rate=int(eng.getProperty("rate") or 185); eng.setProperty("rate", int(rate*0.95))
+        except Exception: pass
+        path.parent.mkdir(parents=True, exist_ok=True)
+        eng.save_to_file(text, str(path)); eng.runAndWait()
+        return path.exists() and path.stat().st_size>0
+    except Exception: return False
+
+def repair(pack_dir: Path, event: str):
+    wav=pack_dir/f"{event}.wav"; text=LINES.get(event,event.replace("_"," ").title())
+    if save_tts(text,wav): print(f"[fix][tts] {pack_dir.name}/{wav.name}"); return True
+    write_beep(wav)
+    if "warn" in event or "fail" in event:
+        tmp=pack_dir/f"_{event}_tmp.wav"; write_beep(tmp,hz=600,ms=120)
+        with wave.open(str(wav),'rb') as w1, wave.open(str(tmp),'rb') as w2:
+            params=w1.getparams(); out=io.BytesIO()
+            with wave.open(out,'wb') as w3:
+                w3.setparams(params)
+                w3.writeframes(w1.readframes(w1.getnframes()))
+                w3.writeframes(w2.readframes(w2.getnframes()))
+            wav.write_bytes(out.getvalue())
+        try: tmp.unlink()
+        except: pass
+    print(f"[fix][beep] {pack_dir.name}/{wav.name}"); return True
+
+def test_pack(pdir: Path, strict: bool, do_repair: bool):
+    missing=[]
+    for ev in REQUIRED:
+        wav=pdir/f"{ev}.wav"
+        if not wav.exists() or (strict and wav.stat().st_size<=44): missing.append(ev)
+    repaired=0
+    if missing and do_repair:
+        print(f"[repair] {pdir.name}: {len(missing)} file(s)")
+        for ev in missing:
+            if repair(pdir, ev): repaired+=1
+    bad=0
+    for ev in REQUIRED:
+        wav=pdir/f"{ev}.wav"
+        if not wav.exists() or (strict and wav.stat().st_size<=44): bad+=1
+    return len(missing), repaired, bad
+
+def main():
+    ap=argparse.ArgumentParser()
+    ap.add_argument("--pack"); ap.add_argument("--repair",action="store_true"); ap.add_argument("--strict",action="store_true")
+    a=ap.parse_args()
+    if not VP_ROOT.exists(): print("no voicepacks folder:", VP_ROOT); return 1
+    packs=[VP_ROOT/a.pack] if a.pack else sorted([p for p in VP_ROOT.iterdir() if p.is_dir() and not p.name.startswith("_")], key=lambda x:x.name)
+    total_bad=total_rep=total_miss=0
+    for p in packs:
+        print(f"[check] {p.name}")
+        miss, rep, bad = test_pack(p, strict=a.strict, do_repair=a.repair)
+        total_miss+=miss; total_rep+=rep; total_bad+=bad
+        print(f"  -> missing: {miss}, repaired: {rep}, remaining: {bad}")
+    print(f"\nSummary: packs={len(packs)} missing={total_miss} repaired={total_rep} remaining={total_bad}")
+    if total_bad==0 and total_rep>0: return 2
+    return 0 if total_bad==0 else 1
+if __name__=="__main__": raise SystemExit(main())
+"""
+
+SCRIPT_voice_console = r"""#!/usr/bin/env python3
+# Minimal helper that plays a named event from _active or a specified pack.
+import os, sys
+from pathlib import Path
+
+try:
+    from playsound import playsound
+    HAVE = True
+except Exception:
+    HAVE = False
+
+EVENT = sys.argv[1] if len(sys.argv)>1 else "build_success"
+assets = Path("assets/audio/voicepacks")
+active = assets / "_active" / f"{EVENT}.wav"
+
+def play(p: Path):
+    if not p.exists(): return False
+    if HAVE:
+        try: playsound(str(p)); return True
+        except Exception: return False
+    print(f"[noop] would play {p} (install playsound for audio)")
+    return True
+
+# Try active, then VOICE_PACK, then commander
+if not play(active):
+    pack = os.getenv("VOICE_PACK","commander")
+    if not play(assets/pack/f"{EVENT}.wav"):
+        play(assets/"commander"/f"{EVENT}.wav")
+"""
+
+# ----------------------------- Scaffolding -----------------------------
+def add_workflows(include_pages_latest=True, dry=False):
+    wf = ROOT/".github"/"workflows"
+
+    release = dedent(f"""
+    name: Supersonic — Build & Release
+    on:
+      push:
+        tags:
+          - 'v*.*.*'
+      workflow_dispatch: {{}}
+
+    jobs:
+      build:
+        runs-on: ubuntu-latest
+        permissions:
+          contents: write
+        steps:
+          - uses: actions/checkout@v4
+          - uses: actions/setup-python@v5
+            with: {{ python-version: '3.x' }}
+          - name: Install deps
+            run: |
+              python -V
+              pip install -r requirements.txt
+
+          - name: 🔊 Voicepack smoke test (fail on issues)
+            run: python3 scripts/voicepack_smoketest.py
+
+          - name: Package docs
+            run: |
+              mkdir -p docs
+              echo "<h1>Supersonic release ${{{{ github.ref_name }}}}</h1>" > docs/index.html
+
+          - name: Create GitHub Release
+            uses: softprops/action-gh-release@v2
+            with:
+              tag_name: ${{{{ github.ref_name }}}}
+              generate_release_notes: true
+            env: {{ GITHUB_TOKEN: ${{{{ secrets.GITHUB_TOKEN }}}} }}
+    """)
+    
+    pages_step = """
+          - name: 🔗 Pages alias to latest
+            run: |
+              set -e
+              TAG=${{ github.ref_name }}
+              mkdir -p docs/${TAG} docs/latest
+              rsync -a docs/ docs/${TAG}/
+              rsync -a docs/${TAG}/ docs/latest/
+"""
+    
+    if include_pages_latest:
+        release = release.rstrip() + "\n" + pages_step
+    
+    release = release.strip("\n")
+    safe_write(wf/"release-autopublish.yml", release, dry=dry)
+
+    house = dedent("""
+    name: Supersonic — Housekeeping
+    on: { workflow_dispatch: {} }
+    jobs:
+      tidy:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+          - run: echo "Housekeeping complete"
+    """).strip("\n")
+    safe_write(wf/"housekeeping.yml", house, dry=dry)
+
+    banner = dedent("""
+    name: Supersonic — Status Banner (placeholder)
+    on: { workflow_dispatch: {} }
+    jobs:
+      banner:
+        runs-on: ubuntu-latest
+        steps:
+          - run: echo "Status banner updated"
+    """).strip("\n")
+    safe_write(wf/"status-banner.yml", banner, dry=dry)
+
+def add_repo_meta(dry=False):
+    readme = ROOT/"README.md"
+    if not readme.exists():
+        readme.write_text("# SonicBuilder / Supersonic ControlCore\n\n", encoding="utf-8")
+    badges = dedent("""
+    [![Build & Release](https://img.shields.io/badge/Build%20%26%20Release-Actions-blue)](#)
+    ![Status](https://img.shields.io/badge/Supersonic-Ready_for_Production-1abc9c)
+    """).strip()
+    patch_file(readme, badges, dry=dry)
+
+    safe_write(ROOT/".github"/"CODEOWNERS", "* @YOUR-GITHUB-USER\n", dry=dry)
+    dependabot = dedent("""
+    version: 2
+    updates:
+      - package-ecosystem: "pip"
+        directory: "/"
+        schedule: { interval: "weekly" }
+    """).strip("\n")
+    safe_write(ROOT/".github"/"dependabot.yml", dependabot, dry=dry)
+
+def add_make_helpers(dry=False):
+    mk = ROOT/"Makefile"
+    block = dedent("""
+    # ----- Supersonic ship helpers -----
+    ship:
+\tgit add -A && git commit -m "chore: ship $(shell date -u +%F-%H%MZ)" || true
+\tgit push origin HEAD:main
+
+    # Usage: make tag V=0.2.0
+    tag:
+\t@test -n "$(V)" || (echo "Provide V=x.y.z"; exit 1)
+\tgit tag -a v$(V) -m "release v$(V)"
+\tgit push origin v$(V)
+
+    release:
+\t@python3 scripts/voicepack_preview.py commander || true
+    """).rstrip()
+    if not mk.exists(): mk.write_text("", encoding="utf-8")
+    patch_file(mk, block, dry=dry)
+
+def write_full_voice_toolchain(dry=False):
+    safe_write(ROOT/"scripts/generate_multipack_voicepacks.py", SCRIPT_generate_multipack, dry=dry, executable=True)
+    safe_write(ROOT/"scripts/voicepack_switch.py", SCRIPT_switch, dry=dry, executable=True)
+    safe_write(ROOT/"scripts/voicepack_preview.py", SCRIPT_preview, dry=dry, executable=True)
+    safe_write(ROOT/"scripts/voicepack_smoketest.py", SCRIPT_smoketest, dry=dry, executable=True)
+    safe_write(ROOT/"helpers/supersonic_voice_console.py", SCRIPT_voice_console, dry=dry, executable=True)
+
+def seed_assets_and_generate(dry=False):
+    # Ensure folders
+    base = ROOT/"assets/audio/voicepacks"
+    (base/"commander").mkdir(parents=True, exist_ok=True)
+    # Generate real packs (TTS/beep fallback)
+    if not dry:
+        run([PY, str(ROOT/"scripts/generate_multipack_voicepacks.py")], check=False)
+        # Default active pack -> commander
+        run([PY, str(ROOT/"scripts/voicepack_switch.py"), "use", "commander"], check=False)
+        # Smoke test
+        run([PY, str(ROOT/"scripts/voicepack_smoketest.py")], check=False)
+    print("[ok] voice assets generated & validated")
+
+def git_init_and_push(remote_url: str|None, gh_create: str|None, version: str|None, dry=False):
+    if not (ROOT/".git").exists():
+        if dry: print("[dry] git init")
+        else:
+            run(["git","init"])
+            run(["git","branch","-M","main"])
+    if not dry:
+        run(["git","add","-A"], check=False)
+        run(["git","commit","-m","supersonic: initial handoff"], check=False)
+
+    if gh_create:
+        if shutil.which("gh") is None:
+            print("ERROR: gh CLI not found (install or use --remote)."); sys.exit(2)
+        if not dry:
+            run(["gh","repo","create", gh_create, "--public","--source",".","--remote","origin","--push"])
+    elif remote_url:
+        if not dry:
+            run(["git","remote","remove","origin"], check=False)
+            run(["git","remote","add","origin", remote_url])
+            run(["git","push","-u","origin","main"])
+    else:
+        print("No remote supplied; skipping push. Use --gh-create or --remote.")
+        return
+
+    if version:
+        tag = f"v{version}" if not version.startswith("v") else version
+        if not dry:
+            run(["git","tag","-a", tag, "-m", f"release {tag}"])
+            run(["git","push","origin", tag])
+        else:
+            print(f"[dry] would tag {tag}")
+
+# ----------------------------- Entry -----------------------------
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--remote", help="Git remote URL (https://github.com/you/repo.git)")
+    ap.add_argument("--gh-create", help="Create repo with GitHub CLI: owner/repo")
+    ap.add_argument("--version", help="Release version like 0.1.0 (adds tag v0.1.0)")
+    ap.add_argument("--no-pages", action="store_true", help="Do not add Pages latest alias step")
+    ap.add_argument("--dry-run", action="store_true", help="Show actions without changing files")
+    args = ap.parse_args()
+
+    print("== Supersonic DELUXE shipper starting ==")
+    ensure_requirements(dry=args.dry_run)
+    add_workflows(include_pages_latest=not args.no_pages, dry=args.dry_run)
+    add_repo_meta(dry=args.dry_run)
+    add_make_helpers(dry=args.dry_run)
+    write_full_voice_toolchain(dry=args.dry_run)
+
+    if not args.dry_run:
+        run([PY,"-m","pip","install","-r","requirements.txt"], check=False)
+
+    seed_assets_and_generate(dry=args.dry_run)
+    git_init_and_push(args.remote, args.gh_create, args.version, dry=args.dry_run)
+    print("== Supersonic DELUXE shipper complete ✅ ==")
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,6 @@
+<!-- Dynamic presets + Repeat Last -->
+<div id="mutePresetRow" class="mute-row" style="display:none;">
+  <span class="muted">Custom:</span>
+  <span id="mutePresetBtns"></span>
+  <button class="pill" id="repeatLastBtn" onclick="repeatLastPreset()" title="Repeat last preset">Repeat Last ↻</button>
+</div>

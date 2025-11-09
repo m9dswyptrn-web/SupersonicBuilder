@@ -1,0 +1,6 @@
+### Quick checklist
+- Set envs (`GITHUB_OWNER`, `GITHUB_REPO`) before running so docs & links are stamped.  
+- After first push, check **Actions** for three workflows: **Supersonic CI**, **Docs (MkDocs)**, **Supersonic Release** (on tags).  
+- Your **docs site** will be at: `https://<OWNER>.github.io/<REPO>/` with a **DevOps → Live Artifacts** page showing latest releases & artifacts.
+
+Want me to add a **Release Notes generator** that auto-collates changes from commits/PRs into your GitHub Releases?

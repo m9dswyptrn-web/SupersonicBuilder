@@ -1,0 +1,508 @@
+#!/usr/bin/env python3
+"""
+Supersonic_Deploy_Pack.py
+One-shot orchestrator that installs/refreshes:
+- Docs Health CI (lint, links, strict build, nav sanity)
+- Pre-commit (hygiene, markdownlint, lychee, mkdocs strict/nav, ruff, black, bandit, codespell, prettier)
+- Security stack (CodeQL, pip-audit, Safety, Gitleaks, Dependabot + auto-merge)
+- Security Dashboard + Licenses page + sync workflows
+- Docs header badges, security tiles, and footer (build time + commit + latest tag)
+- MkDocs + workflows patching
+
+Run:
+  python3 Supersonic_Deploy_Pack.py
+Then:
+  git add -A && git commit -m "Supersonic deploy pack" && git push
+"""
+
+import os, stat, sys, textwrap
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+
+# --- Utility writers ---------------------------------------------------
+def write(path: Path, content: str, exe: bool=False, overwrite: bool=True):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and not overwrite:
+        print(f"→ exists {path} (kept)")
+        return
+    path.write_text(content, encoding="utf-8")
+    if exe:
+        mode = path.stat().st_mode
+        path.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    print(f"→ wrote {path}")
+
+def run_py_helper(name: str, payload: str):
+    path = ROOT / name
+    write(path, payload, exe=False, overwrite=True)
+    os.system(f"{sys.executable} {path}")
+
+# --- Embedded helpers (trimmed to essentials, idempotent) --------------
+
+docs_health_bootstrap = r'''#!/usr/bin/env python3
+from pathlib import Path
+ROOT=Path(__file__).resolve().parent
+WORKFLOW="""name: Docs Health
+on:
+  push: {branches:[main],paths:['docs/**','mkdocs.yml','.github/workflows/docs-health.yml','.markdownlint.*','lychee.toml']}
+  pull_request: {paths:['docs/**','mkdocs.yml','.github/workflows/docs-health.yml','.markdownlint.*','lychee.toml']}
+  schedule: [{cron:'17 3 * * *'}]
+  workflow_dispatch:
+permissions:{contents:read}
+jobs:
+  markdownlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DavidAnson/markdownlint-cli2-action@v17
+        with: {globs: '**/*.md', config: '.markdownlint.jsonc', fix: false}
+  links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lycheeverse/lychee-action@v2
+        with: {args: '--config lychee.toml --verbose --no-progress --accept 200,204,206,429 .'}
+        env: {GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}}
+  mkdocs_strict:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Install MkDocs & plugins
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.docs.txt ]; then pip install -r requirements.docs.txt; else pip install mkdocs mkdocs-material; fi
+      - name: Build (strict)
+        run: mkdocs build --clean --strict
+  nav_sanity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - name: Check nav
+        run: python .github/scripts/verify_mkdocs_nav.py
+"""
+MARKDOWNLINT="""{"config":{"MD013":{"line_length":120,"code_blocks":false,"tables":false},"MD033":{"allowed_elements":["br","sub","sup","kbd","img","a"]},"MD041":false},"ignores":["site/**","dist/**","static/**","node_modules/**"]}"""
+LYCHEE="exclude=['mailto:*','tel:*']\naccept=[200,204,206,429]\ninclude_verbatim=true\n"
+VERIFY=r"""import sys,os;from pathlib import Path
+try: import yaml
+except: os.system('python -m pip install pyyaml >/dev/null 2>&1'); import yaml
+R=Path(__file__).resolve().parents[2]; mk=R/'mkdocs.yml'; docs=R/'docs'
+def it(n):
+  if isinstance(n,list):
+    for i in n: yield from it(i)
+  elif isinstance(n,dict):
+    for _,v in n.items():
+      if isinstance(v,str): yield v
+      else: yield from it(v)
+if not mk.exists(): sys.exit(0)
+cfg=yaml.safe_load(mk.read_text()) or {}; nav=cfg.get('nav',[])
+miss=[]
+for rel in it(nav):
+  if rel.startswith(('http://','https://')): continue
+  if not (docs/rel).exists(): miss.append(rel)
+if miss: print('❌ missing:\n  - '+'\n  - '.join(miss)); sys.exit(1)
+print('✅ mkdocs nav OK')
+"""
+def w(p,t): p.parent.mkdir(parents=True,exist_ok=True); p.write_text(t,encoding='utf-8'); print('→ wrote',p)
+w(ROOT/'.github/workflows/docs-health.yml',WORKFLOW)
+w(ROOT/'.markdownlint.jsonc',MARKDOWNLINT)
+w(ROOT/'lychee.toml',LYCHEE)
+w(ROOT/'.github/scripts/verify_mkdocs_nav.py',VERIFY)
+print('✅ Docs Health installed')
+'''
+
+precommit_super = r'''#!/usr/bin/env python3
+from pathlib import Path
+ROOT=Path(__file__).resolve().parent
+PRE="""repos:
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v4.6.0
+  hooks: [ {id: end-of-file-fixer}, {id: trailing-whitespace}, {id: mixed-line-ending},
+           {id: check-yaml}, {id: check-json, args:[--verbose]} ]
+- repo: local
+  hooks:
+    - {id: markdownlint-cli2, name: markdownlint-cli2, entry: bash scripts/markdownlint.sh, language: system, pass_filenames: false, files: ^(docs/|README\\.md|CHANGELOG\\.md|.*\\.md)$}
+    - {id: lychee-links, name: lychee, entry: bash scripts/lychee_check.sh, language: system, pass_filenames: false}
+    - {id: mkdocs-strict, name: mkdocs --strict, entry: bash scripts/mkdocs_strict.sh, language: system, pass_filenames: false}
+    - {id: mkdocs-nav-sanity, name: mkdocs nav, entry: python .github/scripts/verify_mkdocs_nav.py, language: system, pass_filenames: false}
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.6.9
+  hooks:
+    - {id: ruff, args:[--fix, --exit-non-zero-on-fix]}
+    - {id: ruff-format}
+- repo: https://github.com/psf/black
+  rev: 24.10.0
+  hooks:
+    - {id: black}
+- repo: https://github.com/PyCQA/bandit
+  rev: 1.7.10
+  hooks:
+    - {id: bandit, args:[-r, .]}
+- repo: https://github.com/codespell-project/codespell
+  rev: v2.3.0
+  hooks:
+    - {id: codespell, args:["-L","crate,nd,te,ser,fo,ba"]}
+- repo: local
+  hooks:
+    - {id: prettier, name: prettier, entry: bash scripts/prettier.sh, language: system, pass_filenames: false}
+"""
+EC="root=true\n\n[*]\ncharset=utf-8\nend_of_line=lf\ninsert_final_newline=true\ntrim_trailing_whitespace=true\nindent_style=space\nindent_size=2\n\n[*.py]\nindent_size=4\n"
+PP='[tool.black]\nline-length=100\ntarget-version=["py311"]\n\n[tool.ruff]\nline-length=100\ntarget-version="py311"\n'
+ML='''#!/usr/bin/env bash
+set -euo pipefail
+if command -v npx >/dev/null 2>&1; then npx -y markdownlint-cli2 '**/*.md' --config .markdownlint.jsonc
+else echo "❌ npx not found. npm i -D markdownlint-cli2"; exit 1; fi
+'''
+LY='''#!/usr/bin/env bash
+set -euo pipefail
+ARGS=(--verbose --no-progress --accept 200,204,206,429 .)
+[[ -f lychee.toml ]] && ARGS=(--config lychee.toml "${ARGS[@]}")
+if command -v lychee >/dev/null 2>&1; then lychee "${ARGS[@]}"; exit 0; fi
+if command -v docker >/dev/null 2>&1; then docker run --rm -v "$PWD:/work" -w /work lycheeverse/lychee:latest "${ARGS[@]}"; exit 0; fi
+echo "❌ lychee missing"; exit 1
+'''
+MK='''#!/usr/bin/env bash
+set -euo pipefail
+python -m pip install --upgrade pip >/dev/null
+if [[ -f requirements.docs.txt ]]; then python -m pip install -r requirements.docs.txt >/dev/null
+else python -m pip install mkdocs mkdocs-material >/dev/null; fi
+mkdocs build --clean --strict
+'''
+PR='''#!/usr/bin/env bash
+set -euo pipefail
+if ! command -v npx >/dev/null 2>&1; then echo "❌ npx missing. npm i -D prettier"; exit 1; fi
+npx -y prettier -w "**/*.{js,jsx,ts,tsx,css,scss,html,json,yml,yaml,md}"
+'''
+PKJ='{"name":"sonicbuilder-supersonic","private":true,"devDependencies":{"markdownlint-cli2":"^0.15.0","prettier":"^3.3.3"},"scripts":{"lint:md":"markdownlint-cli2 \\"**/*.md\\"","fmt":"prettier -w \\"**/*.{js,jsx,ts,tsx,css,scss,html,json,yml,yaml,md}\\""}}\n'
+def w(p,t,x=False): p.parent.mkdir(parents=True,exist_ok=True); p.write_text(t,encoding='utf-8'); 
+ROOT.joinpath(".pre-commit-config.yaml").write_text(PRE,encoding='utf-8')
+w(ROOT/'.editorconfig',EC)
+if not (ROOT/'pyproject.toml').exists(): w(ROOT/'pyproject.toml',PP)
+w(ROOT/'scripts/markdownlint.sh',ML); (ROOT/'scripts/markdownlint.sh').chmod(0o755)
+w(ROOT/'scripts/lychee_check.sh',LY); (ROOT/'scripts/lychee_check.sh').chmod(0o755)
+w(ROOT/'scripts/mkdocs_strict.sh',MK); (ROOT/'scripts/mkdocs_strict.sh').chmod(0o755)
+w(ROOT/'scripts/prettier.sh',PR); (ROOT/'scripts/prettier.sh').chmod(0o755)
+pj=ROOT/'package.json'
+if pj.exists():
+  import json; data=json.loads(pj.read_text()); data.setdefault('devDependencies',{}).update({"markdownlint-cli2":"^0.15.0","prettier":"^3.3.3"})
+  data.setdefault('scripts',{}).update({"lint:md":"markdownlint-cli2 \"**/*.md\"","fmt":"prettier -w \"**/*.{js,jsx,ts,tsx,css,scss,html,json,yml,yaml,md}\""})
+  pj.write_text(json.dumps(data,indent=2)+"\n",encoding='utf-8')
+else:
+  w(pj,PKJ)
+print("✅ Pre-commit + tooling installed")
+'''
+
+security_bootstrap = r'''#!/usr/bin/env python3
+from pathlib import Path
+ROOT=Path(__file__).resolve().parent
+def w(p,t): p.parent.mkdir(parents=True,exist_ok=True); p.write_text(t,encoding='utf-8'); print('→ wrote',p)
+CODEQL="""name: Security: CodeQL
+on: {push:{branches:[main]}, pull_request:{branches:[main]}, schedule:[{cron:'17 2 * * 1'}], workflow_dispatch:}
+permissions:{contents:read, security-events:write}
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    strategy:{fail-fast:false, matrix:{language:['python','javascript']}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with: {languages: ${{ matrix.language }}}
+      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/analyze@v3
+"""
+DEPS="""name: Security: Dependency Audit
+on: {push:{paths:['requirements*.txt','pyproject.toml','.github/workflows/security-deps.yml']}, schedule:[{cron:'33 3 * * *'}], workflow_dispatch:}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version:'3.11'}
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit safety
+          if [ -f requirements.txt ]; then pip install -r requirements.txt || true; fi
+      - name: pip-audit
+        run: pip-audit -r requirements.txt || pip-audit || true
+      - name: Safety
+        run: |
+          if [ -f requirements.txt ]; then safety check -r requirements.txt --full-report
+          else safety check --full-report; fi
+"""
+SECRETS="""name: Security: Secrets Scan (Gitleaks)
+on: {push:{}, pull_request:{}, schedule:[{cron:'7 4 * * *'}], workflow_dispatch:{}}
+permissions:{contents:read, security-events:write}
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: gitleaks/gitleaks-action@v2
+        env: {GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}}
+        with: {args: 'detect --source . --no-banner --redact --report-format sarif --report-path gitleaks.sarif'}
+      - uses: github/codeql-action/upload-sarif@v3
+        with: {sarif_file: gitleaks.sarif}
+"""
+DEP_YML="version: 2\nupdates:\n  - package-ecosystem: pip\n    directory: '/'\n    schedule: {interval: daily}\n  - package-ecosystem: github-actions\n    directory: '/'\n    schedule: {interval: weekly}\n  - package-ecosystem: npm\n    directory: '/'\n    schedule: {interval: weekly}\n"
+w(ROOT/'.github/workflows/codeql.yml',CODEQL)
+w(ROOT/'.github/workflows/security-deps.yml',DEPS)
+w(ROOT/'.github/workflows/secrets-gitleaks.yml',SECRETS)
+w(ROOT/'.github/dependabot.yml',DEP_YML)
+print('✅ Security workflows installed')
+'''
+
+security_plus_dashboard = r'''#!/usr/bin/env python3
+import re, json, os
+from pathlib import Path
+ROOT=Path(__file__).resolve().parent
+def w(p,t): p.parent.mkdir(parents=True,exist_ok=True); p.write_text(t,encoding='utf-8'); print('→ wrote',p)
+CFG="name: 'SonicBuilder CodeQL'\nqueries:\n  - uses: security-and-quality\npaths: ['.']\npaths-ignore: ['site/**','dist/**','node_modules/**','static/vendor/**']\n"
+WF="""name: Security: CodeQL
+on: {push:{branches:[main]}, pull_request:{branches:[main]}, schedule:[{cron:'17 2 * * 1'}], workflow_dispatch:{}}
+permissions:{contents:read, security-events:write}
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    strategy:{fail-fast:false, matrix:{language:['python','javascript']}}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with: {languages: ${{ matrix.language }}, config-file: ./.github/codeql/codeql-config.yml}
+      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/analyze@v3
+"""
+LIC="""name: Compliance: OSS Licenses
+on: {push:{branches:[main], paths:['requirements*.txt','pyproject.toml','package.json','.github/workflows/licenses.yml']}, workflow_dispatch:{}, schedule:[{cron:'19 4 * * 0'}]}
+jobs:
+  licenses:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version:'3.11'}
+      - name: Install Python tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-licenses toml
+          if [ -f requirements.txt ]; then pip install -r requirements.txt || true; fi
+      - name: Export Python licenses
+        run: |
+          mkdir -p reports
+          pip-licenses --format=json --output-file=reports/python_licenses.json || true
+          pip-licenses --format=markdown --with-urls --output-file=reports/python_licenses.md || true
+      - uses: actions/setup-node@v4
+        with: {node-version:'20'}
+      - name: NPM licenses
+        run: |
+          if [ -f package.json ]; then npm ci || npm install; fi
+          npm i -g license-checker
+          mkdir -p reports
+          license-checker --production --json > reports/npm_licenses.json || true
+          license-checker --production --markdown > reports/npm_licenses.md || true
+      - name: Build licenses page
+        run: python .github/scripts/build_licenses_page.py
+      - uses: actions/upload-artifact@v4
+        with: {name: oss-licenses, path: reports/*}
+      - name: Commit docs update
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/security/licenses.md || true
+          git commit -m "docs: update licenses page" || echo "No changes"
+          git push || true
+"""
+BUILD=r"""import json,os;from pathlib import Path
+ROOT=Path(__file__).resolve().parents[2]; R=ROOT/'reports'; D=ROOT/'docs'/'security'; D.mkdir(parents=True,exist_ok=True)
+def load(p): 
+  try: return json.loads(p.read_text(encoding='utf-8'))
+  except: return None
+py=load(R/'python_licenses.json'); npm=load(R/'npm_licenses.json')
+out=['# Open Source Licenses\n','_Generated by CI._\n','## Python packages\n']
+if isinstance(py,list) and py:
+  out+=['| Package | Version | License | URL |','|---|---|---|---|']
+  for p in py: out.append(f"| {p.get('Name','')} | {p.get('Version','')} | {p.get('License','')} | {p.get('URL','')} |")
+else: out+=['_No Python data._']
+out+=['\n\n## NPM packages (production)\n']
+if isinstance(npm,dict) and npm:
+  out+=['| Package | Licenses |','|---|---|'] 
+  for n,meta in sorted(npm.items()): out.append(f"| {n} | {meta.get('licenses','')} |")
+else: out+=['_No NPM data._']
+(D/'licenses.md').write_text("\n".join(out)+"\n",encoding='utf-8'); print('→ wrote docs/security/licenses.md')
+"""
+DASH_WF="""name: Docs: Security Dashboard Sync
+on: {workflow_dispatch:{}, schedule:[{cron:'13 5 * * *'}], push:{branches:[main],paths:['.github/scripts/update_security_dashboard.py','.github/workflows/security-dashboard.yml']}}
+permissions:{contents: write, security-events: read}
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version:'3.11'}
+      - name: Update dashboard
+        env: {GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}, REPO_FULL: ${{ github.repository }}}
+        run: python .github/scripts/update_security_dashboard.py
+      - name: Commit dashboard
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/security/dashboard.md || true
+          git commit -m "docs: sync security dashboard" || echo "No changes"
+          git push || true
+"""
+UPD=r"""import os,json,urllib.request,urllib.error;from datetime import datetime,timezone;from pathlib import Path
+ROOT=Path(__file__).resolve().parents[2]; DOC=ROOT/'docs'/'security'/'dashboard.md'; DOC.parent.mkdir(parents=True,exist_ok=True)
+T=os.environ.get('GITHUB_TOKEN',''); R=os.environ.get('REPO_FULL',''); ow, rp=(R.split('/',1)+[''])[:2]
+def j(u):
+  h={'Accept':'application/vnd.github+json'}; 
+  if T: h['Authorization']=f'Bearer {T}'; 
+  req=urllib.request.Request(u,headers=h); 
+  with urllib.request.urlopen(req) as r: return json.loads(r.read())
+def fmt(s):
+  try: from datetime import datetime,timezone; return datetime.fromisoformat(s.replace('Z','+00:00')).astimezone(timezone.utc).strftime('%Y-%m-%d')
+  except: return s
+alerts=[]
+try:
+  a=j(f'https://api.github.com/repos/{ow}/{rp}/code-scanning/alerts?per_page=50&state=open')
+  for it in a:
+    rule=it.get('rule',{}); desc=rule.get('description',''); sev=(it.get('rule_severity') or it.get('severity') or '').upper()
+    tool=(it.get('tool',{}) or {}).get('name','CodeQL'); url=it.get('html_url',''); created=fmt(it.get('created_at'))
+    alerts.append(f"- **[{sev}]** {desc} — _{tool}_ · {created} · [View]({url})")
+except Exception as e: alerts=[f"_Failed to load CodeQL alerts: {e}_"]
+deps=[]
+try:
+  d=j(f'https://api.github.com/repos/{ow}/{rp}/dependabot/alerts?per_page=50&state=open')
+  for it in d:
+    pkg=((it.get('dependency') or {}).get('package') or {}).get('name','unknown'); sev=(it.get('security_advisory') or {}).get('severity','').upper()
+    cve=(it.get('security_advisory') or {}).get('cve_id',''); ec=(it.get('security_vulnerability') or {}).get('ecosystem',''); url=(it.get('html_url') or it.get('url') or '')
+    first=fmt(it.get('created_at')); deps.append(f"- **[{sev}]** {pkg} ({ec}) {('· '+cve) if cve else ''} · {first} · [View]({url})")
+except Exception as e: deps=[f"_Failed to load Dependabot alerts: {e}_"]
+out=['# Security Dashboard\n','_Auto-generated._\n','## CodeQL Alerts\n']+ (alerts or ['_No data._']) + ['\n## Dependabot Advisories\n'] + (deps or ['_No data._']) + ['\n## Recent Dependency Audits\n- See Actions → Security: Dependency Audit artifacts.\n']
+DOC.write_text("\n".join(out)+"\n",encoding='utf-8'); print('→ wrote',DOC)
+"""
+SEC_TILE="## Security\n\n<div class=\"grid cards\" markdown>\n- :material-shield-lock:{ .lg } **Security Dashboard**  \n  _Live feed of CodeQL & Dependabot._  \n  [:octicons-arrow-right-24: Open](security/dashboard.md)\n\n- :material-license:{ .lg } **Open Source Licenses**  \n  _Generated weekly/on demand._  \n  [:octicons-arrow-right-24: View](security/licenses.md)\n</div>\n"
+def patch_index():
+  idx=ROOT/'docs'/'index.md'
+  if not idx.exists(): idx.parent.mkdir(parents=True,exist_ok=True); idx.write_text('# Overview\n\n'+SEC_TILE+'\n',encoding='utf-8'); return
+  t=idx.read_text(encoding='utf-8')
+  if 'Security Dashboard' not in t: t=t+'\n\n'+SEC_TILE+'\n'; idx.write_text(t,encoding='utf-8')
+w(ROOT/'.github/codeql/codeql-config.yml',CFG)
+wf=ROOT/'.github/workflows/codeql.yml'
+if not wf.exists(): w(wf,WF)
+w(ROOT/'.github/workflows/licenses.yml',LIC)
+w(ROOT/'.github/scripts/build_licenses_page.py',BUILD)
+w(ROOT/'.github/workflows/security-dashboard.yml',DASH_WF)
+w(ROOT/'.github/scripts/update_security_dashboard.py',UPD)
+patch_index()
+print('✅ Security+Dashboard installed')
+'''
+
+badges_tiles = r'''#!/usr/bin/env python3
+import re
+from pathlib import Path
+ROOT=Path(__file__).resolve().parent
+MK=ROOT/'mkdocs.yml'; OVR=ROOT/'docs'/'overrides'/'main.html'; IDX=ROOT/'docs'/'index.md'
+BAD="""{% extends "base.html" %}
+{% block extrahead %}{{ super() }}{% endblock %}
+{% block content %}
+  <div id="sb-badges" style="margin:0 0 12px 0; display:flex; flex-wrap:wrap; gap:8px;">
+    <a href="https://github.com/{{ config.repo_url | replace('https://github.com/','') }}/actions"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/{{ config.repo_url | replace('https://github.com/','') }}/supersonic-build.yml?label=CI&logo=github" /></a>
+    <a href="https://github.com/{{ config.repo_url | replace('https://github.com/','') }}/actions"><img alt="Docs" src="https://img.shields.io/github/actions/workflow/status/{{ config.repo_url | replace('https://github.com/','') }}/docs-mkdocs.yml?label=Docs&logo=github" /></a>
+    <a href="https://github.com/{{ config.repo_url | replace('https://github.com/','') }}/security/code-scanning"><img alt="CodeQL" src="https://img.shields.io/github/actions/workflow/status/{{ config.repo_url | replace('https://github.com/','') }}/codeql.yml?label=CodeQL&logo=github" /></a>
+    <a href="https://github.com/{{ config.repo_url | replace('https://github.com/','') }}/security/dependabot"><img alt="Dependabot" src="https://img.shields.io/badge/dependabot-enabled-025e8c?logo=dependabot" /></a>
+  </div>
+  {{ super() }}
+{% endblock %}
+"""
+SEC="## Security\n\n<div class=\"grid cards\" markdown>\n- :material-shield-lock:{ .lg } **Security Dashboard**  \n  [:octicons-arrow-right-24: Open](security/dashboard.md)\n- :material-license:{ .lg } **Open Source Licenses**  \n  [:octicons-arrow-right-24: View](security/licenses.md)\n</div>\n"
+def patch_mk():
+  if not MK.exists(): return
+  t=MK.read_text(encoding='utf-8')
+  if 'custom_dir:' not in t:
+    t=re.sub(r'(?m)^theme:\\s*\\n','theme:\\n  custom_dir: docs/overrides\\n',t,count=1)
+  MK.write_text(t,encoding='utf-8')
+def ensure():
+  OVR.parent.mkdir(parents=True,exist_ok=True); OVR.write_text(BAD,encoding='utf-8')
+  if IDX.exists() and 'Security Dashboard' not in IDX.read_text(encoding='utf-8'):
+    IDX.write_text(IDX.read_text(encoding='utf-8')+'\n\n'+SEC+'\n',encoding='utf-8')
+patch_mk(); ensure(); print('✅ Badges header + Security tiles installed')
+'''
+
+footer_bootstrap = r'''#!/usr/bin/env python3
+import re, os
+from pathlib import Path
+ROOT=Path(__file__).resolve().parent
+MK=ROOT/'mkdocs.yml'; FOOT=ROOT/'docs'/'overrides'/'partials'/'footer.html'; JS=ROOT/'docs'/'assets'/'js'/'footer_meta.js'; META=ROOT/'.github'/'scripts'/'write_docs_build_meta.py'; WF=ROOT/'.github'/'workflows'/'docs-mkdocs.yml'
+FOOTER="""{% set repo = config.repo_url | replace('https://github.com/','') %}
+{% set page_footer %}
+  <div class="md-footer-meta__inner">
+    <div class="md-footer-copyright"><span>© {{ config.site_name }}</span></div>
+    <div class="md-footer-social"><span id="sb-footer-build" class="mdx-build">
+      <strong>Build:</strong> <span id="sb-build-time">…</span> ·
+      <strong>Commit:</strong> <span id="sb-build-sha">…</span> ·
+      <strong>Latest:</strong> <span id="sb-latest-tag">…</span>
+    </span></div>
+  </div>
+{% endset %}
+{% block footer %}{{ super() }}<div class="md-footer-meta md-typeset">{{ page_footer }}</div>{% endblock %}
+"""
+JS_PAY=r"""(function(){function s(i,t){var e=document.getElementById(i);e&&(e.textContent=t)}fetch('assets/build.json',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{j?(s('sb-build-time',(j.build_time_utc||'').replace('T',' ').replace('Z',' UTC')),s('sb-build-sha',(j.commit_short||'').slice(0,7))):(s('sb-build-time','n/a'),s('sb-build-sha','n/a'))}).catch(()=>{s('sb-build-time','n/a');s('sb-build-sha','n/a')});(async()=>{try{const a=document.querySelector('a.md-source')?.getAttribute('href')?.replace('https://github.com/','');if(!a)throw 0;const r=await fetch(`https://api.github.com/repos/${a}/releases/latest`,{headers:{Accept:'application/vnd.github+json'}});if(!r.ok)throw 0;const j=await r.json();s('sb-latest-tag',j.tag_name||j.name||'latest')}catch(e){try{const a=document.querySelector('a.md-source')?.getAttribute('href')?.replace('https://github.com/','');const r=await fetch(`https://api.github.com/repos/${a}/tags?per_page=1`);const t=await r.json();s('sb-latest-tag',(t&&t[0]&&t[0].name)||'latest')}catch(e2){s('sb-latest-tag','latest')}}})();})();"""
+META_PAY=r"""import json,os,subprocess;from datetime import datetime,timezone;from pathlib import Path
+ROOT=Path(__file__).resolve().parents[2]; A=ROOT/'docs'/'assets'; A.mkdir(parents=True,exist_ok=True)
+def git(*a): return subprocess.check_output(['git',*a],text=True).strip()
+commit=os.environ.get('GITHUB_SHA') or git('rev-parse','HEAD'); short=commit[:7]; ref=os.environ.get('GITHUB_REF_NAME','')
+(A/'build.json').write_text(json.dumps({'build_time_utc':datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),'commit':commit,'commit_short':short,'ref':ref},indent=2)+'\n',encoding='utf-8')
+print('→ wrote docs/assets/build.json')
+"""
+def w(p,t): p.parent.mkdir(parents=True,exist_ok=True); p.write_text(t,encoding='utf-8'); print('→ wrote',p)
+w(FOOT,FOOTER); w(JS,JS_PAY); w(META,META_PAY)
+if MK.exists():
+  t=MK.read_text(encoding='utf-8')
+  if 'custom_dir:' not in t: t=re.sub(r'(?m)^theme:\\s*\\n','theme:\\n  custom_dir: docs/overrides\\n',t,count=1)
+  if 'extra_javascript:' in t and 'docs/assets/js/footer_meta.js' not in t: t=t.replace('extra_javascript:\\n','extra_javascript:\\n  - docs/assets/js/footer_meta.js\\n')
+  elif 'extra_javascript:' not in t: t+='\nextra_javascript:\n  - docs/assets/js/footer_meta.js\n'
+  MK.write_text(t,encoding='utf-8'); print('→ patched mkdocs.yml')
+if WF.exists():
+  wtxt=WF.read_text(encoding='utf-8')
+  if 'write_docs_build_meta.py' not in wtxt:
+    wtxt=wtxt.replace("pip install -r requirements.docs.txt","pip install -r requirements.docs.txt\n      - name: Write build meta (time/commit)\n        run: |\n          python .github/scripts/write_docs_build_meta.py")
+    WF.write_text(wtxt,encoding='utf-8'); print('→ patched docs workflow')
+print('✅ Docs footer installed')
+'''
+
+# --- Orchestration -----------------------------------------------------
+def main():
+    print("=== Supersonic Deploy Pack ===")
+    # 1) Docs health
+    run_py_helper("docs_health_bootstrap.py", docs_health_bootstrap)
+    # 2) Pre-commit + tooling (ruff/black/bandit/codespell/prettier/lychee/markdownlint/mkdocs strict)
+    run_py_helper("precommit_bootstrap_super.py", precommit_super)
+    # 3) Security core (CodeQL, deps audit, secrets, Dependabot)
+    run_py_helper("security_bootstrap.py", security_bootstrap)
+    # 4) Security dashboard + licenses + sync workflows
+    run_py_helper("security_plus_dashboard_bootstrap.py", security_plus_dashboard)
+    # 5) Header badges + security tiles
+    run_py_helper("security_badges_tiles_bootstrap.py", badges_tiles)
+    # 6) Footer build time/commit/latest tag
+    run_py_helper("docs_footer_bootstrap.py", footer_bootstrap)
+
+    print("\n✅ All components installed/updated.")
+    print("\nNext steps:")
+    print("  1) python -m pip install --upgrade pip && pip install pre-commit bandit codespell")
+    print("  2) if you have npm: npm install")
+    print("  3) pre-commit autoupdate && pre-commit install")
+    print("  4) pre-commit run --all-files  # first pass (may fix/flag things)")
+    print("  5) git add -A && git commit -m 'Supersonic deploy pack' && git push")
+    print("\nDocs:")
+    print("  - Actions → Docs (MkDocs) will publish the site with badges header + footer + Security pages.")
+    print("  - Actions → Security jobs will start (CodeQL / audits / secrets).")
+
+if __name__ == "__main__":
+    main()

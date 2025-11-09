@@ -1,0 +1,64 @@
+name: Docs Ready Command
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check trigger text
+        id: check
+        run: |
+          txt="${{ github.event.comment.body || '' }}"
+          if echo "$txt" | grep -qiE '^\s*/docs-ready\b'; then
+            echo "matched=true" >> $GITHUB_OUTPUT
+          else
+            echo "matched=false" >> $GITHUB_OUTPUT
+          fi
+      - name: Not a slash command → exit
+        if: steps.check.outputs.matched != 'true'
+        run: echo "Not a /docs-ready comment; skipping."
+      - name: Ensure label exists (docs:ready)
+        if: steps.check.outputs.matched == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO:  ${{ github.event.repository.name }}
+        run: |
+          set -e
+          hdr='-H "Authorization: Bearer '"$GH_TOKEN"'" -H "Accept: application/vnd.github+json"'
+          have=$(bash -lc 'curl -sS '"$hdr"' https://api.github.com/repos/'"$OWNER"'/'"$REPO"'/labels | jq -r ".[].name" | grep -i "^docs:ready$" || true')
+          if [ -z "$have" ]; then
+            bash -lc 'curl -sS -X POST '"$hdr"' https://api.github.com/repos/'"$OWNER"'/'"$REPO"'/labels \
+              -d '"'"'{"name":"docs:ready","color":"0e8a16","description":"Generated docs validated/ready"}'"'"''
+          fi
+      - name: Apply label
+        if: steps.check.outputs.matched == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO:  ${{ github.event.repository.name }}
+          NUM:   ${{ github.event.issue.number }}
+        run: |
+          curl -sS -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${OWNER}/${REPO}/issues/${NUM}/labels \
+            -d '{"labels":["docs:ready"]}'
+      - name: Acknowledge
+        if: steps.check.outputs.matched == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO:  ${{ github.event.repository.name }}
+          NUM:   ${{ github.event.issue.number }}
+        run: |
+          curl -sS -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${OWNER}/${REPO}/issues/${NUM}/comments \
+            -d '{"body":"✅ `docs:ready` received. Label applied and release checks will pick this up."}'

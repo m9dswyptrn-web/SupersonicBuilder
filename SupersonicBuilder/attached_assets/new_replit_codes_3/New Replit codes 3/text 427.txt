@@ -1,0 +1,2 @@
+chmod +x run_supervised.sh
+./run_supervised.sh

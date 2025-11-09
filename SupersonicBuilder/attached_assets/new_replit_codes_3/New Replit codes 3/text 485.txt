@@ -1,0 +1,8 @@
+<div class="hr"></div>
+<div style="display:flex; gap:8px; align-items:center;">
+  <span class="muted" style="font-size:13px;">Quick mute:</span>
+  <button class="pill" onclick="quickMute(5)">5m</button>
+  <button class="pill" onclick="quickMute(30)">30m</button>
+  <button class="pill" onclick="quickMute(60)">1h</button>
+  <button class="pill" onclick="extendMuteToMidnight()">→ Midnight</button>
+</div>

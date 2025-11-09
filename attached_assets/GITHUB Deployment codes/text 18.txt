@@ -1,0 +1,5 @@
+# Recommended (creates the repo for you):
+python3 ship_to_github_deluxe.py --gh-create m9dswyptrn-web/SonicBuilder --version 1.0.0
+
+# Or push to an existing repo:
+python3 ship_to_github_deluxe.py --remote https://github.com/<you>/<repo>.git --version 1.0.0

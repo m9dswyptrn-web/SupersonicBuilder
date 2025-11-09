@@ -1,0 +1,36 @@
+// --- Restart Label Enhancement ---
+const lblRestart = document.getElementById("dp-restart-label");
+
+function lastLabelText() {
+  if (!LAST || !LAST.has) return "Last: —";
+  const base = `${LAST.make} ${LAST.model} ${LAST.year}`.trim();
+  const diag = LAST.id || "—";
+  const fmtv = `${(LAST.fmt || "pdf")}, ${(LAST.variant || "dark")}`;
+  const pageTxt = (LAST.page && Number.isFinite(LAST.page)) ? ` · p${LAST.page}` : "";
+  return `Last: ${base} · ${diag} (${fmtv})${pageTxt}`;
+}
+
+function showRestart(show=true) {
+  if (btnRestart) btnRestart.hidden = !show;
+  if (lblRestart) {
+    lblRestart.textContent = lastLabelText();
+    lblRestart.hidden = !show;
+  }
+}
+
+function rememberState() {
+  LAST = {
+    has: true,
+    fmt: selFmt.value,
+    url: buildURL(),
+    make: selMake.value, model: selModel.value, year: selYear.value, id: selDiag.value,
+    variant: selVar.value,
+    page, scale, rotation
+  };
+  showRestart(true);
+}
+
+function forgetState() {
+  LAST.has = false;
+  showRestart(false);
+}

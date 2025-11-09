@@ -1,0 +1,5 @@
+winget install Git.Git
+winget install GitHub.GitLFS
+winget install GitHub.cli
+git lfs install
+gh auth login

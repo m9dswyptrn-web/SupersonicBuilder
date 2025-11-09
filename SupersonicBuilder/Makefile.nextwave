@@ -1,0 +1,6 @@
+merge-manual:
+	python scripts/merge_manual_simple.py --main out/SonicBuilder_Supersonic_Manual_v2.1.0-SB-4P.pdf --appendix out/NextGen_Appendix_v2.2.0-SB-NEXTGEN.pdf --out out/SonicBuilder_Manual_with_Appendix_v2.2.1.pdf
+android-otg-check:
+	bash tools/android/otg_host_check.sh
+android-otg-diag:
+	python tools/android/otg_diag.py

@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""
+Compares current artifacts (via globs) against the previous GitHub release.
+Outputs Markdown → RELEASE_SIZE_DIFF.md
+
+Env needed in Actions:
+  GITHUB_REPOSITORY (owner/repo), GITHUB_TOKEN
+Args:
+  --globs  newline-delimited include/exclude patterns (use '!' for excludes)
+  --tag    current tag (e.g., v1.2.3)
+  --out    output markdown filename (default RELEASE_SIZE_DIFF.md)
+"""
+from __future__ import annotations
+import os, sys, json, urllib.request, urllib.error
+from pathlib import Path
+from glob import glob
+
+def expand_globs(lines):
+    inc, exc = [], []
+    for s in (l.strip() for l in lines):
+        if not s: continue
+        (exc if s.startswith("!") else inc).append(s[1:] if s.startswith("!") else s)
+    files=set()
+    for p in inc:
+        for m in glob(p, recursive=True):
+            q=Path(m)
+            if q.is_file(): files.add(q.resolve())
+    ex=set()
+    for p in exc:
+        for m in glob(p, recursive=True):
+            q=Path(m)
+            if q.is_file(): ex.add(q.resolve())
+    return sorted([p for p in files if p not in ex])
+
+def human(n:int)->str:
+    units=["B","KB","MB","GB","TB"]; i=0; f=float(n)
+    while f>=1024 and i<len(units)-1: f/=1024; i+=1
+    return f"{f:.2f} {units[i]}"
+
+def gh_get(url:str, token:str):
+    req = urllib.request.Request(
+        url,
+        headers={"Authorization": f"Bearer {token}", "Accept":"application/vnd.github+json"}
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+def find_previous_release(owner_repo:str, token:str, current_tag:str)->dict|None:
+    releases = gh_get(f"https://api.github.com/repos/{owner_repo}/releases?per_page=100", token)
+    releases.sort(key=lambda r:r.get("created_at",""), reverse=True)
+    seen_current = False
+    for rel in releases:
+        if rel.get("tag_name")==current_tag:
+            seen_current = True
+            continue
+        if seen_current:
+            return rel
+    for rel in releases:
+        if rel.get("tag_name") != current_tag:
+            return rel
+    return None
+
+def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--globs", required=True)
+    ap.add_argument("--tag", required=True)
+    ap.add_argument("--out", default="RELEASE_SIZE_DIFF.md")
+    args = ap.parse_args()
+
+    owner_repo = os.getenv("GITHUB_REPOSITORY","").strip()
+    token = os.getenv("GITHUB_TOKEN","").strip() or os.getenv("GH_TOKEN","").strip()
+    if not owner_repo or not token:
+        print("Missing GITHUB_REPOSITORY or token", file=sys.stderr); sys.exit(1)
+
+    files = expand_globs(args.globs.splitlines())
+    cur = { str(p.name): p.stat().st_size for p in files }
+    cur_total = sum(cur.values())
+
+    prev = find_previous_release(owner_repo, token, args.tag)
+    prev_tag = prev.get("tag_name") if prev else ""
+    prev_assets = { a["name"]: int(a.get("size",0)) for a in (prev.get("assets",[]) if prev else []) }
+    prev_total = sum(prev_assets.values())
+
+    names = set(cur)|set(prev_assets)
+    rows=[]
+    for n in sorted(names):
+        a = cur.get(n, 0)
+        b = prev_assets.get(n, 0)
+        delta = a-b
+        rows.append((n, a, b, delta))
+    rows.sort(key=lambda r: abs(r[3]), reverse=True)
+
+    md=[]
+    md.append(f"## Artifact Size Diff — {args.tag}")
+    md.append("")
+    md.append(f"Prev: **{prev_tag or '—'}** total **{human(prev_total)}** → Now: **{human(cur_total)}**  "
+              f"(**{('+' if cur_total-prev_total>=0 else '')}{human(cur_total-prev_total)}**)")
+    md.append("")
+    md.append("| File | Current | Previous | Δ |")
+    md.append("|------|---------:|---------:|----:|")
+    for n,a,b,d in rows[:50]:
+        sign = "+" if d>=0 else ""
+        md.append(f"| `{n}` | {human(a)} | {human(b)} | {sign}{human(d)} |")
+    md.append("")
+    Path(args.out).write_text("\n".join(md), encoding="utf-8")
+    print(f"Wrote {args.out}")
+
+if __name__=="__main__":
+    main()

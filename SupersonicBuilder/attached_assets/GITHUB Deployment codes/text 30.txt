@@ -1,0 +1,3 @@
+# Makefile at repo root
+ship:
+\tpython3 deploy_to_github.py --owner ChristopherElgin --repo SonicBuilderSupersonic --version v1.0.0 --public --fresh

@@ -1,0 +1,1 @@
+token_ok = request.headers.get("X-Reload-Token") == os.getenv("RELOAD_TOKEN", "")

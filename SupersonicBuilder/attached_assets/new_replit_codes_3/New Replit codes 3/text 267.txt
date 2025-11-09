@@ -1,0 +1,48 @@
+# ... keep existing imports/classes (RAG, SkillPack) above ...
+
+from agent.llm_backend import LLM  # NEW
+
+SYS_PROMPT = (
+    "You are Supersonic Tech Agent. Be concise, cite file paths from context when relevant. "
+    "If a wiring or DSP task is requested, outline exact steps and common pitfalls."
+)
+
+class Agent:
+    def __init__(self):
+        self.rag = RAG(EMBED_MODEL)
+        self.skills = SkillPack(SKILLS_DIR)
+        self.llm = None
+        try:
+            self.llm = LLM()  # will lazily load on first call
+        except Exception as e:
+            # keep running even without model file; we’ll just return stub
+            print(f"[agent] LLM not ready yet: {e}")
+
+    def ingest_dir(self, root: Path):
+        for p in root.rglob("*.md"):
+            text = p.read_text("utf-8", errors="ignore")
+            self.rag.add_doc(str(p), text, {"path": str(p)})
+        return "ingested"
+
+    def query(self, q: str):
+        ctx = self.rag.search(q, k=5)
+        context_text = "\n\n".join(f"[{i+1}] {h['meta'].get('path','')}:\n{h['text'][:1200]}"
+                                   for i, h in enumerate(ctx))
+        if self.llm:
+            prompt = (
+                f"Question:\n{q}\n\nContext (may be partial):\n{context_text}\n\n"
+                "Answer with numbered steps when relevant and cite the paths [1], [2], ... you used."
+            )
+            try:
+                answer = self.llm.generate(prompt, system=SYS_PROMPT, max_tokens=512)
+            except Exception as e:
+                answer = f"(LLM error; falling back) {e}"
+        else:
+            paths = "\n".join(f"- {h['meta'].get('path','')}" for h in ctx)
+            answer = f"(stub) Found related files:\n{paths}\nAdd a GGUF model at AGENT_MODEL to enable answers."
+
+        return {
+            "answer": answer,
+            "context_hits": [h["meta"].get("path","") for h in ctx],
+            "skills": self.skills.list(),
+        }

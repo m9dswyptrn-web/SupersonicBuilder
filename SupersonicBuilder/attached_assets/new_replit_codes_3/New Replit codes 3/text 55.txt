@@ -1,0 +1,22 @@
+  function beginLongTask() {
+    CANCEL.active = false;
+    btnCancel.disabled = false;
+  }
+  function endLongTask() {
+    btnCancel.disabled = true;
+    CANCEL.active = false;
+  }
+  async function cancelAll(reason = "User canceled") {
+    CANCEL.active = true;
+    status(reason);
+    // Cancel an in-flight page render
+    try { currentRenderTask?.cancel(); } catch {}
+    currentRenderTask = null;
+    // Cancel a loading document
+    try { await pdfLoadingTask?.destroy?.(); } catch {}
+    pdfLoadingTask = null;
+    // UI reset (don’t hide preview; user may resume later)
+    resetProgress();
+    showSpinner(false);
+  }
+  btnCancel?.addEventListener("click", () => { cancelAll(); });

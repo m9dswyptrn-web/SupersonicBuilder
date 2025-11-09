@@ -1,0 +1,21 @@
+{
+  "project_url": "https://github.com/orgs/<YOUR_ORG>/projects/<PROJECT_NUMBER>",
+  "views": [
+    {
+      "name": "Bugs",
+      "filter": "label:bug"
+    },
+    {
+      "name": "Ready for Review",
+      "filter": "label:\"ready for review\" OR label:\"needs review\""
+    },
+    {
+      "name": "Features",
+      "filter": "label:feature"
+    },
+    {
+      "name": "Backlog",
+      "filter": "is:issue -label:done"
+    }
+  ]
+}

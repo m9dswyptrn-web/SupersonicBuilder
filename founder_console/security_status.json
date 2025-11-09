@@ -1,0 +1,94 @@
+{
+  "version": "2.0.9",
+  "timestamp": "2025-11-09T18:11:02.993082",
+  "checks": [
+    {
+      "id": "SEC-001",
+      "name": "Subprocess Shell Injection",
+      "description": "Verify subprocess calls avoid shell=True where possible",
+      "severity": "high",
+      "status": "verified",
+      "message": "Subprocess calls reviewed for shell injection vulnerabilities"
+    },
+    {
+      "id": "SEC-002",
+      "name": "File Permissions",
+      "description": "Ensure sensitive files have restrictive permissions (600/700)",
+      "severity": "medium",
+      "status": "fixed",
+      "message": "Secured 2 file(s)/directory(ies)"
+    },
+    {
+      "id": "SEC-003",
+      "name": "Secret Exposure",
+      "description": "Verify no hardcoded secrets in source code",
+      "severity": "critical",
+      "status": "warnings",
+      "message": "Potential secret exposure in 16 file(s)"
+    },
+    {
+      "id": "SEC-004",
+      "name": "Input Validation",
+      "description": "Ensure user input is properly validated",
+      "severity": "high",
+      "status": "verified",
+      "message": "Input validation patterns reviewed"
+    },
+    {
+      "id": "SEC-005",
+      "name": "Path Traversal",
+      "description": "Verify file operations prevent directory traversal",
+      "severity": "high",
+      "status": "verified",
+      "message": "Path traversal protections verified"
+    },
+    {
+      "id": "SEC-006",
+      "name": "Dependency Versions",
+      "description": "Check dependencies for known vulnerabilities",
+      "severity": "medium",
+      "status": "verified",
+      "message": "Dependencies reviewed for known vulnerabilities"
+    },
+    {
+      "id": "SEC-007",
+      "name": "CORS Configuration",
+      "description": "Verify CORS headers are properly configured",
+      "severity": "medium",
+      "status": "verified",
+      "message": "CORS configuration reviewed"
+    },
+    {
+      "id": "SEC-008",
+      "name": "Rate Limiting",
+      "description": "Check API endpoints have rate limiting",
+      "severity": "low",
+      "status": "not_applicable",
+      "message": "Rate limiting not required for static badge endpoints"
+    },
+    {
+      "id": "SEC-009",
+      "name": "Error Handling",
+      "description": "Ensure errors don't leak sensitive information",
+      "severity": "medium",
+      "status": "verified",
+      "message": "Error handling reviewed for information disclosure"
+    },
+    {
+      "id": "SEC-010",
+      "name": "Logging Security",
+      "description": "Verify logs don't contain sensitive data",
+      "severity": "medium",
+      "status": "verified",
+      "message": "Logging patterns reviewed for sensitive data exposure"
+    }
+  ],
+  "summary": {
+    "total": 10,
+    "fixed": 1,
+    "verified": 7,
+    "warnings": 1,
+    "failed": 0,
+    "not_applicable": 1
+  }
+}

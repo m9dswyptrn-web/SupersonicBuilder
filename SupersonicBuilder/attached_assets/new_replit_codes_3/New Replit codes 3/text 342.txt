@@ -1,0 +1,3 @@
+# Activate your oneAPI environment first (e.g., source oneAPI setvars.sh)
+export CMAKE_ARGS="-DLLAMA_SYCL=on"
+pip install --force-reinstall --no-binary llama-cpp-python llama-cpp-python==0.3.2

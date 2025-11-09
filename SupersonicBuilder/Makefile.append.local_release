@@ -1,0 +1,33 @@
+
+# ==== Local Release Parity: build + two-up (raster) + checksums ===============
+# Requires:
+#   - scripts/two_up_crops.py (with --rasterize)
+#   - build_release_meta[_light] from Makefile.append.meta
+#   - deps: pypdf, reportlab, Pillow, pymupdf
+.PHONY: release_with_two_up
+
+release_with_two_up:
+	@echo "==> Building release (dark) with metadata/footer..."
+	$(MAKE) build_release_meta
+	@echo "==> Building release (light) with metadata/footer (optional)..."
+	-$(MAKE) build_release_meta_light
+	@echo "==> Generating rasterized two-up PDFs..."
+	@mkdir -p dist
+	@if [ -f output/sonic_manual_dark.pdf ]; then \
+	  $(PY) scripts/two_up_crops.py --input output/sonic_manual_dark.pdf \
+	    --output output/sonic_manual_dark_two_up_raster.pdf --rasterize --dpi 300; \
+	fi
+	@if [ -f output/sonic_manual_light.pdf ]; then \
+	  $(PY) scripts/two_up_crops.py --input output/sonic_manual_light.pdf \
+	    --output output/sonic_manual_light_two_up_raster.pdf --rasterize --dpi 300; \
+	fi
+	@echo "==> Collecting outputs into dist/ ..."
+	@shopt -s nullglob; \
+	for f in output/*two_up*.pdf; do cp -f $$f dist/; done; \
+	for f in output/*.pdf; do \
+	  case "$$f" in *two_up* ) : ;; * ) cp -f "$$f" dist/ ;; esac; \
+	done
+	@echo "==> Generating SHA256 sums ..."
+	@cd dist && rm -f SHA256SUMS.txt && \
+	for f in *.{pdf,zip} 2>/dev/null; do sha256sum "$$f" >> SHA256SUMS.txt; done || true
+	@echo "==> Done. Artifacts in dist/"

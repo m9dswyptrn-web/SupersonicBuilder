@@ -1,0 +1,46 @@
+<section class="card" id="diagram-picker">
+  <header class="card-title">Vehicle Wiring Diagrams</header>
+  <div class="card-body">
+    <div class="dp-row">
+      <label>Make</label>
+      <select id="dp-make"></select>
+    </div>
+    <div class="dp-row">
+      <label>Model</label>
+      <select id="dp-model" disabled></select>
+    </div>
+    <div class="dp-row">
+      <label>Year</label>
+      <select id="dp-year" disabled></select>
+    </div>
+
+    <hr class="dp-sep"/>
+
+    <div class="dp-row">
+      <label>Diagram</label>
+      <select id="dp-diagram" disabled></select>
+    </div>
+
+    <div class="dp-row">
+      <label>Variant</label>
+      <select id="dp-variant">
+        <option value="dark" selected>dark</option>
+        <option value="light">light</option>
+      </select>
+    </div>
+    <div class="dp-row">
+      <label>Format</label>
+      <select id="dp-format">
+        <option value="pdf" selected>pdf</option>
+        <option value="png">png</option>
+      </select>
+    </div>
+
+    <div class="dp-actions">
+      <button id="dp-open" class="btn primary" disabled>Open</button>
+      <button id="dp-copy" class="btn" disabled>Copy URL</button>
+    </div>
+
+    <p id="dp-status" class="muted"></p>
+  </div>
+</section>

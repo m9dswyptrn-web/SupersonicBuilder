@@ -1,0 +1,1 @@
+document.getElementById('msHealth')?.addEventListener('click', ()=> reloadNow());

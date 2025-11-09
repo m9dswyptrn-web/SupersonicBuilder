@@ -1,0 +1,60 @@
+# =========================================================
+#  Supersonic Project Environment Example (.env template)
+# =========================================================
+# Copy this file to .env in your project root and fill out values.
+# Used by deploy.sh, Makefile, and Python scripts for preflight and sync.
+
+# ----------------------
+# GitHub / Git settings
+# ----------------------
+# Full HTTPS remote URL (preferred for safety)
+SAFE_REMOTE=https://github.com/<owner>/<repo>.git
+
+# Alternative shorthand repository identifier (if SAFE_REMOTE not used)
+GITHUB_REPOSITORY=<owner>/<repo>
+
+# Optional Git identity overrides (if not already set globally)
+GIT_USER_NAME=<your-github-username>
+GIT_USER_EMAIL=<your-email@domain.com>
+
+# ----------------------
+# API / App settings
+# ----------------------
+# Base URL of your running Replit / local FastAPI / Flask app
+BASE_URL=http://localhost:8000
+
+# Health check endpoints (override only if customized)
+PING_ENDPOINT=/api/ping
+READY_ENDPOINT=/api/ready
+STATUS_ENDPOINT=/api/status
+SYNC_ENDPOINT=/api/sync
+
+# ----------------------
+# Snapshot & Build
+# ----------------------
+# Name of full-project snapshot archive
+SNAPSHOT_NAME=SonicBuilder_SUPERSONIC_SNAPSHOT.zip
+
+# Comma-separated excludes for ZIP operations
+ZIP_EXCLUDES=.git,__pycache__,node_modules,build,dist,.mypy_cache,.pytest_cache
+
+# ----------------------
+# Misc / Advanced
+# ----------------------
+# Toggle quiet mode in deploy.sh and Makefile (1 = quiet)
+QUIET=0
+
+# Auto-fix identity and origin during preflight
+PREFLIGHT_FIX=1
+
+# Auto-push after snapshot creation
+PREFLIGHT_PUSH=1
+
+# Skip postinstall wiring (rare; default = 0)
+SKIP_POSTINSTALL=0
+
+# Continuous sync toggle (if using health/sync pack)
+CONTINUOUS_SYNC=1
+
+# Optional environment label (for logs or tagging builds)
+ENV_LABEL=dev

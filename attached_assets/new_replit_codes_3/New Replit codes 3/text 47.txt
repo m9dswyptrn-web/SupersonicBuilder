@@ -1,0 +1,22 @@
+/* Inline label next to slider */
+.dp-inline { color:#cbd5e1; margin-right:.35rem; }
+
+/* Progress container */
+.dp-progress {
+  width: 140px;
+  height: 8px;
+  background: #1d232b;
+  border: 1px solid #2b2f36;
+  border-radius: 4px;
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0 .4rem;
+}
+.dp-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #60a5fa, #34d399);
+  width: 0%;
+  transition: width .15s ease;
+}
+.dp-progress-text { min-width: 38px; display:inline-block; text-align:right; }

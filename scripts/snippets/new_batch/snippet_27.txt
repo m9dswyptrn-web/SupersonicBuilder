@@ -1,0 +1,2 @@
+cd SonicBuilder
+make verify-deep              # deepclean + preflight + make all + verify

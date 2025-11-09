@@ -1,0 +1,1 @@
+FLASK_ENV=development CATALOG_TTL_HOURS=0.17 flask run

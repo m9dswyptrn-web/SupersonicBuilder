@@ -1,0 +1,13 @@
+{
+  "project_name": "SonicBuilder",
+  "vehicle": "Chevy Sonic LTZ (T300)",
+  "version": "v3.2.1",
+  "profile": "dark",
+  "changelog_md": "CHANGELOG_v3.2.1.md",
+  "diff_renderer": "SonicBuilder/tools/diff_render_html.py",
+  "src": {
+    "dsp": "SonicBuilder/dsp",
+    "docs": "SonicBuilder/docs",
+    "extras": "SonicBuilder/extras"
+  }
+}

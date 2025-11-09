@@ -1,0 +1,68 @@
+name: Post-Release Verify (download -> GPG -> checksums)
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to verify (e.g., v1.0.2). Empty = latest"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (scripts only)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install GH CLI and GnuPG
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gnupg
+          gh --version || sudo apt-get install -y gh || true
+
+      - name: Resolve tag
+        id: tag
+        env:
+          DISPATCH_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          if [ -n "$DISPATCH_TAG" ]; then
+            TAG="$DISPATCH_TAG"
+          else
+            TAG="${{ github.event.release.tag_name }}"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Using tag: $TAG"
+
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          rm -rf verify && mkdir -p verify
+          gh release download "${{ steps.tag.outputs.tag }}" --dir verify
+          echo "Downloaded files:"
+          ls -lah verify || true
+
+      - name: Import GPG public key and verify signature
+        env:
+          GPG_PUBLIC_KEY: ${{ secrets.RELEASE_GPG_PUBLIC_KEY }}  # ASCII-armored PUBLIC key
+        run: |
+          test -n "$GPG_PUBLIC_KEY" || { echo "❌ Missing RELEASE_GPG_PUBLIC_KEY secret"; exit 47; }
+          echo "$GPG_PUBLIC_KEY" > pubkey.asc
+          gpg --batch --yes --import pubkey.asc
+          # Verify detached signature
+          if [ ! -f verify/SHA256SUMS.txt ] || [ ! -f verify/SHA256SUMS.txt.asc ]; then
+            echo "❌ SHA256SUMS.txt or .asc not found in assets"; exit 47
+          fi
+          gpg --batch --verify verify/SHA256SUMS.txt.asc verify/SHA256SUMS.txt
+
+      - name: Verify checksums
+        run: |
+          python3 tools/verify_release_assets.py --dir verify

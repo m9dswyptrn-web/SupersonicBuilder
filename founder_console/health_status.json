@@ -1,0 +1,21 @@
+{
+  "version": "2.0.9",
+  "timestamp": "2025-10-31T00:31:58.595334",
+  "environment": {
+    "python_version": "3.11.13",
+    "platform": "linux"
+  },
+  "secrets": {
+    "verified": false,
+    "missing": [
+      "GITHUB_TOKEN"
+    ]
+  },
+  "bundles": {
+    "core": true,
+    "security": true,
+    "diagnostics": true,
+    "addons": true,
+    "failsafe": true
+  }
+}

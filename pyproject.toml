@@ -1,0 +1,87 @@
+# SonicBuilder Supersonic — pyproject.toml
+# ----------------------------------------
+# Modern build system definition and metadata
+
+[build-system]
+requires = ["setuptools>=69.0", "wheel>=0.43.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sonicbuilder-supersonic"
+version = "3.2.1"
+description = "Automated build + verification system for the Chevy Sonic Android Head Unit project."
+readme = "SUPERSONIC_README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Christopher Elgin", email = "contact@yourdomain.com" }
+]
+maintainers = [
+  { name = "Christopher Elgin" }
+]
+keywords = ["Chevy", "Sonic", "Android Head Unit", "DSP", "Builder", "PDF", "Traceable"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+  "License :: OSI Approved :: MIT License",
+  "Intended Audience :: Developers",
+  "Topic :: Software Development :: Build Tools"
+]
+
+dependencies = [
+  "reportlab==4.1.0",
+  "pikepdf==9.2.1",
+  "segno==1.6.1",
+  "qrcode[pil]==7.4.2",
+  "Pillow==10.4.0",
+  "requests==2.32.3",
+  "urllib3==2.2.3",
+  "PyGithub==2.5.0",
+  "jsonschema==4.23.0",
+  "platformdirs==4.3.2"
+]
+
+[project.urls]
+Homepage = "https://github.com/ChristopherElgin/SonicBuilderSupersonic"
+Documentation = "https://github.com/ChristopherElgin/SonicBuilderSupersonic#readme"
+Source = "https://github.com/ChristopherElgin/SonicBuilderSupersonic"
+Tracker = "https://github.com/ChristopherElgin/SonicBuilderSupersonic/issues"
+
+[tool.setuptools]
+packages = ["SonicBuilder", "SonicBuilder.tools"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"*" = ["*.pdf", "*.json", "*.md", "*.zip"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]
+addopts = "-v"
+
+[tool.coverage.run]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/.venv/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

@@ -1,0 +1,25 @@
+[36m== Working tree ==[0m
+ M docs/SIGNATURE.asc
+ M docs/status/heartbeat.json
+ M docs/status/uptime_log.json
+ M failsafe_tools/failsafe_manifest.json
+ M founder_console/security_status.json
+ M git_health_snapshot.sh
+?? docs/status/git_health_snapshot.txt
+[36m== Sync vs origin/main ==[0m
+  b6b1ae0 (origin/main, origin/HEAD) chore(badge): update version badge
+  59b76ee (HEAD -> main, tag: v2.1.0) WIP: local changes before rebase
+[36m== Tracked file size scan (> 25 MB) ==[0m
+[32mNo oversized tracked files[0m
+[36m== git storage ==[0m
+count: 2235
+size: 13.68 MiB
+in-pack: 0
+packs: 0
+size-pack: 0 bytes
+prune-packable: 0
+garbage: 0
+size-garbage: 0 bytes
+Pack size total: 0.00 GiB
+[36m== Result ==[0m
+[32m✅ Git health looks good.[0m

@@ -1,0 +1,5 @@
+@app.after_request
+def add_csp(resp):
+    # Allow same-origin embedding so /api/diagrams/... PDFs show in iframe
+    resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    return resp

@@ -1,0 +1,2 @@
+python scripts/bench_llm.py
+python scripts/optimize_llm.py

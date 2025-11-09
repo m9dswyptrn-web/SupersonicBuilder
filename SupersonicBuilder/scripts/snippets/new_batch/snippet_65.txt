@@ -1,0 +1,2 @@
+SB_REPO="myorg/sonicbuilder" SB_BRANCH="release-3.2" SB_SHA="a1b2c3d" \
+python SonicBuilder/tools/diff_render_html.py --md CHANGELOG_v3.2.md

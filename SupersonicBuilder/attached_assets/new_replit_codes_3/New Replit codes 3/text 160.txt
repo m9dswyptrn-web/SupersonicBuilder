@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ---- EDIT these or export before running ----
+: "${GITHUB_OWNER:?Set GITHUB_OWNER to your GitHub username/org}"
+: "${GITHUB_REPO:=SonicBuilder}"
+: "${GIT_AUTHOR_NAME:=Christopher Elgin}"
+: "${GIT_AUTHOR_EMAIL:=you@example.com}"
+: "${VISIBILITY:=private}"   # private|public
+: "${ADD_LFS:=1}"            # 1=enable Git LFS patterns
+: "${ADD_WORKFLOW:=1}"       # 1=include CI workflow
+: "${PUSH_FORCE:=0}"         # 1=--force-with-lease
+
+# Ensure vendor libs exist (idempotent)
+mkdir -p tools static/vendor/pdfjs static/vendor/jszip
+if [[ ! -x tools/get_pdfjs.sh ]]; then
+  cat > tools/get_pdfjs.sh <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+VER="4.6.82"
+DEST="static/vendor/pdfjs"
+mkdir -p "$DEST"
+curl -sSL "https://unpkg.com/pdfjs-dist@${VER}/build/pdf.min.js"        -o "$DEST/pdf.min.js"
+curl -sSL "https://unpkg.com/pdfjs-dist@${VER}/build/pdf.worker.min.js" -o "$DEST/pdf.worker.min.js"
+echo "PDF.js ${VER} vendored into ${DEST}/"
+SH
+  chmod +x tools/get_pdfjs.sh
+fi
+
+if [[ ! -x tools/get_jszip.sh ]]; then
+  cat > tools/get_jszip.sh <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+VER="3.10.1"
+DEST="static/vendor/jszip"
+mkdir -p "$DEST"
+curl -sSL "https://unpkg.com/jszip@${VER}/dist/jszip.min.js" -o "$DEST/jszip.min.js"
+echo "JSZip ${VER} vendored into ${DEST}/"
+SH
+  chmod +x tools/get_jszip.sh
+fi
+
+./tools/get_pdfjs.sh
+./tools/get_jszip.sh
+
+# Run the Python deployer
+python3 deploy_github.py

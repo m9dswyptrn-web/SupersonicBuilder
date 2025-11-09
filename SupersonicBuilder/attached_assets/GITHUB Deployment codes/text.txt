@@ -1,0 +1,11 @@
+# If repo already initialized, skip init
+git init
+git add -A
+git commit -m "Supersonic ControlCore: initial GitHub handoff (AI console + voicepacks + workflows)"
+
+# set your github remote – replace with your URL
+git remote add origin https://github.com/<your-user>/<your-repo>.git
+
+# push main
+git branch -M main
+git push -u origin main

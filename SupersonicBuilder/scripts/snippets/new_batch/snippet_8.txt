@@ -1,0 +1,8 @@
+make preflight        # dependency checks
+make build            # your normal build (./build.sh --mode release)
+make manifest         # dark+light manifest + FULL.zip
+make latest_symlink   # creates SonicBuilder_LATEST_FULL.zip → newest FULL
+make verify           # sanity check for outputs + checksums
+make changelog        # auto-generate CHANGELOG.md (from git if present)
+make adb              # snapshot connected ADB devices into docs
+make all              # preflight + build + manifest + symlink + tree

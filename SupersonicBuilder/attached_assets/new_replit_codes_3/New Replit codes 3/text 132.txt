@@ -1,0 +1,44 @@
+// ---- Catalog caching + readiness -------------------------------------------------
+let catalog = {};
+let catalogReadyResolve;
+const catalogReady = new Promise(res => (catalogReadyResolve = res));
+
+const CATALOG_CACHE_KEY = "supersonic-catalog-cache-v1";
+const CATALOG_META_KEY  = "supersonic-catalog-meta-v1";
+
+// DEFAULT (will be overwritten by meta/endpoint if available)
+let CATALOG_TTL_MS = 6 * 60 * 60 * 1000;
+
+// Read config from <meta id="catalog-config">
+function readConfigFromMeta() {
+  const m = document.getElementById("catalog-config");
+  if (!m) return null;
+  const ttlStr = m.getAttribute("data-ttl-ms");
+  const verStr = m.getAttribute("data-version");
+  const ttl = ttlStr ? parseInt(ttlStr, 10) : null;
+  return {
+    ttl_ms: Number.isFinite(ttl) ? ttl : null,
+    version: verStr && verStr.length ? verStr : null
+  };
+}
+
+// Fetch config from backend
+async function fetchCatalogConfig() {
+  try {
+    const r = await fetch("/api/diagrams/catalog-config", { cache: "no-store" });
+    if (!r.ok) return null;
+    return await r.json(); // { version, ttl_ms }
+  } catch { return null; }
+}
+
+// Configure TTL + supply version with best source: meta → endpoint → null
+async function resolveCatalogConfig() {
+  const fromMeta = readConfigFromMeta();
+  if (fromMeta && (fromMeta.ttl_ms || fromMeta.version)) {
+    if (Number.isFinite(fromMeta.ttl_ms)) CATALOG_TTL_MS = fromMeta.ttl_ms;
+    return fromMeta;
+  }
+  const fromNet = await fetchCatalogConfig();
+  if (fromNet && Number.isFinite(fromNet.ttl_ms)) CATALOG_TTL_MS = fromNet.ttl_ms;
+  return fromNet || { version: null, ttl_ms: CATALOG_TTL_MS };
+}

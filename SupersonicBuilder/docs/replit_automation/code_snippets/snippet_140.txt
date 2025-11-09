@@ -1,0 +1,22 @@
+// DEFAULT (will be overwritten by meta/endpoint if available)
+let CATALOG_TTL_MS = 6 * 60 * 60 * 1000;
+
+function isLocalHost() {
+  return /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+}
+
+async function resolveCatalogConfig() {
+  const fromMeta = readConfigFromMeta();
+  if (fromMeta && (fromMeta.ttl_ms || fromMeta.version)) {
+    if (Number.isFinite(fromMeta.ttl_ms)) CATALOG_TTL_MS = fromMeta.ttl_ms;
+    return fromMeta;
+  }
+  const fromNet = await fetchCatalogConfig();
+  if (fromNet && Number.isFinite(fromNet.ttl_ms)) {
+    CATALOG_TTL_MS = fromNet.ttl_ms;
+    return fromNet;
+  }
+  // Final safety net for dev machines if neither meta nor endpoint available
+  if (isLocalHost()) CATALOG_TTL_MS = 10 * 60 * 1000; // 10 minutes
+  return { version: null, ttl_ms: CATALOG_TTL_MS };
+}

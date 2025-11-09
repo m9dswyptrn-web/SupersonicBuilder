@@ -1,0 +1,44 @@
+name: Docs Bundle Status Badge
+
+on:
+  release:
+    types: [published, edited, released]
+  workflow_dispatch: {}
+  schedule:
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  badge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute owner/repo
+        id: slug
+        run: |
+          echo "owner=${GITHUB_REPOSITORY%%/*}" >> $GITHUB_OUTPUT
+          echo "repo=${GITHUB_REPOSITORY##*/}"  >> $GITHUB_OUTPUT
+
+      - name: Build badge JSON
+        env:
+          OWNER: ${{ steps.slug.outputs.owner }}
+          REPO:  ${{ steps.slug.outputs.repo }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/check_release_bundle.py
+
+      - name: Commit badge JSON
+        run: |
+          if ! git diff --quiet -- docs/status/docs_bundle_status.json; then
+            git config user.name  "sonicbuilder-bot"
+            git config user.email "sonicbuilder@users.noreply.github.com"
+            git add docs/status/docs_bundle_status.json
+            git commit -m "chore(badge): update docs bundle status"
+            git push
+          else
+            echo "No badge change."
+          fi

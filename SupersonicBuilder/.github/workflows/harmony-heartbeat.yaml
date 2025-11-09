@@ -1,0 +1,58 @@
+name: 💓 SonicBuilder Harmony Heartbeat
+
+on:
+  workflow_run:
+    workflows: ["🧠 SonicBuilder Eternal Loop"]
+    types:
+      - completed
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 💓 Send Harmony Heartbeat to Replit
+        env:
+          REPLIT_HARMONY_URL: ${{ secrets.REPLIT_HARMONY_URL }}
+        run: |
+          echo "╔════════════════════════════════════════════════════════════════╗"
+          echo "║   💓 Sending Harmony Heartbeat to Replit                      ║"
+          echo "╚════════════════════════════════════════════════════════════════╝"
+          echo ""
+          
+          if [ -z "$REPLIT_HARMONY_URL" ]; then
+            echo "⚠️  REPLIT_HARMONY_URL not configured in secrets!"
+            echo "   Please add it as: https://your-replit.repl.co/founder_autodeploy/harmony"
+            exit 1
+          fi
+          
+          echo "📡 Sending heartbeat to: $REPLIT_HARMONY_URL"
+          
+          RESPONSE=$(curl -X POST \
+            -d "status=success&workflow=${{ github.workflow }}&run=${{ github.run_number }}" \
+            -w "\nHTTP_STATUS:%{http_code}" \
+            "$REPLIT_HARMONY_URL" 2>&1)
+          
+          HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS" | cut -d':' -f2)
+          
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Heartbeat sent successfully!"
+            echo "$RESPONSE" | grep -v "HTTP_STATUS"
+          else
+            echo "⚠️  Heartbeat failed with status: $HTTP_STATUS"
+            echo "$RESPONSE"
+          fi
+          
+          echo ""
+          echo "Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+
+      - name: 📊 Heartbeat Summary
+        if: always()
+        run: |
+          echo "╔════════════════════════════════════════════════════════════════╗"
+          echo "║   💓 Harmony Heartbeat Complete                               ║"
+          echo "╚════════════════════════════════════════════════════════════════╝"
+          echo ""
+          echo "Eternal Loop Status: ${{ job.status }}"
+          echo "Previous Workflow: ${{ github.event.workflow_run.name }}"
+          echo "Previous Status: ${{ github.event.workflow_run.conclusion }}"

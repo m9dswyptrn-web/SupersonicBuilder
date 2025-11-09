@@ -1,0 +1,7 @@
+<div class="set-row">
+  <label>Catalog TTL</label>
+  <div class="inline">
+    <output id="set-catalog-ttl" class="muted">—</output>
+    <small class="muted">from env/meta</small>
+  </div>
+</div>

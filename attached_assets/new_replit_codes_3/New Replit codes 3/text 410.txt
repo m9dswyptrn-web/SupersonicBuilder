@@ -1,0 +1,96 @@
+# ---- Model autoscan helpers ----
+
+def _score_model_path(p: Path) -> float:
+    """Score a .gguf by size, mtime, and family name hints."""
+    try:
+        stat = p.stat()
+        size = stat.st_size          # larger = better (more params / less quant)
+        mtime = stat.st_mtime        # newer = slightly better
+    except Exception:
+        return 0.0
+
+    name = p.name.lower()
+    boost = 0.0
+    # Nudge common families upward
+    for kw, b in [
+        ("llama", 5.0),
+        ("mistral", 4.5),
+        ("qwen", 4.0),
+        ("gemma", 3.8),
+        ("phi", 3.5),
+    ]:
+        if kw in name:
+            boost = max(boost, b)
+
+    # Prefer non-extreme quantizations a tad (q4_0/q4_k_m > q2)
+    if "q4" in name:
+        boost += 1.0
+    elif "q5" in name or "q6" in name:
+        boost += 0.8
+    elif "q2" in name:
+        boost -= 0.5
+
+    # Composite score: big files dominate, but freshness + boost help tie-break
+    return (size / 1e6) * 1.0 + (mtime / 1e5) * 0.02 + boost
+
+def _find_gguf_candidates() -> list[dict]:
+    roots = []
+
+    # If env points somewhere, include its parent first
+    cur = read_env_var("AGENT_MODEL", "").strip()
+    if cur:
+        try:
+            roots.append(Path(cur).expanduser().resolve().parent)
+        except Exception:
+            pass
+
+    # Common local spots
+    for r in ["gguf", "models", "weights", "."]:
+        roots.append(Path(r).resolve())
+
+    seen = set()
+    found = []
+
+    for root in roots:
+        try:
+            if not root.exists():
+                continue
+            # Search up to a couple levels with rglob
+            for p in root.rglob("*.gguf"):
+                rp = p.resolve()
+                if rp in seen:
+                    continue
+                seen.add(rp)
+                score = _score_model_path(rp)
+                try:
+                    st = rp.stat()
+                    found.append({
+                        "path": str(rp),
+                        "size": st.st_size,
+                        "mtime": st.st_mtime,
+                        "score": score
+                    })
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+    # Sort by our score descending
+    found.sort(key=lambda x: x["score"], reverse=True)
+    return found
+
+def _suggest_model_path() -> str:
+    """
+    If AGENT_MODEL exists → return it.
+    Else return best candidate from scan or a sane default.
+    """
+    cur = read_env_var("AGENT_MODEL", "").strip()
+    if cur:
+        p = Path(cur).expanduser()
+        if p.exists():
+            return str(p)
+    cands = _find_gguf_candidates()
+    if cands:
+        return cands[0]["path"]
+    # Fallback default
+    return "gguf/llama-3.1-8b-q4_0.gguf"

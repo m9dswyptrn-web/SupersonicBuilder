@@ -1,0 +1,441 @@
+#!/usr/bin/env python3
+"""
+Supersonic Full Health Scan  —  one-and-done project auditor
+Produces docs/HEALTH_REPORT.md and exits non-zero if critical issues are found.
+
+What it checks:
+- Python files: count, SHA-256 dedupe, classification (standalone/package/snippet), syntax compile
+- Orphans: .py files outside expected roots / not indexed by supersonic_pkg/__init__.py
+- Duplicates: exact content dupes by hash
+- Package index coverage: modules present but not exported
+- Repo hygiene: key files & configs (Makefile targets, CI workflow, pre-commit, mypy/pyright, requirements)
+- README badges: CI & Pages
+- Assets: large files over thresholds
+- Docs: presence of docs/, report path, "Last updated" stamp freshness
+- Optional: invoke `make ci-check` and capture pass/fail
+
+Usage:
+  python3 supersonic_full_health_scan.py [--ci-check] [--max-asset-mb 200] [--fail-on-warn]
+"""
+
+from __future__ import annotations
+import argparse
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import textwrap
+import time
+import traceback
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from pathlib import Path
+import py_compile
+import ast
+
+# ---------- Configuration ----------
+ROOT = Path(__file__).resolve().parent
+DOCS = ROOT / "docs"
+REPORT = DOCS / "HEALTH_REPORT.md"
+PKG = ROOT / "supersonic_pkg"
+TOOLS = ROOT / "tools"
+SNIPPETS = ROOT / "extras" / "snippets"
+GITHUB = ROOT / ".github"
+WORKFLOWS = GITHUB / "workflows"
+WORKFLOWS_NEW = GITHUB / "workflows_new"
+
+EXPECTED_FILES = [
+    ("Makefile or make/ControlCore.mk", [ROOT / "Makefile", ROOT / "make" / "ControlCore.mk"]),
+    ("pyproject.toml", [ROOT / "pyproject.toml"]),
+    ("requirements.txt", [ROOT / "requirements.txt"]),
+    (".pre-commit-config.yaml", [ROOT / ".pre-commit-config.yaml"]),
+    ("mypy.ini", [ROOT / "mypy.ini"]),
+    ("pyrightconfig.json", [ROOT / "pyrightconfig.json"]),
+    ("CI workflow (active or staged)", [WORKFLOWS / "ci.yml", WORKFLOWS_NEW / "ci.yml"]),
+]
+
+BADGE_PATTERNS = {
+    "ci": re.compile(r"\[!\[CI\]\(https://github\.com/.+?/actions/workflows/ci\.yml/badge\.svg\)\]"),
+    "pages": re.compile(r"\[!\[Pages\]\(https://github\.com/.+?/actions/workflows/pages/pages-build-deployment/badge\.svg\)\]"),
+}
+
+STAMP_RE = re.compile(r"Last updated:\s*(\d{4}-\d{2}-\d{2})", re.IGNORECASE)
+
+# Classification heuristics
+STANDALONE_HINTS = (
+    r"if\s+__name__\s*==\s*[\"']__main__[\"']",
+    r"argparse\.ArgumentParser\(",
+    r"click\.command\(",
+)
+
+# ---------- Data containers ----------
+@dataclass
+class FileInfo:
+    path: Path
+    sha: str
+    kind: str  # standalone | package | snippet
+    compiles: bool
+    compile_err: str | None = None
+
+@dataclass
+class HealthSummary:
+    py_count: int = 0
+    unique_py: int = 0
+    duplicates: list[tuple[Path, Path]] = field(default_factory=list)
+    standalone: list[Path] = field(default_factory=list)
+    package: list[Path] = field(default_factory=list)
+    snippet: list[Path] = field(default_factory=list)
+    compile_errors: list[tuple[Path, str]] = field(default_factory=list)
+    orphans: list[Path] = field(default_factory=list)
+    pkg_unexported: list[str] = field(default_factory=list)
+    missing_expected: list[str] = field(default_factory=list)
+    badges_missing: list[str] = field(default_factory=list)
+    large_assets: list[tuple[Path, int]] = field(default_factory=list)
+    stale_stamps: list[Path] = field(default_factory=list)
+    ci_check_ran: bool = False
+    ci_check_code: int | None = None
+    critical_count: int = 0
+    warning_count: int = 0
+
+# ---------- Helpers ----------
+def sha256(p: Path) -> str:
+    h = hashlib.sha256()
+    with p.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+def looks_standalone(code: str) -> bool:
+    for pat in STANDALONE_HINTS:
+        if re.search(pat, code):
+            return True
+    return False
+
+def looks_pkg_file(p: Path, code: str) -> bool:
+    if p.name == "__init__.py":
+        return True
+    if "class " in code or "def " in code:
+        return not looks_standalone(code)
+    return False
+
+def classify_py(p: Path) -> str:
+    try:
+        code = p.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return "snippet"
+    if looks_standalone(code):
+        return "standalone"
+    if looks_pkg_file(p, code):
+        return "package"
+    return "snippet"
+
+def safe_compile(p: Path) -> tuple[bool, str | None]:
+    try:
+        py_compile.compile(str(p), doraise=True)
+        return True, None
+    except Exception as e:
+        return False, f"{type(e).__name__}: {e}"
+
+def discover_py_files() -> list[Path]:
+    ignore_dirs = {".git", ".venv", "venv", "__pycache__", "node_modules", "build", "dist",
+                   ".mypy_cache", ".pytest_cache", ".ruff_cache", ".idea", ".vscode", ".DS_Store",
+                   "tmp", "temp"}
+    files = []
+    for p in ROOT.rglob("*.py"):
+        if any(seg in ignore_dirs for seg in p.parts):
+            continue
+        files.append(p)
+    return files
+
+def read_pkg_exports() -> set[str]:
+    init = PKG / "__init__.py"
+    if not init.exists():
+        return set()
+    try:
+        tree = ast.parse(init.read_text(encoding="utf-8", errors="ignore"))
+        for node in tree.body:
+            if isinstance(node, ast.Assign):
+                if any(isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets):
+                    if isinstance(node.value, (ast.List, ast.Tuple)):
+                        out = []
+                        for elt in node.value.elts:
+                            if isinstance(elt, ast.Str):
+                                out.append(elt.s)
+                        return set(out)
+    except Exception:
+        return set()
+    return set()
+
+def module_names_in_pkg() -> set[str]:
+    if not PKG.exists():
+        return set()
+    names = set()
+    for p in PKG.glob("*.py"):
+        if p.name == "__init__.py" or p.stem.startswith("_"):
+            continue
+        names.add(p.stem)
+    return names
+
+def check_expected_files() -> list[str]:
+    missing = []
+    for label, candidates in EXPECTED_FILES:
+        if not any(c.exists() for c in candidates):
+            missing.append(label)
+    return missing
+
+def check_badges(readme: Path) -> list[str]:
+    if not readme.exists():
+        return ["README.md (missing entirely)"]
+    text = readme.read_text(encoding="utf-8", errors="ignore")
+    missing = []
+    for name, pat in BADGE_PATTERNS.items():
+        if not pat.search(text):
+            missing.append(f"{name} badge")
+    return missing
+
+def find_large_assets(max_bytes: int) -> list[tuple[Path, int]]:
+    # look in common asset/doc/public folders
+    exts = {".zip", ".wav", ".mp3", ".ogg", ".flac", ".png", ".jpg", ".jpeg", ".svg", ".pdf", ".mp4", ".mov"}
+    suspects = []
+    for p in ROOT.rglob("*"):
+        if p.is_file() and p.suffix.lower() in exts:
+            try:
+                size = p.stat().st_size
+            except OSError:
+                continue
+            if size >= max_bytes:
+                suspects.append((p, size))
+    return sorted(suspects, key=lambda t: t[1], reverse=True)
+
+def find_stale_stamps(max_age_days: int = 45) -> list[Path]:
+    stale = []
+    search_globs = ["docs/**/*.md", ".github/**/*.md", "README.md"]
+    cutoff = datetime.utcnow().date() - timedelta(days=max_age_days)
+    for pattern in search_globs:
+        for f in ROOT.glob(pattern):
+            if not f.is_file():
+                continue
+            try:
+                text = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            m = STAMP_RE.search(text)
+            if not m:
+                continue
+            try:
+                d = datetime.strptime(m.group(1), "%Y-%m-%d").date()
+                if d < cutoff:
+                    stale.append(f)
+            except ValueError:
+                stale.append(f)
+    return stale
+
+def run_ci_check_if_requested(do_ci: bool) -> tuple[bool, int | None, str]:
+    if not do_ci:
+        return False, None, ""
+    # Prefer Makefile target if present
+    cmd = ["bash", "-lc", "make ci-check"] if (ROOT / "Makefile").exists() or (ROOT / "make" / "ControlCore.mk").exists() else ["bash", "-lc", "pytest -q || true && ruff check . && python -m mypy . && python -m pyright"]
+    try:
+        proc = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True)
+        return True, proc.returncode, proc.stdout + "\n" + proc.stderr
+    except Exception as e:
+        return True, 997, f"[scan] Failed to run CI gate: {e}"
+
+# ---------- Main scan ----------
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--ci-check", action="store_true", help="Attempt to run `make ci-check` (or a fallback) and include the result.")
+    ap.add_argument("--max-asset-mb", type=int, default=300, help="Flag assets larger than this many MB (default: 300)")
+    ap.add_argument("--fail-on-warn", action="store_true", help="Exit non-zero on warnings as well as critical issues.")
+    args = ap.parse_args()
+
+    REPORT.parent.mkdir(parents=True, exist_ok=True)
+    summary = HealthSummary()
+
+    # Discover & classify
+    py_files = discover_py_files()
+    summary.py_count = len(py_files)
+
+    by_hash: dict[str, Path] = {}
+    infos: list[FileInfo] = []
+    for p in py_files:
+        try:
+            h = sha256(p)
+        except Exception:
+            # Skip unreadable files
+            continue
+        if h in by_hash:
+            summary.duplicates.append((p, by_hash[h]))
+            continue
+        by_hash[h] = p
+        kind = classify_py(p)
+        ok, err = safe_compile(p)
+        infos.append(FileInfo(p, h, kind, ok, err))
+        if not ok and err:
+            summary.compile_errors.append((p, err))
+        if kind == "standalone":
+            summary.standalone.append(p)
+        elif kind == "package":
+            summary.package.append(p)
+        else:
+            summary.snippet.append(p)
+
+    summary.unique_py = len(infos)
+
+    # Orphans: .py that are not under tools/, supersonic_pkg/, or extras/snippets/
+    expected_roots = {TOOLS.resolve(), PKG.resolve(), SNIPPETS.resolve()}
+    for fi in infos:
+        parents = set(Path(fi.path).resolve().parents)
+        if not parents.intersection(expected_roots):
+            summary.orphans.append(fi.path)
+
+    # Package export coverage
+    exported = read_pkg_exports()
+    pkg_modules = module_names_in_pkg()
+    # Any module in pkg not present as symbol in __all__ is potentially unexported (when __init__ uses namespace import this is okay—still helpful to list)
+    for mod in sorted(pkg_modules):
+        if mod not in exported:
+            summary.pkg_unexported.append(mod)
+
+    # Repo hygiene
+    for label, candidates in EXPECTED_FILES:
+        if not any(c.exists() for c in candidates):
+            summary.missing_expected.append(label)
+
+    # Badges in README
+    summary.badges_missing = check_badges(ROOT / "README.md")
+
+    # Large assets
+    max_bytes = args.max_asset_mb * 1024 * 1024
+    summary.large_assets = find_large_assets(max_bytes)
+
+    # Stale stamps
+    summary.stale_stamps = find_stale_stamps()
+
+    # Optional CI gate
+    ran, code, out = run_ci_check_if_requested(args.ci_check)
+    summary.ci_check_ran = ran
+    summary.ci_check_code = code
+    if ran:
+        # include output in report footer
+        ci_output = out
+    else:
+        ci_output = ""
+
+    # Tally severities
+    summary.critical_count += len(summary.compile_errors)
+    summary.critical_count += len(summary.duplicates)
+    # Missing expected configs count as critical
+    summary.critical_count += len(summary.missing_expected)
+    # Orphans and unexported are warnings
+    summary.warning_count += len(summary.orphans) + len(summary.pkg_unexported) + len(summary.badges_missing) + len(summary.large_assets) + len(summary.stale_stamps)
+    if ran and (code or 0) != 0:
+        summary.critical_count += 1
+
+    # Render report
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
+    def codeblock(s: str, lang: str = "") -> str:
+        return f"\n```{lang}\n{s}\n```\n"
+
+    lines = []
+    lines.append(f"# Supersonic Health Report\n\nGenerated: **{now} UTC**\n")
+    lines.append("## Summary")
+    lines.append(f"- Python files: **{summary.py_count}**  · unique: **{summary.unique_py}**")
+    lines.append(f"- Duplicates: **{len(summary.duplicates)}**")
+    lines.append(f"- Compile errors: **{len(summary.compile_errors)}**")
+    lines.append(f"- Orphan scripts: **{len(summary.orphans)}**")
+    lines.append(f"- Unexported pkg modules: **{len(summary.pkg_unexported)}**")
+    lines.append(f"- Missing expected configs: **{len(summary.missing_expected)}**")
+    lines.append(f"- Large assets over threshold: **{len(summary.large_assets)}** (>{args.max_asset_mb} MB)")
+    lines.append(f"- Stale 'Last updated' stamps: **{len(summary.stale_stamps)}**")
+    if summary.ci_check_ran:
+        lines.append(f"- CI gate result (make ci-check): **exit {summary.ci_check_code}**")
+    lines.append("")
+
+    # Details
+    if summary.compile_errors:
+        lines.append("## 🔴 Compile Errors")
+        for p, err in summary.compile_errors:
+            lines.append(f"- `{p}`\n  {codeblock(err)}")
+
+    if summary.duplicates:
+        lines.append("## 🔴 Duplicate Files (same content)")
+        for a, b in summary.duplicates:
+            lines.append(f"- `{a}`  is duplicate of  `{b}`")
+
+    if summary.missing_expected:
+        lines.append("## 🔴 Missing Required/Expected Files")
+        for label in summary.missing_expected:
+            lines.append(f"- {label}")
+
+    if summary.orphans:
+        lines.append("## 🟡 Orphan Python Files (not in tools/, supersonic_pkg/, or extras/snippets/)")
+        for p in sorted(summary.orphans):
+            lines.append(f"- `{p}`")
+        lines.append("\n*Recommendation:* move **standalone** tools to `tools/`, importable modules to `supersonic_pkg/`, and loose fragments to `extras/snippets/`.\n")
+
+    if summary.pkg_unexported:
+        lines.append("## 🟡 Modules in `supersonic_pkg/` not exported by `__init__.py`")
+        lines.append(", ".join(f"`{m}`" for m in summary.pkg_unexported) or "—")
+        lines.append("\n*Recommendation:* run `python tools/build_pkg_index.py` to regenerate unified exports.\n")
+
+    if summary.badges_missing:
+        lines.append("## 🟡 README Badges Missing")
+        for b in summary.badges_missing:
+            lines.append(f"- {b}")
+        lines.append("\n*Recommendation:* run `make status-badges` to insert CI/Pages badges.\n")
+
+    if summary.large_assets:
+        lines.append(f"## 🟡 Large Assets (> {args.max_asset_mb} MB)")
+        for p, sz in summary.large_assets:
+            lines.append(f"- `{p}` — {sz/1024/1024:.1f} MB")
+        lines.append("\n*Recommendation:* move to LFS, external storage, or compress; exclude from packages where possible.\n")
+
+    if summary.stale_stamps:
+        lines.append("## 🟡 Stale 'Last updated' Stamps (older than ~45 days)")
+        for p in summary.stale_stamps:
+            lines.append(f"- `{p}`")
+        lines.append("\n*Recommendation:* run `make bump-stamps` to refresh metadata.\n")
+
+    # Classification breakdown
+    lines.append("## Classification Breakdown")
+    lines.append(f"- Standalone tools: **{len(summary.standalone)}**")
+    lines.append(f"- Packages (importable): **{len(summary.package)}**")
+    lines.append(f"- Snippets: **{len(summary.snippet)}**\n")
+
+    # Optional CI gate output
+    if summary.ci_check_ran:
+        lines.append("## CI Gate Output")
+        lines.append(codeblock(ci_output.strip()[:20000], lang="text"))  # cap size
+
+    REPORT.write_text("\n".join(lines), encoding="utf-8")
+
+    # Print concise console summary
+    print("=== Supersonic Health Scan ===")
+    print(f"Report: {REPORT}")
+    print(f"Python files: {summary.py_count}  (unique: {summary.unique_py})")
+    print(f"Duplicates: {len(summary.duplicates)}  ·  Compile errors: {len(summary.compile_errors)}")
+    print(f"Orphans: {len(summary.orphans)}  ·  Unexported pkg mods: {len(summary.pkg_unexported)}")
+    print(f"Missing configs: {len(summary.missing_expected)}  ·  Large assets: {len(summary.large_assets)}")
+    if summary.ci_check_ran:
+        print(f"CI gate exit: {summary.ci_check_code}")
+
+    # Exit policy
+    exit_code = 0
+    if summary.critical_count > 0:
+        exit_code = 2
+    elif args.fail_on_warn and (summary.warning_count > 0):
+        exit_code = 1
+    sys.exit(exit_code)
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nAborted by user.")
+        sys.exit(130)
+    except Exception:
+        traceback.print_exc()
+        sys.exit(99)

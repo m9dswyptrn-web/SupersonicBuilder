@@ -1,0 +1,123 @@
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const status = (msg) => { $("dp-status").textContent = msg || ""; };
+
+  const selMake   = $("dp-make");
+  const selModel  = $("dp-model");
+  const selYear   = $("dp-year");
+  const selDiag   = $("dp-diagram");
+  const selVar    = $("dp-variant");
+  const selFmt    = $("dp-format");
+  const btnOpen   = $("dp-open");
+  const btnCopy   = $("dp-copy");
+
+  let catalog = {};
+
+  async function loadCatalog() {
+    status("Loading catalog…");
+    try {
+      const res = await fetch("/api/diagrams/catalog");
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      catalog = await res.json();
+
+      // Populate makes
+      selMake.innerHTML = `<option value="">— select —</option>`;
+      Object.keys(catalog).sort().forEach(mk => {
+        const opt = document.createElement("option");
+        opt.value = mk; opt.textContent = mk;
+        selMake.appendChild(opt);
+      });
+      status("Catalog ready.");
+    } catch (e) {
+      console.error(e);
+      status("Failed to load catalog.");
+    }
+  }
+
+  function resetSelect(sel, disable=true) {
+    sel.innerHTML = `<option value="">— select —</option>`;
+    sel.disabled = !!disable;
+  }
+
+  selMake.addEventListener("change", () => {
+    resetSelect(selModel);
+    resetSelect(selYear);
+    resetSelect(selDiag);
+    btnOpen.disabled = btnCopy.disabled = true;
+
+    const mk = selMake.value;
+    if (!mk) return;
+    const models = Object.keys(catalog[mk] || {}).sort();
+    models.forEach(md => {
+      const opt = document.createElement("option");
+      opt.value = md; opt.textContent = md;
+      selModel.appendChild(opt);
+    });
+    selModel.disabled = false;
+  });
+
+  selModel.addEventListener("change", () => {
+    resetSelect(selYear);
+    resetSelect(selDiag);
+    btnOpen.disabled = btnCopy.disabled = true;
+
+    const mk = selMake.value, md = selModel.value;
+    if (!mk || !md) return;
+    const years = Object.keys(catalog[mk]?.[md] || {}).sort();
+    years.forEach(yr => {
+      const opt = document.createElement("option");
+      opt.value = yr; opt.textContent = yr;
+      selYear.appendChild(opt);
+    });
+    selYear.disabled = false;
+  });
+
+  selYear.addEventListener("change", () => {
+    resetSelect(selDiag);
+    btnOpen.disabled = btnCopy.disabled = true;
+
+    const mk = selMake.value, md = selModel.value, yr = selYear.value;
+    if (!mk || !md || !yr) return;
+    const items = catalog[mk]?.[md]?.[yr] || [];
+    items.forEach(d => {
+      const opt = document.createElement("option");
+      opt.value = d.id;
+      opt.textContent = `${d.name} (${d.category || "misc"})`;
+      selDiag.appendChild(opt);
+    });
+    selDiag.disabled = false;
+  });
+
+  selDiag.addEventListener("change", () => {
+    const ok = !!selDiag.value;
+    btnOpen.disabled = btnCopy.disabled = !ok;
+  });
+
+  function buildURL() {
+    const mk = encodeURIComponent(selMake.value);
+    const md = encodeURIComponent(selModel.value);
+    const yr = encodeURIComponent(selYear.value);
+    const id = encodeURIComponent(selDiag.value);
+    const fmt = encodeURIComponent(selFmt.value);
+    const variant = encodeURIComponent(selVar.value);
+    return `/api/diagrams/${mk}/${md}/${yr}/${id}?format=${fmt}&variant=${variant}`;
+  }
+
+  btnOpen.addEventListener("click", () => {
+    const url = buildURL();
+    window.open(url, "_blank", "noopener");
+  });
+
+  btnCopy.addEventListener("click", async () => {
+    const url = location.origin + buildURL();
+    try {
+      await navigator.clipboard.writeText(url);
+      status("URL copied to clipboard.");
+      setTimeout(() => status(""), 1500);
+    } catch {
+      status("Copy failed. Long-press to copy: " + url);
+    }
+  });
+
+  document.addEventListener("DOMContentLoaded", loadCatalog);
+})();

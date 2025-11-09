@@ -1,0 +1,2 @@
+setCatRefresh: document.getElementById("set-catalog-refresh"),
+setCatClear:   document.getElementById("set-catalog-clear"),

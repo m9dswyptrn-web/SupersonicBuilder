@@ -1,0 +1,33 @@
+{
+  "target": "https://m9dswyptrn-web.github.io/SonicBuilder/docs/images/mobo_back/gallery.html",
+  "themes": {
+    "dark": {
+      "url": "https://m9dswyptrn-web.github.io/SonicBuilder/docs/images/mobo_back/gallery.html?theme=dark",
+      "status": 404,
+      "latency_ms": 93,
+      "required_snippets_ok": false,
+      "assets": {
+        "css": [],
+        "js": []
+      },
+      "asset_checks": [],
+      "ok": false,
+      "error": "HTTP 404"
+    },
+    "light": {
+      "url": "https://m9dswyptrn-web.github.io/SonicBuilder/docs/images/mobo_back/gallery.html?theme=light",
+      "status": 404,
+      "latency_ms": 78,
+      "required_snippets_ok": false,
+      "assets": {
+        "css": [],
+        "js": []
+      },
+      "asset_checks": [],
+      "ok": false,
+      "error": "HTTP 404"
+    }
+  },
+  "timestamp": 1761789352,
+  "ok": false
+}

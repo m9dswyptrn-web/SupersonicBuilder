@@ -1,0 +1,1 @@
+chmod +x replit_to_github.sh

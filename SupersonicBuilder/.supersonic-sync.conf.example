@@ -1,0 +1,77 @@
+# Supersonic Continuous Sync Configuration
+# Copy to .supersonic-sync.conf and customize for your environment
+
+# Git Identity
+git:
+  user: "SonicBuilder Bot"
+  email: "bot@sonicbuilder.local"
+  # Optional: Override with tokenized URL for private repos
+  # remote_url: "https://ghp_TOKEN@github.com/owner/repo.git"
+
+# Sync Behavior
+sync:
+  # Sync interval in seconds (default: 300 = 5 minutes)
+  interval_sec: 300
+  
+  # Enable pull from remote before push (default: true)
+  pull_enabled: true
+  
+  # Maximum syncs per hour to prevent spam (default: 20)
+  max_per_hour: 20
+  
+  # Exponential backoff on failures (default: true)
+  backoff_enabled: true
+  
+  # Initial backoff delay in seconds (doubles on each failure)
+  backoff_initial_sec: 60
+  
+  # Maximum backoff delay in seconds
+  backoff_max_sec: 3600
+
+# Selective Sync - Patterns to exclude from auto-sync
+# (Uses .gitignore syntax: supports *, **, /, negation with !)
+exclude_patterns:
+  - "build/"
+  - "*.pyc"
+  - "__pycache__/"
+  - ".cache/"
+  - "logs/*.log"
+  - "logs/archive/"
+  - "node_modules/"
+  - ".env"
+  - ".env.local"
+
+# Metrics & Monitoring
+metrics:
+  # Enable sync history tracking (default: true)
+  history_enabled: true
+  
+  # Maximum history entries to keep (default: 1000)
+  history_max_entries: 1000
+  
+  # History file location
+  history_file: ".cache/sync_history.jsonl"
+
+# Webhooks - External notifications on sync events
+webhooks:
+  # Enable webhook notifications (default: false)
+  enabled: false
+  
+  # Webhook URLs to notify (POST with JSON payload)
+  urls:
+    # - "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+    # - "https://discord.com/api/webhooks/YOUR/WEBHOOK/URL"
+  
+  # Events to trigger webhooks
+  events:
+    - "sync_success"
+    - "sync_failure"
+    # - "sync_start"
+    # - "rate_limit_hit"
+  
+  # Timeout for webhook requests in seconds
+  timeout_sec: 5
+  
+  # Retry failed webhooks
+  retry_enabled: true
+  max_retries: 3

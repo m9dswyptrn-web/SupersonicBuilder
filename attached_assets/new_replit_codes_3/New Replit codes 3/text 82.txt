@@ -1,0 +1,5 @@
+#dp-restart:hover,
+#dp-restart-label:hover {
+  filter: brightness(1.2);
+  cursor: pointer;
+}

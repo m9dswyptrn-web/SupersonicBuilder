@@ -1,0 +1,11 @@
+.PHONY: diagrams-index diagrams-serve diagrams-test
+
+diagrams-index:
+	@python tools/build_diagrams_index.py
+
+diagrams-serve:
+	@python app.py
+
+diagrams-test:
+	@curl -sS "http://127.0.0.1:8080/api/diagrams/Chevrolet/Sonic/2014" | head
+	@curl -sS "http://127.0.0.1:8080/api/diagrams/search?q=sonic" | head

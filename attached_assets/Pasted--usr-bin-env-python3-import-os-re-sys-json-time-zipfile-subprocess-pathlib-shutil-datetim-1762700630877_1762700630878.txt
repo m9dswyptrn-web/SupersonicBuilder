@@ -1,0 +1,298 @@
+#!/usr/bin/env python3
+import os, re, sys, json, time, zipfile, subprocess, pathlib, shutil, datetime
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+DIST = ROOT / "dist"
+STATUS_DIR = ROOT / "docs" / "status"
+DIST.mkdir(parents=True, exist_ok=True)
+STATUS_DIR.mkdir(parents=True, exist_ok=True)
+
+OWNER = None
+REPO  = None
+
+def sh(cmd, check=True, capture=False, env=None):
+    if capture:
+        out = subprocess.run(cmd, check=check, text=True, shell=True, env=env,
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        return out.stdout.strip()
+    else:
+        subprocess.run(cmd, check=check, text=True, shell=True, env=env)
+
+def detect_repo_slug():
+    """Return 'owner/repo' from origin URL."""
+    try:
+        url = sh("git config --get remote.origin.url", capture=True)
+    except Exception:
+        return None
+    url = url.strip()
+
+    # Normalize
+    if url.endswith(".git"): url = url[:-4]
+    # HTTPS forms
+    m = re.search(r"github\.com[:/]+([^/]+)/([^/]+)$", url)
+    if not m:
+        return None
+    return f"{m.group(1)}/{m.group(2)}"
+
+def latest_tag():
+    try:
+        t = sh("git describe --tags --abbrev=0", capture=True)
+        return t.strip()
+    except Exception:
+        return "v0.0.0"
+
+def parse_semver(tag):
+    tag = tag.lstrip('v')
+    parts = tag.split('.')
+    while len(parts) < 3: parts.append('0')
+    MA, MI, PA = [int(x) for x in parts[:3]]
+    return MA, MI, PA
+
+def bump_version(kind, base_tag):
+    MA, MI, PA = parse_semver(base_tag)
+    if kind == "major":
+        MA += 1; MI = 0; PA = 0
+    elif kind == "minor":
+        MI += 1; PA = 0
+    elif kind == "patch":
+        PA += 1
+    else:
+        raise ValueError(f"unknown bump kind: {kind}")
+    return f"v{MA}.{MI}.{PA}"
+
+def now_iso():
+    return datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+def update_status_files(tag):
+    heartbeat = STATUS_DIR / "heartbeat.json"
+    uptime    = STATUS_DIR / "uptime_log.json"
+
+    # heartbeat
+    hb = {"tag": tag, "timestamp": now_iso(), "repl": os.environ.get("REPL_SLUG")}
+    heartbeat.write_text(json.dumps(hb, indent=2) + "\n", encoding="utf-8")
+
+    # uptime append
+    log = []
+    if uptime.exists():
+        try:
+            log = json.loads(uptime.read_text(encoding="utf-8"))
+            if not isinstance(log, list): log = []
+        except Exception:
+            log = []
+    log.append(hb)
+    uptime.write_text(json.dumps(log, indent=2) + "\n", encoding="utf-8")
+
+def make_dark_installer_pdf(tag, out_path):
+    # Minimal, clean dark card
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.units import inch
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.colors import Color, white, black
+
+    c = canvas.Canvas(str(out_path), pagesize=letter)
+    W, H = letter
+
+    # Dark background
+    c.setFillColor(Color(0.08, 0.08, 0.1))
+    c.rect(0, 0, W, H, stroke=0, fill=1)
+
+    # Title
+    c.setFillColor(white)
+    c.setFont("Helvetica-Bold", 24)
+    c.drawString(0.9*inch, H-1.1*inch, "SupersonicBuilder — Installer Summary (Dark)")
+
+    c.setFont("Helvetica", 12)
+    y = H-1.6*inch
+    lines = [
+        f"Release Tag: {tag}",
+        f"Generated:   {now_iso()}",
+        "",
+        "What’s inside this release:",
+        " • docs/status/heartbeat.json",
+        " • docs/status/uptime_log.json",
+        " • dist/Supersonic_Control_And_Health_Pack_<tag>.zip",
+        "",
+        "Quick steps:",
+        " 1) Flash and verify systems",
+        " 2) Run health check (see heartbeat.json)",
+        " 3) Log results (uptime_log.json)",
+    ]
+    for ln in lines:
+        c.drawString(0.9*inch, y, ln)
+        y -= 16
+    c.showPage()
+    c.save()
+
+def zip_control_pack(tag, extra_paths):
+    zip_name = f"Supersonic_Control_And_Health_Pack_{tag}.zip"
+    zip_path = DIST / zip_name
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        for p in extra_paths:
+            p = Path(p)
+            if p.is_dir():
+                for fp in p.rglob("*"):
+                    if fp.is_file():
+                        z.write(fp, fp.relative_to(ROOT))
+            elif p.exists():
+                z.write(p, p.relative_to(ROOT))
+    return zip_path
+
+def git_add_commit(message):
+    sh("git add -A")
+    # Commit only if there are changes
+    diff = sh("git status --porcelain", capture=True)
+    if diff.strip():
+        sh(f'git commit -m "{message}"')
+
+def tag_exists(tag):
+    try:
+        sh(f"git rev-parse {tag}", capture=True)
+        return True
+    except Exception:
+        return False
+
+def create_tag(tag, message):
+    if tag_exists(tag):
+        print(f"✔ {tag} already exists.")
+        return
+    sh("git fetch --tags >/dev/null 2>&1 || true", check=False)
+    sh(f'git tag -a {tag} -m "{message}"')
+
+def push_tag_and_branch(tag, branch=None, use_token=True):
+    slug = detect_repo_slug()
+    if not slug:
+        print("❌ Could not detect GitHub repo from origin.")
+        return None, None
+    owner, repo = slug.split("/", 1)
+
+    # Build temp remote if GH_PAT present
+    origin_clean = f"https://github.com/{slug}.git"
+    temp_url = origin_clean
+    GH_PAT = os.environ.get("GH_PAT", "")
+    if use_token and GH_PAT:
+        # Use x-access-token form
+        temp_url = f"https://x-access-token:{GH_PAT}@github.com/{slug}.git"
+
+    # Swap remote to temp (only for push), then restore
+    sh(f'git remote set-url origin "{temp_url}"')
+    try:
+        sh(f'git push origin "{tag}"')
+        if branch:
+            sh(f'git push origin "{branch}:{branch}"')
+    finally:
+        sh(f'git remote set-url origin "{origin_clean}"')
+
+    return owner, repo
+
+def create_release_and_upload(owner, repo, tag, asset_path, draft=False, prerelease=False):
+    GH_PAT = os.environ.get("GH_PAT")
+    if not GH_PAT:
+        print("ℹ No GH_PAT set; skipping GitHub Release upload.")
+        return
+    import requests
+
+    # Create release (idempotent: if exists, fetch it)
+    api = f"https://api.github.com/repos/{owner}/{repo}/releases"
+    headers = {"Authorization": f"token {GH_PAT}", "Accept": "application/vnd.github+json"}
+    # Check if release exists
+    r = requests.get(api, headers=headers, timeout=30)
+    r.raise_for_status()
+    existing = [x for x in r.json() if x.get("tag_name")==tag]
+    if existing:
+        rel = existing[0]
+    else:
+        payload = {"tag_name": tag, "name": tag, "draft": draft, "prerelease": prerelease}
+        rel = requests.post(api, headers=headers, json=payload, timeout=30).json()
+
+    upload_url = rel["upload_url"].split("{")[0]
+    fname = Path(asset_path).name
+    with open(asset_path, "rb") as f:
+        up = requests.post(
+            f"{upload_url}?name={fname}",
+            headers={
+                "Authorization": f"token {GH_PAT}",
+                "Content-Type": "application/zip",
+            },
+            data=f.read(),
+            timeout=120
+        )
+    if up.status_code not in (200,201):
+        print("⚠ Upload failed:", up.status_code, up.text)
+    else:
+        print(f"🚀 Uploaded asset: {fname}")
+
+def main():
+    # Args
+    args = sys.argv[1:]
+    bump_kind = "patch"
+    explicit_tag = None
+    push_branch = False
+    branch = os.environ.get("BRANCH", "main")
+
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--patch":  bump_kind = "patch"
+        elif a == "--minor": bump_kind = "minor"
+        elif a == "--major": bump_kind = "major"
+        elif a == "--tag":
+            i += 1; explicit_tag = args[i]
+        elif a == "--push-branch":
+            push_branch = True
+        else:
+            print("Unknown arg:", a); sys.exit(2)
+        i += 1
+
+    base = latest_tag()
+    if explicit_tag:
+        next_tag = explicit_tag.lstrip("v")
+        next_tag = f"v{next_tag}"
+    else:
+        next_tag = bump_version(bump_kind, base)
+
+    print(f"Base tag:  {base}")
+    print(f"Next tag:  {next_tag}")
+
+    # 1) Update status files
+    update_status_files(next_tag)
+
+    # 2) Generate dark installer summary PDF
+    pdf_path = DIST / f"Installer_Summary_Dark_{next_tag}.pdf"
+    make_dark_installer_pdf(next_tag, pdf_path)
+    print(f"📝 PDF: {pdf_path.relative_to(ROOT)}")
+
+    # 3) Zip Control & Health Pack
+    pack = zip_control_pack(
+        next_tag,
+        extra_paths=[
+            "docs/status",
+            pdf_path,
+            "README.md"
+        ],
+    )
+    print(f"📦 ZIP: {pack.relative_to(ROOT)}")
+
+    # 4) Commit updated files
+    git_add_commit(f"release: SupersonicBuilder {next_tag}")
+
+    # 5) Tag (annotated)
+    create_tag(next_tag, f"SupersonicBuilder {next_tag}")
+
+    # 6) Push tag (+ optional branch)
+    owner, repo = push_tag_and_branch(next_tag, branch if push_branch else None)
+
+    # 7) If token exists, make a Release and upload the ZIP
+    if owner and repo:
+        try:
+            create_release_and_upload(owner, repo, next_tag, pack)
+        except Exception as e:
+            print("⚠ Skipped GitHub Release upload:", e)
+
+    print(f"\n🎉 Released {next_tag}")
+    print("   - PDF  :", pdf_path)
+    print("   - ZIP  :", pack)
+    print("   - Tag  :", next_tag)
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,3 @@
+ans = input("\nRun auto-tune on .env now? [y/N]: ").lower().strip()
+if ans.startswith("y"):
+    subprocess.run([sys.executable, "scripts/auto_tune_env.py"], check=False)

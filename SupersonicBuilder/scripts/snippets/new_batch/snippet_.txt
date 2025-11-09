@@ -1,0 +1,8 @@
+# Full: build dark + light and create FULL.zip (recommended)
+python3 render_manifest.py --version 5.0.0 \
+  --release-zip /mnt/data/SonicBuilder/SonicBuilder_2025-10-31_v5.0.0.zip \
+  --out /mnt/data --all
+
+# Dark-only or Light-only sets
+python3 render_manifest.py --version 5.0.0 --out /mnt/data --dark-only
+python3 render_manifest.py --version 5.0.0 --out /mnt/data --light-only

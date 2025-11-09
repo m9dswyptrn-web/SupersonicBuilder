@@ -1,0 +1,70 @@
+<script>
+// Extend defaults
+SETTINGS = Object.assign({
+  sound: true,
+  voice: true,
+  autoSpeakOnReady: true,
+  volume: 1.0,                // master
+  volumes: {                  // per-event multipliers
+    ready: 1.0,
+    online: 1.0,
+    error: 1.0,
+    bench: 1.0,
+    voice: 1.0
+  }
+}, SETTINGS || {});
+
+function _pct(v){ return Math.round((v ?? 1.0) * 100); }
+function _clamp01(v){ return Math.max(0, Math.min(1, v)); }
+
+function applySettingsToUI(){
+  const m = document.getElementById('settingsMenu'); if(!m) return;
+  const $ = (id)=> m.querySelector('#'+id);
+  $('#optSound').checked = !!SETTINGS.sound;
+  $('#optVoice').checked = !!SETTINGS.voice;
+  $('#optAutoSpeak').checked = !!SETTINGS.autoSpeakOnReady;
+  // master volume
+  const mv = _pct(SETTINGS.volume);
+  $('#optVolume').value = String(mv);
+  document.getElementById('volPct').textContent = mv + '%';
+  // event volumes
+  const V = SETTINGS.volumes || {};
+  $('#volReady').value = String(_pct(V.ready));
+  $('#volOnline').value= String(_pct(V.online));
+  $('#volError').value = String(_pct(V.error));
+  $('#volBench').value = String(_pct(V.bench));
+  $('#volVoice').value = String(_pct(V.voice));
+  document.getElementById('volReadyPct').textContent  = _pct(V.ready)  + '%';
+  document.getElementById('volOnlinePct').textContent = _pct(V.online) + '%';
+  document.getElementById('volErrorPct').textContent  = _pct(V.error)  + '%';
+  document.getElementById('volBenchPct').textContent  = _pct(V.bench)  + '%';
+  document.getElementById('volVoicePct').textContent  = _pct(V.voice)  + '%';
+}
+
+function initSettingsBindings(){
+  const m = document.getElementById('settingsMenu'); if(!m) return;
+  const V = SETTINGS.volumes || (SETTINGS.volumes = {});
+  // existing checkboxes & master volume…
+  m.querySelector('#optSound').addEventListener('change', (e)=>{ SETTINGS.sound = e.target.checked; saveSettings(); applySettingsToRuntime(); showToast('Sound cues ' + (SETTINGS.sound?'on':'off')); });
+  m.querySelector('#optVoice').addEventListener('change', (e)=>{ SETTINGS.voice = e.target.checked; saveSettings(); applySettingsToRuntime(); showToast('Voice cues ' + (SETTINGS.voice?'on':'off')); });
+  m.querySelector('#optAutoSpeak').addEventListener('change', (e)=>{ SETTINGS.autoSpeakOnReady = e.target.checked; saveSettings(); showToast('Auto-speak ' + (SETTINGS.autoSpeakOnReady?'on':'off')); });
+  m.querySelector('#optVolume').addEventListener('input', (e)=>{
+    const v = Math.max(0, Math.min(100, parseInt(e.target.value||"100",10)));
+    SETTINGS.volume = v/100.0; document.getElementById('volPct').textContent = v + '%'; saveSettings();
+  });
+  // per-event sliders
+  function bindSlider(id, key, pctId){
+    m.querySelector('#'+id).addEventListener('input', (e)=>{
+      const v = Math.max(0, Math.min(100, parseInt(e.target.value||"100",10)));
+      V[key] = v/100.0;
+      document.getElementById(pctId).textContent = v + '%';
+      saveSettings();
+    });
+  }
+  bindSlider('volReady','ready','volReadyPct');
+  bindSlider('volOnline','online','volOnlinePct');
+  bindSlider('volError','error','volErrorPct');
+  bindSlider('volBench','bench','volBenchPct');
+  bindSlider('volVoice','voice','volVoicePct');
+}
+</script>

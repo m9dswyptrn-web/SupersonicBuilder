@@ -1,0 +1,52 @@
+<script>
+async function fixReady(){
+  const did = [];
+  try{
+    // latest snapshots
+    const rzResp = await fetch('/api/readyz'); const rz = await rzResp.json();
+    const envp   = await (await fetch('/api/env/present')).json();
+
+    // 1) If a fresh bench is required and it's stale, run it now
+    if (rz.require_recent_bench && !rz.bench_ok) {
+      await fetch('/api/bench', { method: 'POST' });
+      did.push('ran benchmark');
+    }
+
+    // 2) If .env missing → auto-generate from template and write it
+    if (envp && envp.present === false) {
+      const t = await fetch('/api/env/template');         // text/plain
+      const content = await t.text();
+      const w = await fetch('/api/env/write', {
+        method: 'POST',
+        headers: {'Content-Type': 'text/plain'},
+        body: content
+      });
+      const wj = await w.json();
+      if (wj.ok) {
+        did.push('wrote .env from template');
+        // 3) Reload the app to pick env immediately
+        await fetch('/api/reload', { method: 'POST' });
+        // After this point the process will exit and be restarted by runner.
+        return;
+      } else {
+        console.warn('env write failed', wj);
+        did.push('FAILED to write .env (check permissions)');
+      }
+    } else {
+      // If env exists but model not ready, still open template in a tab (non-destructive)
+      if (!rz.model_ready) {
+        window.open('/api/env/template', '_blank');
+        did.push('opened .env template (model not ready)');
+      }
+    }
+
+    // Refresh UI if still running (no reload case)
+    await loadBench();
+    await refreshReady();
+    showToast(did.length ? `Fixed: ${did.join(', ')}` : 'Nothing to fix right now');
+  } catch (e) {
+    console.warn('fixReady error', e);
+    showToast('Fix failed');
+  }
+}
+</script>

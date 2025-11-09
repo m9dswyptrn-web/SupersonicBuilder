@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🚀 SonicBuilder Command Deck</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0d1117;
+      color: #e6edf3;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    h1 {
+      color: #58a6ff;
+      margin-bottom: 10px;
+      font-size: 2em;
+    }
+    h2 {
+      color: #58a6ff;
+      margin-top: 30px;
+      margin-bottom: 15px;
+      font-size: 1.5em;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .badge-frame {
+      border: 2px solid #30363d;
+      border-radius: 10px;
+      padding: 15px;
+      background: #161b22;
+      width: 280px;
+      text-align: center;
+      margin-bottom: 20px;
+      transition: transform 0.2s;
+    }
+    .badge-frame:hover {
+      transform: translateY(-2px);
+      border-color: #58a6ff;
+    }
+    .audit-log {
+      background: #161b22;
+      border: 2px solid #30363d;
+      border-radius: 10px;
+      padding: 15px;
+      height: 400px;
+      overflow-y: auto;
+      font-size: 13px;
+      line-height: 1.6;
+      font-family: 'Consolas', 'Monaco', monospace;
+    }
+    .audit-log::-webkit-scrollbar {
+      width: 8px;
+    }
+    .audit-log::-webkit-scrollbar-track {
+      background: #0d1117;
+    }
+    .audit-log::-webkit-scrollbar-thumb {
+      background: #30363d;
+      border-radius: 4px;
+    }
+    .audit-entry {
+      margin-bottom: 8px;
+      padding: 5px;
+      border-left: 3px solid #30363d;
+      padding-left: 10px;
+    }
+    .audit-entry.deploy { border-left-color: #45A29E; }
+    .audit-entry.ban { border-left-color: #FF0000; }
+    .audit-entry.unban { border-left-color: #00FFFF; }
+    .audit-entry.pause { border-left-color: #AAAAAA; }
+    .audit-entry.resume { border-left-color: #00FF00; }
+    
+    button {
+      background: #238636;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 12px 24px;
+      font-size: 16px;
+      margin: 10px 5px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-weight: 600;
+    }
+    button:hover {
+      background: #2ea043;
+      transform: translateY(-1px);
+    }
+    button:active {
+      transform: translateY(0);
+    }
+    .button-row {
+      margin: 20px 0;
+    }
+    .footer {
+      color: #8b949e;
+      font-size: 12px;
+      margin-top: 40px;
+      text-align: center;
+      padding-top: 20px;
+      border-top: 1px solid #30363d;
+    }
+    .timestamp {
+      color: #8b949e;
+      font-size: 11px;
+    }
+    .event-type {
+      color: #58a6ff;
+      font-weight: bold;
+    }
+    .ip-addr {
+      color: #f78166;
+    }
+    .loading {
+      color: #8b949e;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧠 SonicBuilder Command Deck</h1>
+    <p>Real-time control center for SonicBuilder Infinity infrastructure</p>
+
+    <div class="badge-frame">
+      <img id="statusBadge"
+           src="../badge/status.svg?key=SonicBuilder-2025-AlphaKey-42X!"
+           width="240" height="35" alt="Status Badge"
+           style="display: block; margin: 0 auto;">
+    </div>
+
+    <div class="button-row">
+      <button onclick="refreshAll()">🔄 Refresh All</button>
+      <button onclick="triggerDeploy()">🚀 Manual Deploy</button>
+      <button onclick="togglePause()">⏸️ Pause/Resume</button>
+      <button onclick="viewBans()">🚫 View Bans</button>
+    </div>
+
+    <h2>🗂️ Security Audit Log (Live)</h2>
+    <div class="audit-log" id="auditBox">
+      <div class="loading">Loading audit trail...</div>
+    </div>
+
+    <div class="footer">
+      SonicBuilder Founder Console v2.0.9 — Fort-Infinity Command Deck<br>
+      <span id="lastUpdate"></span>
+    </div>
+  </div>
+
+  <script>
+    const key = "SonicBuilder-2025-AlphaKey-42X!";
+    const base = window.location.origin;
+
+    function formatTimestamp(ts) {
+      try {
+        const date = new Date(ts.replace('Z', '+00:00'));
+        return date.toLocaleString();
+      } catch {
+        return ts;
+      }
+    }
+
+    async function refreshAudit() {
+      const box = document.getElementById("auditBox");
+      try {
+        const res = await fetch(`${base}/audit?key=${key}`);
+        const data = await res.json();
+        
+        if (data.audit_entries && data.audit_entries.length > 0) {
+          const entries = data.audit_entries
+            .slice(-30)
+            .reverse()
+            .map(e => {
+              const eventClass = e.event.toLowerCase().replace('_', '-');
+              return `
+                <div class="audit-entry ${eventClass}">
+                  <span class="timestamp">[${formatTimestamp(e.timestamp)}]</span>
+                  <span class="ip-addr">${e.ip}</span>
+                  <span class="event-type">${e.event}</span>
+                  <br><small>${e.detail}</small>
+                </div>
+              `;
+            })
+            .join('');
+          box.innerHTML = entries;
+        } else {
+          box.innerHTML = '<div class="loading">No audit entries found.</div>';
+        }
+      } catch (err) {
+        box.innerHTML = `<div class="loading">⚠️ Error fetching audit log: ${err.message}</div>`;
+      }
+    }
+
+    async function refreshAll() {
+      // Refresh badge
+      const badge = document.getElementById("statusBadge");
+      badge.src = `../badge/status.svg?key=${key}&_=${Date.now()}`;
+      
+      // Refresh audit log
+      await refreshAudit();
+      
+      // Update timestamp
+      document.getElementById("lastUpdate").textContent = 
+        `Last updated: ${new Date().toLocaleString()}`;
+    }
+
+    async function triggerDeploy() {
+      try {
+        const res = await fetch(`${base}/deploy`, {
+          method: "POST",
+          headers: {"X-API-KEY": key}
+        });
+        const data = await res.json();
+        
+        if (data.status === "success") {
+          alert("✅ Manual deploy triggered successfully!");
+        } else {
+          alert("⚠️ Deploy failed: " + (data.error || "Unknown error"));
+        }
+        
+        refreshAll();
+      } catch (err) {
+        alert("❌ Error triggering deploy: " + err.message);
+      }
+    }
+
+    async function togglePause() {
+      try {
+        // Check current state
+        const statusRes = await fetch(`${base}/status?key=${key}`);
+        const statusData = await statusRes.json();
+        
+        const isPaused = statusData.paused || false;
+        const action = isPaused ? 'resume' : 'pause';
+        
+        // Toggle state
+        const res = await fetch(`${base}/${action}`, {
+          method: "POST",
+          headers: {"X-API-KEY": key}
+        });
+        const data = await res.json();
+        
+        if (data.status === "success") {
+          alert(`✅ Scheduler ${action}d successfully!`);
+        } else {
+          alert(`⚠️ ${action} failed: ` + (data.error || "Unknown error"));
+        }
+        
+        refreshAll();
+      } catch (err) {
+        alert("❌ Error toggling pause: " + err.message);
+      }
+    }
+
+    async function viewBans() {
+      try {
+        const res = await fetch(`${base}/bans?key=${key}`);
+        const data = await res.json();
+        
+        if (data.banned_ips && data.banned_ips.length > 0) {
+          alert(`🚫 Banned IPs (${data.count}):\n\n${data.banned_ips.join('\n')}`);
+        } else {
+          alert("✅ No IPs currently banned");
+        }
+      } catch (err) {
+        alert("❌ Error fetching bans: " + err.message);
+      }
+    }
+
+    // Initial load
+    refreshAll();
+    
+    // Auto-refresh every 15 seconds
+    setInterval(refreshAll, 15000);
+  </script>
+</body>
+</html>

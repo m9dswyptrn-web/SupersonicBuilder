@@ -1,0 +1,22 @@
+name: Docs Verify
+on:
+  workflow_run:
+    workflows: ["Docs Build"]
+    types:
+      - completed
+permissions: read-all
+jobs:
+  verify-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt
+      - name: Verify local build
+        run: |
+          python scripts/verify_docs.py out/SonicBuilder_Supersonic_Manual_v2.1.0-SB-4P.pdf || true

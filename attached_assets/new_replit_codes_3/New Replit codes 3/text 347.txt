@@ -1,0 +1,10 @@
+# --- GPU detect (optional) ---
+from pathlib import Path
+import subprocess, sys
+
+gp = Path("scripts/gpu_detect.py")
+if gp.exists():
+    print("\n--- GPU Detect ---")
+    subprocess.run([sys.executable, str(gp)], check=False)
+else:
+    print("\n(gpu_detect.py not found — skip)")

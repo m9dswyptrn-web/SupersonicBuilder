@@ -1,0 +1,8 @@
+{
+  "preferred": "env:SB_REPO_URL",
+  "fallbacks": [
+    "env:GITHUB_REPOSITORY_URL",
+    "https://08abbd3d-777f-4af5-b274-466c8cc1c573-00-1ko1zjf07c39i.riker.replit.dev"
+  ],
+  "notes": "Edit SB_REPO_URL when you move to GitHub."
+}

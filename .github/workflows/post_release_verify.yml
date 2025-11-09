@@ -1,0 +1,113 @@
+name: Post-Release Verify
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to verify (e.g., v1.0.2). Empty = latest"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install GH CLI and GnuPG
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gnupg
+          gh --version || sudo apt-get install -y gh || true
+
+      - name: Resolve tag
+        id: tag
+        env:
+          DISPATCH_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          if [ -n "$DISPATCH_TAG" ]; then
+            TAG="$DISPATCH_TAG"
+          else
+            TAG="${{ github.event.release.tag_name }}"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Using tag: $TAG"
+
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          rm -rf verify && mkdir -p verify
+          gh release download "${{ steps.tag.outputs.tag }}" --dir verify
+          echo "Downloaded files:"
+          ls -lah verify || true
+
+      - name: Import GPG public key and verify signature
+        env:
+          GPG_PUBLIC_KEY: ${{ secrets.RELEASE_GPG_PUBLIC_KEY }}
+        run: |
+          set -e
+          test -n "$GPG_PUBLIC_KEY" || { echo "❌ Missing RELEASE_GPG_PUBLIC_KEY secret"; exit 47; }
+          echo "$GPG_PUBLIC_KEY" > pubkey.asc
+          gpg --batch --yes --import pubkey.asc
+          if [ ! -f verify/SHA256SUMS.txt ] || [ ! -f verify/SHA256SUMS.txt.asc ]; then
+            echo "❌ SHA256SUMS.* missing" ; touch verify/.verification_failed ; exit 0
+          fi
+          if ! gpg --batch --verify verify/SHA256SUMS.txt.asc verify/SHA256SUMS.txt; then
+            echo "❌ Bad signature" ; touch verify/.verification_failed
+          fi
+
+      - name: Verify checksums
+        run: |
+          if ! python3 tools/verify_release_assets.py --dir verify; then
+            echo "❌ Checksums mismatch" ; touch verify/.verification_failed
+          fi
+
+      - name: Summarize result
+        id: verdict
+        run: |
+          if [ -f verify/.verification_failed ]; then
+            echo "status=fail" >> $GITHUB_OUTPUT
+          else
+            echo "status=ok" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
+      - name: Fail if verification failed
+        if: always()
+        run: |
+          if [ -f verify/.verification_failed ]; then
+            echo "Verification FAILED" >&2
+            exit 46
+          fi
+
+      - name: Post result to Release body
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const tag = "${{ steps.tag.outputs.tag }}";
+            const status = "${{ steps.verdict.outputs.status }}" === "ok" ? "✅ PASS" : "❌ FAIL";
+            const when = new Date().toISOString();
+            const block = `\n---\n### Post-Release Verification: ${status}\n- Workflow: \`${context.workflow}\`\n- Run ID: ${context.runId}\n- Completed: ${when}\n`;
+
+            const rel = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+            const existing = rel.data.body || "";
+            const updated = existing.includes("### Post-Release Verification:")
+              ? existing.replace(/### Post-Release Verification:[\s\S]*$/m, block)
+              : (existing + block);
+
+            await github.rest.repos.updateRelease({
+              owner, repo,
+              release_id: rel.data.id,
+              body: updated
+            });

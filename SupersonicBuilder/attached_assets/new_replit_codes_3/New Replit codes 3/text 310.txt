@@ -1,0 +1,6 @@
+- Environment check
+- LLM benchmarking
+- Auto-tune context
+- Rebuild web UI + tauri
+- GitHub sync
+- Audio feedback & system voice

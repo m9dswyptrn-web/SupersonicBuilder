@@ -1,0 +1,78 @@
+<script>
+(function(){
+  const btn = document.getElementById('syncNowBtn');
+  const chip = document.getElementById('sync-status-chip');
+  const cd = document.getElementById('sync-cooldown');
+  const last = document.getElementById('sync-last');
+  const logWrap = document.getElementById('sync-log-wrap');
+  const logEl = document.getElementById('sync-log');
+
+  const fmt = (s)=> new Date(s).toLocaleString();
+  const setChip = (txt, color) => {
+    chip.textContent = txt;
+    chip.style.background = color.bg;
+    chip.style.borderColor = color.bd;
+  };
+  const COLORS = {
+    running: {bg:'#2a3f25', bd:'#355a2e'},  // greenish
+    ready:   {bg:'#1b2635', bd:'#203044'},  // blue gray
+    wait:    {bg:'#3a2e1b', bd:'#5a4a2e'},  // amber
+    error:   {bg:'#3a1b1b', bd:'#5a2e2e'}   // red
+  };
+
+  async function fetchStatus() {
+    try {
+      const r = await fetch('/sync-status', {cache:'no-store'});
+      const s = await r.json();
+      const next = s.next_allowed_in_sec || 0;
+      const running = !!s.running;
+      if (running) {
+        setChip('running…', COLORS.running);
+        btn.disabled = true;
+        cd.textContent = 'Sync running…';
+      } else if (next > 0) {
+        setChip('cooldown', COLORS.wait);
+        btn.disabled = true;
+        cd.textContent = `Ready in ${next}s`;
+      } else {
+        setChip('ready', COLORS.ready);
+        btn.disabled = false;
+        cd.textContent = 'Ready';
+      }
+      last.textContent = s.last_run_iso ? `last run: ${fmt(s.last_run_iso)}` : '';
+    } catch (e) {
+      setChip('status error', COLORS.error);
+      cd.textContent = 'Unable to reach /sync-status';
+      btn.disabled = false;
+    }
+  }
+
+  async function runSync() {
+    btn.disabled = true;
+    setChip('starting…', COLORS.running);
+    cd.textContent = 'Sync running…';
+    try {
+      const r = await fetch('/sync-trigger', { method: 'POST' });
+      const j = await r.json();
+      const ok = !!j.ok;
+      logEl.textContent = [
+        (j.message || (ok ? 'Sync ok' : 'Sync failed')),
+        j.stdout ? '\n--- STDOUT ---\n'+j.stdout : '',
+        j.stderr ? '\n--- STDERR ---\n'+j.stderr : ''
+      ].join('');
+      if (!logWrap.open) logWrap.open = true;
+    } catch (e) {
+      logEl.textContent = 'Request error: ' + e;
+      setChip('error', COLORS.error);
+    } finally {
+      // immediate refresh, then let the interval keep it updated
+      fetchStatus();
+    }
+  }
+
+  btn.addEventListener('click', runSync);
+  // boot + live update every 1s
+  fetchStatus();
+  setInterval(fetchStatus, 1000);
+})();
+</script>

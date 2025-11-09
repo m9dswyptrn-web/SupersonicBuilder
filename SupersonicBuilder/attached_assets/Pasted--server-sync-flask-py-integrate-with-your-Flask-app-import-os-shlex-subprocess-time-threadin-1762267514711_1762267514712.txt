@@ -1,0 +1,64 @@
+# server_sync_flask.py  (integrate with your Flask app)
+import os, shlex, subprocess, time, threading, tempfile, json
+from pathlib import Path
+from flask import Flask, jsonify, request
+
+app: Flask  # reuse your existing Flask instance
+
+SYNC_MIN_INTERVAL_SEC = int(os.environ.get("SYNC_MIN_INTERVAL_SEC", "120"))
+SYNC_CMD = "make sync-once"
+SYNC_WORKDIR = os.path.dirname(__file__)
+
+_lock = threading.Lock()
+_last_run_path = Path(tempfile.gettempdir()) / "sonic_sync_last_run.json"
+_running = False
+
+def _load_last():
+    if _last_run_path.exists():
+        try:
+            return json.loads(_last_run_path.read_text())
+        except Exception:
+            return {}
+    return {}
+
+def _save_last(payload: dict):
+    try:
+        _last_run_path.write_text(json.dumps(payload))
+    except Exception:
+        pass
+
+def _seconds_since(ts: float) -> int:
+    return int(time.time() - ts)
+
+@app.post("/sync-trigger")
+def sync_trigger():
+    global _running
+    with _lock:
+        last = _load_last()
+        last_ts = float(last.get("ts", 0))
+        since = _seconds_since(last_ts) if last_ts else SYNC_MIN_INTERVAL_SEC + 1
+        if _running:
+            return jsonify({"ok": True, "message":"Sync already running",
+                            "running": True,
+                            "next_allowed_in_sec": max(0, SYNC_MIN_INTERVAL_SEC - since)})
+        if since < SYNC_MIN_INTERVAL_SEC:
+            return jsonify({"ok": False, "message":"Rate limited",
+                            "next_allowed_in_sec": SYNC_MIN_INTERVAL_SEC - since}), 429
+        _running = True
+
+    try:
+        r = subprocess.run(
+            shlex.split(SYNC_CMD),
+            cwd=SYNC_WORKDIR, capture_output=True, text=True, timeout=900
+        )
+        ok = (r.returncode == 0)
+        tail = 4000
+        return jsonify({
+            "ok": ok, "message": ("Sync ok" if ok else "Sync failed"),
+            "code": r.returncode,
+            "stdout": r.stdout[-tail:], "stderr": r.stderr[-tail:]
+        }), (200 if ok else 500)
+    finally:
+        with _lock:
+            _running = False
+            _save_last({"ts": time.time()})

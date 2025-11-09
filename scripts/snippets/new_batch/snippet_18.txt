@@ -1,0 +1,2 @@
+cd SonicBuilder\tools
+.\Create_SonicBuilder_Shortcut_Admin.ps1 -Version "5.0.0" -OutDir "." -Push "github"

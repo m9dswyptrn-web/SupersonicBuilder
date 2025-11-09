@@ -1,0 +1,131 @@
+name: docs-release-notes-enricher
+on:
+  workflow_run:
+    workflows: ["docs-release"]
+    types: [completed]
+permissions: { contents: write }
+jobs:
+  enrich:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: System deps
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils jq
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          name: release_assets
+          path: release_assets
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Generate ASSETS.md (idempotent markers)
+        run: |
+          python - << 'PY'
+          import os, hashlib
+          from pathlib import Path
+          def sha256sum(p):
+              h=hashlib.sha256()
+              with open(p,'rb') as f:
+                  for b in iter(lambda: f.read(8192), b''): h.update(b)
+              return h.hexdigest()
+          d=Path('release_assets'); rows=[]
+          for p in sorted(d.rglob('*')):
+              if p.is_file(): rows.append((p.name, p.stat().st_size, sha256sum(p)))
+          repo=os.environ.get('GITHUB_REPOSITORY','owner/repo')
+          version=os.environ.get('GITHUB_REF_NAME') or 'v0.0.0'
+          def human(n):
+              u=['B','KB','MB','GB','TB']; i=0; x=float(n)
+              while x>=1024 and i<len(u)-1: x/=1024;i+=1
+              return f"{x:.2f} {u[i]}"
+          base=f"https://github.com/{repo}/releases/download/{version}"
+          lines=["","<!-- SB_ASSETS_TABLE_BEGIN -->","### Download assets (verified)","","| File | Size | SHA256 |","|---|---:|---|"]
+          for n,s,sha in rows: lines.append(f"| [{n}]({base}/{n}) | {human(s)} | `{sha[:12]}…` |")
+          lines.append("<!-- SB_ASSETS_TABLE_END -->"); Path("ASSETS.md").write_text("\n".join(lines)+"\n")
+          PY
+      - name: Generate PARTS.md (if split parts present)
+        run: |
+          python - << 'PY'
+          from pathlib import Path
+          import re
+          d=Path("release_assets")
+          parts=sorted([p for p in d.rglob("*.zip.part*") if p.is_file()])
+          if parts:
+              lines=["","<!-- SB_PARTS_HELP_BEGIN -->","### How to reassemble multi-part ZIPs","","**macOS / Linux:**","","```bash","cat <file>.zip.part* > <file>.zip","unzip <file>.zip","```","","**Windows (PowerShell):**","","```powershell","Get-ChildItem <file>.zip.part* | Get-Content -Encoding Byte -ReadCount 0 | Set-Content -Encoding Byte <file>.zip","Expand-Archive .\\<file>.zip","```","","**Parts included:**","","| Part | Size |","|---|---:|"]
+              def human(n):
+                  u=["B","KB","MB","GB","TB"]; i=0; x=float(n)
+                  while x>=1024 and i<len(u)-1: x/=1024; i+=1
+                  return f"{x:.2f} {u[i]}"
+              for p in parts:
+                  lines.append(f"| {p.name} | {human(p.stat().st_size)} |")
+              lines.append("<!-- SB_PARTS_HELP_END -->")
+              Path("PARTS.md").write_text("\n".join(lines)+"\n")
+          else:
+              Path("PARTS.md").write_text("")
+          PY
+      - name: Build CHECKLIST block from docs/release-checklist.md
+        run: |
+          if [ -f docs/release-checklist.md ]; then
+            {
+              echo ""
+              echo "<!-- SB_CHECKLIST_BEGIN -->"
+              echo "### Release Checklist"
+              echo ""
+              cat docs/release-checklist.md
+              echo "<!-- SB_CHECKLIST_END -->"
+            } > CHECKLIST.md
+          else
+            echo "" > CHECKLIST.md
+            echo "⚠️ No docs/release-checklist.md found; skipping checklist"
+          fi
+      - name: Append to Release notes (idempotent)
+        uses: actions/github-script@v7
+        env: { VERSION_TAG: ${{ github.ref_name }} }
+        with:
+          script: |
+            const fs = require('fs');
+            const tag = process.env.VERSION_TAG;
+            const rel = await github.rest.repos.getReleaseByTag({ owner: context.repo.owner, repo: context.repo.repo, tag }).catch(() => null);
+            if (!rel || !rel.data) { core.setFailed('Release with tag '+tag+' not found.'); return; }
+            const existing = rel.data.body || '';
+            if (existing.includes('<!-- SB_ASSETS_TABLE_BEGIN -->') && existing.includes('<!-- SB_ASSETS_TABLE_END -->')) {
+              core.info('Assets table already present — skipping.'); return;
+            }
+            let add = fs.readFileSync('ASSETS.md','utf8');
+            let parts = "";
+            try { parts = fs.readFileSync('PARTS.md','utf8'); } catch (e) {}
+            if (parts && !existing.includes("<!-- SB_PARTS_HELP_BEGIN -->")) { add = add + "\n" + parts; }
+            let checklist = "";
+            try { checklist = fs.readFileSync('CHECKLIST.md','utf8'); } catch (e) {}
+            if (checklist && !existing.includes("<!-- SB_CHECKLIST_BEGIN -->")) { add = add + "\n" + checklist; }
+            await github.rest.repos.updateRelease({ owner: context.repo.owner, repo: context.repo.repo, release_id: rel.data.id, body: existing + '\n' + add });
+            core.info('Release notes enriched with assets, parts, and checklist.');
+      - name: Notify Slack (success)
+        if: ${{ success() && secrets.SLACK_WEBHOOK_URL != '' }}
+        run: |
+          curl -X POST -H "Content-type: application/json" --data "{
+            \"text\": \"*${{ github.repository }}* · \`${{ github.ref_name }}\`\n✅ \`${{ github.workflow }}\` succeeded · \`${{ github.sha }}\`\"
+          }" "$SLACK_WEBHOOK_URL"
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      - name: Notify Discord (success)
+        if: ${{ success() && secrets.DISCORD_WEBHOOK_URL != '' }}
+        run: |
+          echo "{\"content\":\"**${{ github.repository }}** — ✅ \`${{ github.workflow }}\` OK on \`${{ github.ref_name }}\`\"}" > body.json
+          curl -H "Content-Type: application/json" -d @body.json "$DISCORD_WEBHOOK_URL"
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      - name: Notify Teams (success)
+        if: ${{ success() && secrets.TEAMS_WEBHOOK_URL != '' }}
+        run: |
+          echo "{\"title\":\"Build: ${{ github.repository }}\",\"text\":\"✅ \`${{ github.workflow }}\` OK on \`${{ github.ref_name }}\`\"}" > payload.json
+          curl -H "Content-Type: application/json" -d @payload.json "$TEAMS_WEBHOOK_URL"
+        env:
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+      - name: Notify Generic Webhook (always)
+        if: ${{ always() && secrets.SB_NOTIFY_WEBHOOK != '' }}
+        run: |
+          echo "{\"repo\":\"${{ github.repository }}\",\"ref\":\"${{ github.ref_name }}\",\"sha\":\"${{ github.sha }}\",\"workflow\":\"${{ github.workflow }}\",\"status\":\"${{ job.status }}\"}" > body.json
+          curl -H "Content-Type: application/json" -d @body.json "$SB_NOTIFY_WEBHOOK"
+        env:
+          SB_NOTIFY_WEBHOOK: ${{ secrets.SB_NOTIFY_WEBHOOK }}

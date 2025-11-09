@@ -1,0 +1,64 @@
+(() => {
+  const KEY = "supersonic-theme";               // "dark" | "light" | "system"
+  const icon = document.getElementById("theme-icon");
+  const btn  = document.getElementById("theme-toggle");
+  const mm   = window.matchMedia("(prefers-color-scheme: dark)");
+  let current = null;  // "dark" | "light"
+
+  function osPref() { return mm.matches ? "dark" : "light"; }
+
+  function desiredTheme() {
+    const saved = localStorage.getItem(KEY);
+    if (!saved || saved === "system") return osPref();
+    return (saved === "dark" || saved === "light") ? saved : osPref();
+  }
+
+  function applyTheme(theme) {
+    if (theme === current) return;
+    current = theme;
+
+    document.body.classList.remove("dark", "light");
+    document.body.classList.add(theme);
+    document.body.dataset.theme = theme;
+
+    if (icon) icon.textContent = theme === "dark" ? "🌙" : "☀️";
+
+    // Broadcast so components can react
+    const ev = new CustomEvent("themechange", { detail: { theme } });
+    window.dispatchEvent(ev);
+  }
+
+  function setUserTheme(next) {
+    // cycle: dark -> light -> system -> dark …
+    const saved = localStorage.getItem(KEY) || "system";
+    let newPref;
+    if (next) newPref = next;
+    else newPref = saved === "dark" ? "light" : saved === "light" ? "system" : "dark";
+    localStorage.setItem(KEY, newPref);
+    applyTheme(desiredTheme());
+  }
+
+  // Init
+  applyTheme(desiredTheme());
+
+  // Click toggles mode (dark -> light -> system)
+  btn?.addEventListener("click", () => setUserTheme());
+
+  // OS pref changed (system mode auto tracks)
+  mm.addEventListener("change", () => {
+    if ((localStorage.getItem(KEY) || "system") === "system") {
+      applyTheme(desiredTheme());
+    }
+  });
+
+  // Cross-tab sync
+  window.addEventListener("storage", (e) => {
+    if (e.key === KEY) applyTheme(desiredTheme());
+  });
+
+  // Expose for debugging if needed
+  window.SonicTheme = {
+    get: () => ({ saved: localStorage.getItem(KEY) || "system", applied: current }),
+    set: setUserTheme
+  };
+})();

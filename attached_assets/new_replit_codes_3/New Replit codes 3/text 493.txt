@@ -1,0 +1,120 @@
+# ── supersonic_powerups.py ─────────────────────────────────────────────
+import json, textwrap, os
+
+target = "powerups.js"
+
+script = textwrap.dedent("""
+/* === Supersonic Power-Ups === */
+
+// AES encrypt/decrypt helpers (browser Crypto)
+async function aesEncrypt(text, pass) {
+  const enc = new TextEncoder().encode(text);
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), {name:'AES-GCM'}, false, ['encrypt']);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({name:'AES-GCM', iv}, key, enc);
+  const merged = new Uint8Array(iv.byteLength + ct.byteLength);
+  merged.set(iv, 0); merged.set(new Uint8Array(ct), iv.byteLength);
+  return btoa(String.fromCharCode(...merged));
+}
+
+async function aesDecrypt(b64, pass) {
+  const raw = Uint8Array.from(atob(b64), c=>c.charCodeAt(0));
+  const iv = raw.slice(0,12); const data = raw.slice(12);
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), {name:'AES-GCM'}, false, ['decrypt']);
+  const dec = await crypto.subtle.decrypt({name:'AES-GCM', iv}, key, data);
+  return new TextDecoder().decode(dec);
+}
+
+// Encrypted Export / Import
+async function exportEncrypted() {
+  const pass = prompt('Enter passphrase to encrypt backup:');
+  if(!pass) return showToast('Canceled');
+  const json = safeSettingsForExport();
+  const enc = await aesEncrypt(JSON.stringify(json), pass);
+  downloadBlobJSON({enc}, 'supersonic-secure.json');
+  showToast('Encrypted export complete');
+}
+
+async function importEncrypted(file) {
+  const pass = prompt('Enter passphrase to decrypt:');
+  const text = await file.text();
+  const obj = JSON.parse(text);
+  try {
+    const dec = await aesDecrypt(obj.enc, pass);
+    const payload = JSON.parse(dec);
+    mergeImportedSettings(payload.data);
+    saveSettings(); applySettingsToUI(); applySettingsToRuntime();
+    showToast('Secure import done');
+    speakRestore();
+  } catch(e){ showToast('Decrypt failed'); console.error(e); }
+}
+
+// Cloud Sync via Replit DB or GitHub Gist (simplified)
+async function cloudSyncUpload(){
+  if(!window.SETTINGS) return;
+  const data = safeSettingsForExport();
+  const body = JSON.stringify(data);
+  if(window.env && env.REPLIT_DB_URL){
+    await fetch(env.REPLIT_DB_URL + '/supersonic_settings', {method:'POST', body});
+    showToast('Synced to Replit DB');
+  } else { showToast('No cloud target configured'); }
+}
+
+async function cloudSyncDownload(){
+  if(window.env && env.REPLIT_DB_URL){
+    const r = await fetch(env.REPLIT_DB_URL + '/supersonic_settings');
+    if(r.ok){
+      const j = await r.json();
+      mergeImportedSettings(j.data); saveSettings(); applySettingsToUI();
+      showToast('Cloud restore complete'); speakRestore();
+    }
+  }
+}
+
+// Theme presets
+function applyTheme(name){
+  document.body.dataset.theme = name;
+  SETTINGS.theme = name; saveSettings();
+}
+function renderThemeButtons(){
+  const box = document.getElementById('themeRow');
+  if(!box) return;
+  box.innerHTML = '';
+  ['dark','light','field'].forEach(t=>{
+    const b=document.createElement('button');
+    b.className='pill'; b.textContent=t;
+    b.onclick=()=>applyTheme(t);
+    box.appendChild(b);
+  });
+}
+
+// Nightly backup reminder (00:00)
+function scheduleBackupReminder(){
+  const now = new Date();
+  const next = new Date();
+  next.setHours(24,0,0,0);
+  setTimeout(()=>{
+    showToast('🛰️ Backup reminder: export your cockpit settings!');
+    scheduleBackupReminder();
+  }, next - now);
+}
+
+// Voice confirmation
+function speakRestore(){
+  if(!SETTINGS.voice) return;
+  const msg = new SpeechSynthesisUtterance('Supersonic cockpit restored successfully.');
+  msg.pitch = 1.2; msg.rate = 1.05;
+  speechSynthesis.speak(msg);
+}
+
+// Auto-init
+renderThemeButtons();
+scheduleBackupReminder();
+
+""")
+
+with open(target, "w", encoding="utf-8") as f:
+    f.write(script)
+
+print(f"[✓] {target} written — link it with:")
+print('<script src="powerups.js"></script>  <!-- after your main script -->')

@@ -1,0 +1,114 @@
+<script>
+// ---------- Profile definitions ----------
+const PROFILE_PRESETS = {
+  quiet: {
+    // Watchdog (gentler alerts, less frequent)
+    perf: { fpsMin:22, fpsRelease:35, fpsDurationMs:2500, rttMaxMs:700, rttDurationMs:3500, cooldownMs:20000 },
+    // Audio (softer)
+    masterVol: 0.35,
+    vols: { ready:0.9, online:0.9, error:0.7, bench:0.9, voice:0.9 },
+    // UX
+    reducedMotion: true,
+    theme: 'field'   // your darker, chill theme
+  },
+  balanced: {
+    perf: { fpsMin:25, fpsRelease:40, fpsDurationMs:2000, rttMaxMs:500, rttDurationMs:3000, cooldownMs:15000 },
+    masterVol: 0.7,
+    vols: { ready:1.0, online:1.0, error:0.9, bench:1.0, voice:1.0 },
+    reducedMotion: false,
+    theme: 'dark'
+  },
+  performance: {
+    // Tighter thresholds, quicker recovery
+    perf: { fpsMin:30, fpsRelease:48, fpsDurationMs:1200, rttMaxMs:350, rttDurationMs:2000, cooldownMs:9000 },
+    // Audio (can be louder; you can drop to 0.5 if you want less)
+    masterVol: 0.85,
+    vols: { ready:1.1, online:1.0, error:0.8, bench:1.1, voice:1.0 },
+    reducedMotion: false,
+    theme: 'light'
+  }
+};
+
+// Persist current profile name
+SETTINGS = Object.assign({ profile: 'balanced' }, SETTINGS || {});
+
+// ---------- Apply a profile ----------
+function applyProfile(name){
+  const P = PROFILE_PRESETS[name];
+  if (!P) return showToast('Unknown profile');
+
+  // 1) Performance thresholds
+  SETTINGS.perf = Object.assign({}, SETTINGS.perf || {}, P.perf);
+
+  // 2) Volumes
+  SETTINGS.volume = P.masterVol;
+  SETTINGS.volumes = Object.assign({}, SETTINGS.volumes || {}, P.vols);
+
+  // 3) Reduced motion class
+  if (P.reducedMotion) document.body.classList.add('reduced-motion');
+  else document.body.classList.remove('reduced-motion');
+
+  // 4) Theme
+  try { applyTheme?.(P.theme); } catch(_) {}
+
+  // 5) Save + reapply UI/runtime
+  SETTINGS.profile = name;
+  saveSettings?.();
+  applySettingsToUI?.();
+  applySettingsToRuntime?.();
+  renderPresetButtons?.();
+  renderPresetEditor?.();
+  setMsTheme?.();
+
+  // 6) Update tag + toast
+  updateProfileTag();
+  showToast(`Profile applied: ${name}`);
+}
+
+// ---------- Display which profile is active ----------
+function updateProfileTag(){
+  const tag = document.getElementById('profileTag');
+  if (!tag) return;
+  const n = SETTINGS.profile || 'balanced';
+  tag.textContent = 'Current: ' + n;
+}
+
+// Optional: try to detect “closest” profile (when user tweaks sliders)
+// Simple heuristic comparing perf/volume deltas
+function detectClosestProfile(){
+  const S = SETTINGS;
+  let best = 'balanced', bestScore = Infinity;
+
+  for (const [name, P] of Object.entries(PROFILE_PRESETS)){
+    let score = 0;
+    const Q = P.perf, R = S.perf || {};
+    score += Math.abs((R.fpsMin??0)        - Q.fpsMin);
+    score += Math.abs((R.fpsRelease??0)    - Q.fpsRelease);
+    score += Math.abs((R.fpsDurationMs??0) - Q.fpsDurationMs)/200; // scale down durations
+    score += Math.abs((R.rttMaxMs??0)      - Q.rttMaxMs)/10;
+    score += Math.abs((R.rttDurationMs??0) - Q.rttDurationMs)/200;
+    score += Math.abs((R.cooldownMs??0)    - Q.cooldownMs)/500;
+    score += Math.abs((S.volume??0)        - P.masterVol)*10;
+    if (score < bestScore){ bestScore = score; best = name; }
+  }
+  SETTINGS.profile = best;
+  updateProfileTag();
+}
+
+// Hook into saves from sliders/volume so the tag updates as users tweak:
+const _origPerfSave = window.perfSave;
+window.perfSave = function(){
+  _origPerfSave?.();
+  detectClosestProfile();
+  showToast('Performance settings saved (profile updated)');
+};
+const _origSaveSettings = window.saveSettings;
+window.saveSettings = function(){
+  _origSaveSettings?.();
+  // If called from volume/preset changes, also refresh tag
+  detectClosestProfile();
+};
+
+// Boot display
+updateProfileTag();
+</script>

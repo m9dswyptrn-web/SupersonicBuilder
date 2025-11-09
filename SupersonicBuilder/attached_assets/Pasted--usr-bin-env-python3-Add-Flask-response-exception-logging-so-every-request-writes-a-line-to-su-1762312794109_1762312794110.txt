@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""
+Add Flask response/exception logging so every request writes a line to supersonic.log:
+
+Format example:
+2025-11-04 18:22:01 INFO REQ method=GET path=/panel status=200 ms=12 bytes=421 ua="Mozilla/5.0" ip=203.0.113.7
+
+Idempotent: won't duplicate hooks if already present.
+"""
+
+import os, re, shutil, datetime
+from pathlib import Path
+
+ROOT   = Path(os.getcwd())
+SERVER = ROOT / "serve_pdfs.py"
+STAMP  = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+
+def backup(p: Path):
+    dst = p.with_suffix(p.suffix + f".bak.{STAMP}")
+    shutil.copy2(p, dst)
+    print(f"🧾 Backup => {dst.name}")
+    return dst
+
+ROTATING_HANDLER_SNIPPET = r"""
+# --- Supersonic: ensure rotating file handler for logs ---
+import logging
+from logging.handlers import RotatingFileHandler
+_log = logging.getLogger("supersonic")
+if not _log.handlers:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+_log_file = os.getenv("SUPERSONIC_LOG_FILE", "supersonic.log")
+try:
+    _rh = RotatingFileHandler(_log_file, maxBytes=1_000_000, backupCount=3)
+    _rh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    if not any(isinstance(h, RotatingFileHandler) for h in _log.handlers):
+        _log.addHandler(_rh)
+        _log.info("FILE_LOGGER_READY file=%s", _log_file)
+except Exception as _e:
+    _log.warning("FILE_LOGGER_DISABLED err=%s", _e)
+# --- end Supersonic rotating handler ---
+"""
+
+AFTER_REQUEST_SNIPPET = r"""
+# --- Supersonic: request/response logging hooks ---
+import time
+from flask import request
+
+# Prefer existing logger 'supersonic', else root
+try:
+    import logging
+    log = logging.getLogger("supersonic") if logging.getLogger("supersonic") else logging.getLogger()
+except Exception:
+    log = None
+
+@app.before_request
+def _supersonic_req_start():
+    # mark request start time
+    request._supersonic_t0 = time.time()
+
+def _client_ip():
+    fwd = request.headers.get("X-Forwarded-For")
+    return (fwd.split(",")[0].strip() if fwd else request.remote_addr) or "unknown"
+
+@app.after_request
+def _supersonic_after(resp):
+    try:
+        t0 = getattr(request, "_supersonic_t0", None)
+        ms = int((time.time() - t0) * 1000) if t0 else -1
+        ua = request.headers.get("User-Agent","")
+        ln = f'REQ method={request.method} path={request.path} status={resp.status_code} ms={ms} bytes={resp.calculate_content_length() or 0} ua="{ua}" ip={_client_ip()}'
+        if log: log.info(ln)
+        else: print(ln)
+    except Exception as e:
+        if log: log.warning("REQ_LOG_FAIL err=%s", e)
+    return resp
+
+@app.errorhandler(Exception)
+def _supersonic_ex(e):
+    try:
+        import traceback
+        tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+        ua = request.headers.get("User-Agent","")
+        ln = f'EXC method={request.method} path={getattr(request,"path","?")} ua="{ua}" ip={_client_ip()}'
+        if log:
+            log.error(ln)
+            for line in tb.splitlines():
+                log.error(line)
+        else:
+            print(ln); print(tb)
+    except Exception:
+        pass
+    # Let Flask's default error handling continue
+    raise e
+# --- end Supersonic hooks ---
+"""
+
+def ensure_rotating_handler(src: str) -> str:
+    if "FILE_LOGGER_READY" in src or "RotatingFileHandler(" in src:
+        return src
+    # Insert just after first 'import os' or near top
+    ins_at = src.find("\n", src.find("import os")) if "import os" in src else src.find("\n")
+    if ins_at == -1: ins_at = 0
+    return src[:ins_at+1] + ROTATING_HANDLER_SNIPPET + src[ins_at+1:]
+
+def inject_after_request(src: str) -> str:
+    if "_supersonic_after(resp)" in src and "_supersonic_req_start()" in src:
+        print("✅ Request/response hooks already present; skipping inject.")
+        return src
+
+    # Prefer to inject inside our Supersonic block if present
+    blk_start = src.find("# --- Supersonic Control Panel & Health Endpoints")
+    blk_end   = src.find("# --- end Supersonic ---")
+    if blk_start != -1 and blk_end != -1:
+        region = src[blk_start:blk_end]
+        if "_supersonic_after(" in region:
+            return src
+        patched_region = region + "\n" + AFTER_REQUEST_SNIPPET + "\n"
+        return src[:blk_start] + patched_region + src[blk_end:]
+
+    # Fallback: inject after Flask app creation
+    m = re.search(r"\bapp\s*=\s*Flask\s*\(", src)
+    if m:
+        ins_at = src.find("\n", m.end())
+        return src[:ins_at+1] + AFTER_REQUEST_SNIPPET + src[ins_at+1:]
+
+    # Last resort: append to end
+    return src.rstrip() + "\n\n" + AFTER_REQUEST_SNIPPET + "\n"
+
+def main():
+    if not SERVER.exists():
+        print("❌ serve_pdfs.py not found.")
+        return
+    backup(SERVER)
+    src = SERVER.read_text(encoding="utf-8", errors="ignore")
+
+    src = ensure_rotating_handler(src)
+    out = inject_after_request(src)
+
+    if out != src:
+        SERVER.write_text(out, encoding="utf-8")
+        print("✅ Response & exception logging installed.")
+        print("   Log file: $SUPERSONIC_LOG_FILE (default supersonic.log)")
+        print("   Lines will include: method, path, status, ms, bytes, UA, ip")
+        print("\n🧪 Try hitting a few routes, then check:")
+        print("   make logs-tail N=80  # or curl /logs/tail")
+    else:
+        print("⚠️ No changes applied (patterns not found).")
+
+if __name__ == "__main__":
+    main()

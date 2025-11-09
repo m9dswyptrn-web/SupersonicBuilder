@@ -1,0 +1,4 @@
+# (venv active, deps installed)
+python scripts/run_offline_llm.py
+# → opens UI, waits until ready, runs a one-time bench, caches it,
+#   then keeps running the server.

@@ -1,0 +1,44 @@
+async function loadCatalog() {
+  status("Loading catalog…");
+  const now = Date.now();
+  const cfg = await resolveCatalogConfig();   // NEW
+  const serverVersion = cfg?.version || null; // may be null offline
+  const { data: cached, meta } = readCache();
+
+  const cacheValidByVersion = !!(cached && meta && serverVersion && meta.version === serverVersion);
+  const cacheValidByTTL = !!(cached && meta && (now - (meta.ts || 0) < CATALOG_TTL_MS));
+
+  if (cacheValidByVersion || cacheValidByTTL) {
+    catalog = cached;
+    status(cacheValidByVersion ? "Catalog ready (matched version)." : `Catalog ready (TTL ${Math.round(CATALOG_TTL_MS/3600000)}h).`);
+    try {
+      if (serverVersion && (!meta || meta.version !== serverVersion)) {
+        const fresh = await fetchCatalogFresh();
+        catalog = fresh;
+        writeCache(fresh, { version: serverVersion || "unknown", ts: Date.now() });
+        status("Catalog updated (background).");
+      }
+    } catch {}
+    populateMakeSelect();
+    catalogReadyResolve && catalogReadyResolve();
+    return;
+  }
+
+  try {
+    const fresh = await fetchCatalogFresh();
+    catalog = fresh;
+    writeCache(fresh, { version: serverVersion || "unknown", ts: Date.now() });
+    status("Catalog ready.");
+  } catch (e) {
+    if (cached) {
+      catalog = cached;
+      status("Offline: using cached catalog.");
+    } else {
+      status("Failed to load catalog (no cache).");
+      catalog = {};
+    }
+  }
+
+  populateMakeSelect();
+  catalogReadyResolve && catalogReadyResolve();
+}

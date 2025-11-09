@@ -1,0 +1,5 @@
+python scripts/run_offline_llm.py
+# in the browser:
+#   • watch the LED
+#   • click Test ✅ / ❌ to play WAVs
+#   • click Speak 🗣️ to hear the full status readout

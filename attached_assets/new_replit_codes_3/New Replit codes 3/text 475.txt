@@ -1,0 +1,3 @@
+// Keep UI switch synced with backend mute state
+setInterval(syncMuteSwitchFromServer, 5000);
+syncMuteSwitchFromServer();

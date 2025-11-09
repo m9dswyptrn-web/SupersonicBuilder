@@ -1,0 +1,2 @@
+pip install -r agent/requirements.txt -r desktop/webui/requirements.txt
+python scripts/download_gguf.py

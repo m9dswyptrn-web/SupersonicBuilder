@@ -1,0 +1,14 @@
+<script>
+// Extend SETTINGS with performance tunables
+SETTINGS = Object.assign({
+  perfAuto: true,
+  perf: {
+    fpsMin: 25,        // alert when FPS drops below this
+    fpsRelease: 40,    // release tweaks when FPS rises back above this
+    fpsDurationMs: 2000,
+    rttMaxMs: 500,
+    rttDurationMs: 3000,
+    cooldownMs: 15000
+  }
+}, SETTINGS || {});
+</script>

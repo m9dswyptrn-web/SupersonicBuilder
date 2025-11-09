@@ -1,0 +1,8 @@
+# List Chevy Sonic 2014 diagrams
+curl http://127.0.0.1:8080/api/diagrams/Chevrolet/Sonic/2014 | jq .
+
+# Fetch a specific diagram (PDF, dark)
+curl -I "http://127.0.0.1:8080/api/diagrams/Chevrolet/Sonic/2014/sonic_2014_audio_headunit?format=pdf&variant=dark"
+
+# Search
+curl "http://127.0.0.1:8080/api/diagrams/search?q=headunit" | jq .

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>SonicBuilder Changelog</title>
+<style>
+body {
+  font-family: system-ui, sans-serif;
+  margin: 0; padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+:root {
+  --bg: #0e0e0e;
+  --fg: #f0f0f0;
+  --accent: #00ffff;
+  --accent2: #ffb000;
+}
+.light {
+  --bg: #ffffff;
+  --fg: #000000;
+  --accent: #007acc;
+  --accent2: #ff5500;
+}
+header {
+  position: sticky; top: 0;
+  background: var(--accent2);
+  color: var(--bg);
+  padding: 0.5em 1em;
+  display: flex; justify-content: space-between; align-items: center;
+}
+header button {
+  background: var(--bg); color: var(--accent2);
+  border: none; padding: 0.4em 0.8em;
+  cursor: pointer; font-weight: bold; border-radius: 4px;
+}
+main { padding: 1em 2em; line-height: 1.6; }
+h1,h2,h3 { color: var(--accent2); }
+pre,code {
+  background: rgba(255,255,255,0.08);
+  padding: 0.2em 0.4em; border-radius: 3px;
+  font-family: ui-monospace, monospace;
+}
+pre { overflow-x: auto; }
+a { color: var(--accent); }
+@media print {
+  body { background:#fff !important; color:#000 !important; }
+  header,button { display:none !important; }
+  a { color:#000 !important; text-decoration:underline; }
+  pre,code { background:#f2f2f2 !important; color:#000 !important; }
+}
+</style>
+<script>
+function toggleTheme(){
+  document.body.classList.toggle('light');
+  localStorage.setItem('theme', document.body.classList.contains('light')?'light':'dark');
+}
+window.onload=function(){
+  if(localStorage.getItem('theme')==='light') document.body.classList.add('light');
+};
+function copyNotes(){
+  const txt=document.querySelector('main').innerText;
+  navigator.clipboard.writeText(txt).then(()=>alert('Copied release notes!'));
+}
+</script>
+</head>
+<body>
+<header>
+  <div><strong>SonicBuilder Changelog</strong></div>
+  <div>
+    <button onclick="toggleTheme()">🌓 Theme</button>
+    <button onclick="copyNotes()">📋 Copy Notes</button>
+  </div>
+</header>
+<main>
+<h1>SonicBuilder Supersonic Changelog</h1>
+<h2>Added</h2>
+<ul>
+<li>Integrated **QR code** generator using `segno` for automatic labeling of build versions</li>
+<ul>
+<li>Added **SBOM generator** to record Python environment and installed packages</li>
+<ul>
+<li>Added **PDF metadata stamping** with profile, vehicle, and version info</li>
+<ul>
+<li>Introduced **multi-profile matrix build** (dark / light / all)</li>
+<ul>
+<li>Added **GitHub release publisher** with automated attachment of zips and notes</li>
+<ul>
+<li>Included **dark/light theme toggle** and print mode in diff renderer</li>
+<ul>
+<li>Added **Supersonic Edition tools**: diff renderer, demo PDF generators, build automation</li>
+<ul>
+<li>Created **lean installer** for standalone Supersonic environments</li>
+</ul>
+<h2>Changed</h2>
+<ul>
+<li>Reworked build pipeline for faster ZIP creation and manifest generation</li>
+<ul>
+<li>Simplified config file layout for easier customization</li>
+<ul>
+<li>Updated default color scheme for HTML diff output (cyan + amber accents)</li>
+<ul>
+<li>Improved cross-platform compatibility for Replit and local builds</li>
+</ul>
+<h2>Fixed</h2>
+<ul>
+<li>Resolved file permission issues on Windows</li>
+<ul>
+<li>Fixed changelog parser edge cases</li>
+<ul>
+<li>Corrected SHA256 checksum formatting</li>
+<ul>
+<li>Improved QR PNG scaling and path handling</li>
+</ul>
+<h2>Notes</h2>
+<p>Release **v3.2.1** introduces the *Supersonic* engine—streamlined, automated, and faster than ever.</p>
+<p>Run the complete build:</p>
+<pre><code>
+python builders/sonicbuilder_supersonic.py pack
+</code></pre>
+<p>Or use the full automation:</p>
+<pre><code>
+python builders/supersonic_build_all.py
+</code></pre>
+<p>For GitHub publishing:</p>
+<pre><code>
+python builders/supersonic_build_all.py --publish
+</code></pre>
+</main>
+</body>
+</html>

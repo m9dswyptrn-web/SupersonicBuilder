@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+"""
+SupersonicBuilder one-click release:
+- Bumps/tag (explicit or patch/minor/major)
+- Updates heartbeat + uptime logs
+- Generates Dark + Light installer PDFs
+- Creates split ZIPs:
+    * Supersonic_Field_Cards_<tag>.zip   (PDFs only)
+    * Supersonic_Docs_<tag>.zip          (status logs + README)
+    * Supersonic_Bundle_<tag>.zip        (both ZIPs)
+- Pushes tag and (optional) branch
+- If GH_PAT is set, creates a GitHub Release and uploads all ZIPs
+"""
+
+import os, re, sys, json, zipfile, subprocess, datetime
+from pathlib import Path
+
+# ---------------- paths ----------------
+ROOT        = Path(__file__).resolve().parent
+DIST        = ROOT / "dist"
+STATUS_DIR  = ROOT / "docs" / "status"
+DIST.mkdir(parents=True, exist_ok=True)
+STATUS_DIR.mkdir(parents=True, exist_ok=True)
+
+# ---------------- helpers ----------------
+def sh(cmd, check=True, capture=False, env=None):
+    if capture:
+        out = subprocess.run(cmd, check=check, text=True, shell=True, env=env,
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        return out.stdout.strip()
+    subprocess.run(cmd, check=check, text=True, shell=True, env=env)
+
+def now_iso():
+    return datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+def detect_repo_slug():
+    try:
+        url = sh("git config --get remote.origin.url", capture=True)
+    except Exception:
+        return None
+    url = url.strip()
+    if url.endswith(".git"): url = url[:-4]
+    m = re.search(r"github\.com[:/]+([^/]+)/([^/]+)$", url)
+    return f"{m.group(1)}/{m.group(2)}" if m else None
+
+def latest_tag():
+    try:
+        return sh("git describe --tags --abbrev=0", capture=True).strip()
+    except Exception:
+        return "v0.0.0"
+
+def _parse_semver(tag):
+    tag = tag.lstrip('v'); parts = tag.split('.')
+    while len(parts) < 3: parts.append('0')
+    return [int(x) for x in parts[:3]]
+
+def bump_version(kind, base_tag):
+    MA, MI, PA = _parse_semver(base_tag)
+    if   kind == "major": MA += 1; MI = 0; PA = 0
+    elif kind == "minor": MI += 1; PA = 0
+    elif kind == "patch": PA += 1
+    else: raise ValueError(f"unknown bump: {kind}")
+    return f"v{MA}.{MI}.{PA}"
+
+def update_status_files(tag):
+    heartbeat = STATUS_DIR / "heartbeat.json"
+    uptime    = STATUS_DIR / "uptime_log.json"
+
+    hb = {"tag": tag, "timestamp": now_iso(), "repl": os.environ.get("REPL_SLUG")}
+    heartbeat.write_text(json.dumps(hb, indent=2) + "\n", encoding="utf-8")
+
+    log = []
+    if uptime.exists():
+        try:
+            log = json.loads(uptime.read_text(encoding="utf-8"))
+            if not isinstance(log, list): log = []
+        except Exception:
+            log = []
+    log.append(hb)
+    uptime.write_text(json.dumps(log, indent=2) + "\n", encoding="utf-8")
+
+# ---------------- PDFs ----------------
+def _installer_pdf(out_path: Path, tag: str, theme: str):
+    # theme: "dark" or "light"
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.units import inch
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.colors import Color, black, white
+
+    W, H = letter
+    c = canvas.Canvas(str(out_path), pagesize=letter)
+
+    if theme == "dark":
+        bg = Color(0.08, 0.08, 0.10); fg = white
+    else:
+        bg = Color(1, 1, 1); fg = black
+
+    # background
+    c.setFillColor(bg); c.rect(0, 0, W, H, stroke=0, fill=1)
+
+    # header
+    c.setFillColor(fg)
+    c.setFont("Helvetica-Bold", 24)
+    c.drawString(0.9*inch, H-1.1*inch, f"SupersonicBuilder — Installer Summary ({theme.title()})")
+
+    c.setFont("Helvetica", 12)
+    y = H-1.6*inch
+    lines = [
+        f"Release Tag: {tag}",
+        f"Generated:   {now_iso()}",
+        "",
+        "What’s inside this release:",
+        " • docs/status/heartbeat.json",
+        " • docs/status/uptime_log.json",
+        " • dist/ZIPs (see bundle)",
+        "",
+        "Quick steps:",
+        " 1) Flash/verify systems",
+        " 2) Run health check (see heartbeat.json)",
+        " 3) Append results (uptime_log.json)",
+    ]
+    for ln in lines:
+        c.drawString(0.9*inch, y, ln); y -= 16
+
+    c.showPage(); c.save()
+
+def make_both_pdfs(tag):
+    dark = DIST / f"Installer_Summary_Dark_{tag}.pdf"
+    light = DIST / f"Installer_Summary_Light_{tag}.pdf"
+    _installer_pdf(dark, tag, "dark")
+    _installer_pdf(light, tag, "light")
+    return dark, light
+
+# ---------------- ZIPs ----------------
+def _zip(paths, zip_path: Path):
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        for p in paths:
+            p = Path(p)
+            if p.is_dir():
+                for fp in p.rglob("*"):
+                    if fp.is_file():
+                        z.write(fp, fp.relative_to(ROOT))
+            elif p.exists():
+                z.write(p, p.relative_to(ROOT))
+    return zip_path
+
+def make_split_zips(tag, pdf_dark: Path, pdf_light: Path):
+    # Field cards (PDFs only)
+    z_field = DIST / f"Supersonic_Field_Cards_{tag}.zip"
+    _zip([pdf_dark, pdf_light], z_field)
+
+    # Docs (status + README)
+    z_docs  = DIST / f"Supersonic_Docs_{tag}.zip"
+    docs_sources = []
+    if STATUS_DIR.exists(): docs_sources.append(STATUS_DIR)
+    if (ROOT / "README.md").exists(): docs_sources.append(ROOT / "README.md")
+    _zip(docs_sources, z_docs)
+
+    # Master bundle containing both ZIPs
+    z_bundle = DIST / f"Supersonic_Bundle_{tag}.zip"
+    _zip([z_field, z_docs], z_bundle)
+
+    return z_field, z_docs, z_bundle
+
+# ---------------- git/release ----------------
+def git_add_commit(msg):
+    sh("git add -A")
+    if sh("git status --porcelain", capture=True).strip():
+        sh(f'git commit -m "{msg}"')
+
+def tag_exists(tag):
+    try:
+        sh(f"git rev-parse {tag}", capture=True); return True
+    except Exception:
+        return False
+
+def create_tag(tag, message):
+    if tag_exists(tag):
+        print(f"✔ {tag} already exists."); return
+    sh("git fetch --tags >/dev/null 2>&1 || true", check=False)
+    sh(f'git tag -a {tag} -m "{message}"')
+
+def push_tag_and_branch(tag, branch=None, use_token=True):
+    slug = detect_repo_slug()
+    if not slug:
+        print("❌ Could not detect GitHub repo from origin."); return None, None
+    origin_clean = f"https://github.com/{slug}.git"
+    temp_url = origin_clean
+    GH_PAT = os.environ.get("GH_PAT", "")
+    if use_token and GH_PAT:
+        temp_url = f"https://x-access-token:{GH_PAT}@github.com/{slug}.git"
+
+    # temporary swap for push
+    sh(f'git remote set-url origin "{temp_url}"')
+    try:
+        sh(f'git push origin "{tag}"')
+        if branch: sh(f'git push origin "{branch}:{branch}"')
+    finally:
+        sh(f'git remote set-url origin "{origin_clean}"')
+
+    owner, repo = slug.split("/", 1)
+    return owner, repo
+
+def gh_upload_assets(owner, repo, tag, assets):
+    GH_PAT = os.environ.get("GH_PAT")
+    if not GH_PAT:
+        print("ℹ No GH_PAT set; skipping GitHub Release upload."); return
+    import requests
+    api = f"https://api.github.com/repos/{owner}/{repo}/releases"
+    headers = {"Authorization": f"token {GH_PAT}", "Accept": "application/vnd.github+json"}
+
+    # get/create release
+    r = requests.get(api, headers=headers, timeout=30); r.raise_for_status()
+    existing = [x for x in r.json() if x.get("tag_name")==tag]
+    if existing: rel = existing[0]
+    else:
+        rel = requests.post(api, headers=headers,
+                            json={"tag_name": tag, "name": tag, "draft": False, "prerelease": False},
+                            timeout=30).json()
+
+    upload_url = rel["upload_url"].split("{")[0]
+    for asset in assets:
+        fn = Path(asset).name
+        with open(asset, "rb") as f:
+            up = requests.post(f"{upload_url}?name={fn}",
+                               headers={"Authorization": f"token {GH_PAT}",
+                                        "Content-Type": "application/zip"},
+                               data=f.read(), timeout=120)
+        if up.status_code in (200,201):
+            print(f"🚀 Uploaded: {fn}")
+        else:
+            print(f"⚠ Upload failed for {fn}: {up.status_code} {up.text[:200]}")
+
+# ---------------- main ----------------
+def main():
+    args = sys.argv[1:]
+    bump_kind = "patch"
+    explicit_tag = None
+    push_branch = False
+    branch = os.environ.get("BRANCH", "main")
+
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--patch":  bump_kind = "patch"
+        elif a == "--minor": bump_kind = "minor"
+        elif a == "--major": bump_kind = "major"
+        elif a == "--tag":   i += 1; explicit_tag = args[i]
+        elif a == "--push-branch": push_branch = True
+        else: print("Unknown arg:", a); sys.exit(2)
+        i += 1
+
+    base = latest_tag()
+    next_tag = f"v{explicit_tag.lstrip('v')}" if explicit_tag else bump_version(bump_kind, base)
+    print(f"Base tag: {base}\nNext tag: {next_tag}")
+
+    # 1) status logs
+    update_status_files(next_tag)
+
+    # 2) PDFs (dark + light)
+    pdf_dark, pdf_light = make_both_pdfs(next_tag)
+    print(f"📝 PDFs: {pdf_dark.name}, {pdf_light.name}")
+
+    # 3) commit new/updated files
+    git_add_commit(f"release: SupersonicBuilder {next_tag}")
+
+    # 4) tag
+    create_tag(next_tag, f"SupersonicBuilder {next_tag}")
+
+    # 5) push tag (+ branch if requested)
+    owner, repo = push_tag_and_branch(next_tag, branch if push_branch else None)
+
+    # 6) split ZIPs + bundle
+    z_field, z_docs, z_bundle = make_split_zips(next_tag, pdf_dark, pdf_light)
+    print(f"📦 Field Cards: {z_field.name}")
+    print(f"📦 Docs:        {z_docs.name}")
+    print(f"📦 Bundle:      {z_bundle.name}")
+
+    # 7) upload assets if token present
+    if owner and repo:
+        try:
+            gh_upload_assets(owner, repo, next_tag, [z_field, z_docs, z_bundle])
+        except Exception as e:
+            print("⚠ Skipped GitHub Release upload:", e)
+
+    print("\n🎉 Release complete")
+    print("   - Tag :", next_tag)
+    print("   - PDFs:", pdf_dark.name, "|", pdf_light.name)
+    print("   - ZIPs:", z_field.name, "|", z_docs.name, "|", z_bundle.name)
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,56 @@
+name: Badges • Pages Smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/20 * * * *"   # every 20 minutes
+  push:
+    paths:
+      - ".github/workflows/pages-smoke-badge.yml"
+      - "downloads/**"
+
+permissions:
+  contents: write
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure docs/badges
+        run: mkdir -p docs/badges
+
+      - name: Probe latest.pdf on Pages
+        id: probe
+        shell: bash
+        env:
+          OWNER: ${{ github.repository_owner }}
+          REPO:  ${{ github.event.repository.name }}
+        run: |
+          set -e
+          URL="https://${OWNER}.github.io/${REPO}/downloads/latest.pdf"
+          echo "Checking $URL"
+          CODE=$(curl -L -s -o /dev/null -w "%{http_code}" --max-time 10 "$URL" || echo "000")
+          echo "code=$CODE" >> $GITHUB_OUTPUT
+
+      - name: Write badge JSON
+        shell: bash
+        run: |
+          CODE="${{ steps.probe.outputs.code }}"
+          if [[ "$CODE" =~ ^2[0-9][0-9]$ ]]; then
+            COLOR="brightgreen"; MSG="OK"
+          else
+            COLOR="red"; MSG="ERR ${CODE}"
+          fi
+          cat > docs/badges/pages-smoke.json <<EOF
+          { "schemaVersion": 1, "label": "pages smoke", "message": "${MSG}", "color": "${COLOR}" }
+          EOF
+
+      - name: Commit badge
+        run: |
+          git config user.name  "actions-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/badges/pages-smoke.json
+          git commit -m "chore(badges): refresh pages smoke badge (${{ steps.probe.outputs.code }})" || echo "No changes"
+          git push

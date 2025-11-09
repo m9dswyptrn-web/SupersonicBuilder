@@ -1,0 +1,610 @@
+{
+  "total_files": 2951,
+  "total_size": 392823139,
+  "large_files": [
+    {
+      "path": "SonicBuilderSupersonic_Clean.zip",
+      "size": 171011892,
+      "size_mb": 163.08964920043945,
+      "size_human": "163.09 MB"
+    },
+    {
+      "path": "ziQEO1Rx",
+      "size": 105955966,
+      "size_mb": 101.04748344421387,
+      "size_human": "101.05 MB"
+    }
+  ],
+  "duplicates": [],
+  "file_types": {
+    ".sh": 47,
+    ".py": 399,
+    ".release": 1,
+    ".quickstart": 1,
+    ".pro": 1,
+    ".txt": 1387,
+    "no_extension": 27,
+    ".meta": 1,
+    ".print": 1,
+    ".print_all": 1,
+    ".local_release": 1,
+    ".yml": 111,
+    ".yaml": 31,
+    ".example": 7,
+    ".version_hint": 1,
+    ".docs": 1,
+    ".zip": 34,
+    ".nextwave": 1,
+    ".fullattack": 1,
+    ".mk": 3,
+    ".preflight": 1,
+    ".badges": 1,
+    ".json": 49,
+    ".md": 258,
+    ".html": 15,
+    ".cfg": 1,
+    ".backup": 2,
+    ".log": 3,
+    ".toml": 1,
+    ".20251105152519": 1,
+    ".20251105152545": 1,
+    ".20251105152605": 1,
+    ".20251105152646": 1,
+    ".20251105152719": 1,
+    ".20251105152846": 1,
+    ".bin": 408,
+    ".csv": 6,
+    ".png": 34,
+    ".svg": 26,
+    ".jpg": 14,
+    ".wav": 32,
+    ".js": 6,
+    ".pdf": 8,
+    ".css": 3,
+    ".asc": 1,
+    ".ino": 3,
+    ".hex": 1,
+    ".gif": 4,
+    ".two_up_qr": 1,
+    ".urls": 1,
+    ".repo": 1,
+    ".onebutton": 1,
+    ".patch": 1,
+    ".sha256": 1,
+    ".rego": 2,
+    ".text": 2,
+    ".tag": 1
+  },
+  "directory_sizes": {
+    ".": {
+      "size": 280810349,
+      "size_human": "267.80 MB"
+    },
+    ".local/state/replit/agent": {
+      "size": 40859025,
+      "size_human": "38.97 MB"
+    },
+    ".local/state/replit/agent/filesystem": {
+      "size": 3906045,
+      "size_human": "3.73 MB"
+    },
+    ".upm": {
+      "size": 94,
+      "size_human": "94.00 B"
+    },
+    "config": {
+      "size": 9076,
+      "size_human": "8.86 KB"
+    },
+    "config/library": {
+      "size": 1094,
+      "size_human": "1.07 KB"
+    },
+    "assets": {
+      "size": 1490495,
+      "size_human": "1.42 MB"
+    },
+    "assets/icons": {
+      "size": 6639,
+      "size_human": "6.48 KB"
+    },
+    "assets/diagrams": {
+      "size": 9350,
+      "size_human": "9.13 KB"
+    },
+    "assets/config": {
+      "size": 1247,
+      "size_human": "1.22 KB"
+    },
+    "assets/tables": {
+      "size": 280,
+      "size_human": "280.00 B"
+    },
+    "assets/images": {
+      "size": 7502,
+      "size_human": "7.33 KB"
+    },
+    "assets/schematics_drop_here": {
+      "size": 1636,
+      "size_human": "1.60 KB"
+    },
+    "assets/audio/arcadehud": {
+      "size": 40220,
+      "size_human": "39.28 KB"
+    },
+    "assets/audio/flightops": {
+      "size": 40220,
+      "size_human": "39.28 KB"
+    },
+    "assets/audio/industrialops": {
+      "size": 40220,
+      "size_human": "39.28 KB"
+    },
+    "assets/audio/scificontrol": {
+      "size": 40220,
+      "size_human": "39.28 KB"
+    },
+    "assets/audio/voicepacks/commander": {
+      "size": 703238,
+      "size_human": "686.76 KB"
+    },
+    "assets/audio/voicepacks/aiops": {
+      "size": 40220,
+      "size_human": "39.28 KB"
+    },
+    "src": {
+      "size": 5980,
+      "size_human": "5.84 KB"
+    },
+    "scripts": {
+      "size": 333725,
+      "size_human": "325.90 KB"
+    },
+    "scripts/tools": {
+      "size": 1232,
+      "size_human": "1.20 KB"
+    },
+    "scripts/badges": {
+      "size": 6003,
+      "size_human": "5.86 KB"
+    },
+    "scripts/guards": {
+      "size": 5659,
+      "size_human": "5.53 KB"
+    },
+    "scripts/health": {
+      "size": 4757,
+      "size_human": "4.65 KB"
+    },
+    "scripts/release": {
+      "size": 6913,
+      "size_human": "6.75 KB"
+    },
+    "scripts/pages": {
+      "size": 5888,
+      "size_human": "5.75 KB"
+    },
+    "scripts/monitoring": {
+      "size": 9916,
+      "size_human": "9.68 KB"
+    },
+    "scripts/util": {
+      "size": 9032,
+      "size_human": "8.82 KB"
+    },
+    "scripts/snippets/new_batch": {
+      "size": 360840,
+      "size_human": "352.38 KB"
+    },
+    "scripts/github": {
+      "size": 59674,
+      "size_human": "58.28 KB"
+    },
+    "scripts/replit_automation": {
+      "size": 137446,
+      "size_human": "134.22 KB"
+    },
+    "scripts/data": {
+      "size": 2,
+      "size_human": "2.00 B"
+    },
+    "utils": {
+      "size": 6921,
+      "size_human": "6.76 KB"
+    },
+    "tools": {
+      "size": 240745,
+      "size_human": "235.10 KB"
+    },
+    "tools/CoA_Generator": {
+      "size": 13012,
+      "size_human": "12.71 KB"
+    },
+    "tools/CoA_Generator/output": {
+      "size": 26289,
+      "size_human": "25.67 KB"
+    },
+    "tools/pdf_composer": {
+      "size": 10261,
+      "size_human": "10.02 KB"
+    },
+    "tools/image_suite": {
+      "size": 76775,
+      "size_human": "74.98 KB"
+    },
+    "tools/logger": {
+      "size": 1905,
+      "size_human": "1.86 KB"
+    },
+    "tools/android": {
+      "size": 526,
+      "size_human": "526.00 B"
+    },
+    "tools/can": {
+      "size": 4905,
+      "size_human": "4.79 KB"
+    },
+    "tools/diag": {
+      "size": 4454,
+      "size_human": "4.35 KB"
+    },
+    "tools/support": {
+      "size": 2080,
+      "size_human": "2.03 KB"
+    },
+    "tools/hardening": {
+      "size": 2954,
+      "size_human": "2.88 KB"
+    },
+    "docs": {
+      "size": 491293,
+      "size_human": "479.78 KB"
+    },
+    "docs/SonicBuilder_CANBridge_Teensy_v1": {
+      "size": 393,
+      "size_human": "393.00 B"
+    },
+    "docs/SonicBuilder_CANBridge_Teensy_v1/diagrams": {
+      "size": 5619,
+      "size_human": "5.49 KB"
+    },
+    "docs/SonicBuilder_ElectricalValidation_v1": {
+      "size": 410,
+      "size_human": "410.00 B"
+    },
+    "docs/SonicBuilder_ElectricalValidation_v1/diagrams": {
+      "size": 5625,
+      "size_human": "5.49 KB"
+    },
+    "docs/SonicBuilder_ToolsAndDocs_v1": {
+      "size": 371,
+      "size_human": "371.00 B"
+    },
+    "docs/SonicBuilder_ToolsAndDocs_v1/diagrams": {
+      "size": 5558,
+      "size_human": "5.43 KB"
+    },
+    "docs/SonicBuilder_WiringExpansion_v1": {
+      "size": 399,
+      "size_human": "399.00 B"
+    },
+    "docs/SonicBuilder_WiringExpansion_v1/diagrams": {
+      "size": 5606,
+      "size_human": "5.47 KB"
+    },
+    "docs/nextgen": {
+      "size": 27259,
+      "size_human": "26.62 KB"
+    },
+    "docs/nextgen/photos": {
+      "size": 814,
+      "size_human": "814.00 B"
+    },
+    "docs/nextgen/firmware": {
+      "size": 3318,
+      "size_human": "3.24 KB"
+    },
+    "docs/images/mobo_back": {
+      "size": 849,
+      "size_human": "849.00 B"
+    },
+    "docs/styles": {
+      "size": 2022,
+      "size_human": "1.97 KB"
+    },
+    "docs/web_gallery": {
+      "size": 1592,
+      "size_human": "1.55 KB"
+    },
+    "docs/status": {
+      "size": 8134,
+      "size_human": "7.94 KB"
+    },
+    "docs/badges": {
+      "size": 714,
+      "size_human": "714.00 B"
+    },
+    "docs/assets": {
+      "size": 73382,
+      "size_human": "71.66 KB"
+    },
+    "docs/assets/js": {
+      "size": 1939,
+      "size_human": "1.89 KB"
+    },
+    "docs/guides": {
+      "size": 553895,
+      "size_human": "540.91 KB"
+    },
+    "docs/dashboard": {
+      "size": 3017,
+      "size_human": "2.95 KB"
+    },
+    "docs/resources/audio": {
+      "size": 6496,
+      "size_human": "6.34 KB"
+    },
+    "docs/manifest": {
+      "size": 2974,
+      "size_human": "2.90 KB"
+    },
+    "docs/github_deployment": {
+      "size": 16821,
+      "size_human": "16.43 KB"
+    },
+    "docs/replit_automation": {
+      "size": 11857,
+      "size_human": "11.58 KB"
+    },
+    "docs/replit_automation/code_snippets": {
+      "size": 39256,
+      "size_human": "38.34 KB"
+    },
+    "templates": {
+      "size": 9095,
+      "size_human": "8.88 KB"
+    },
+    "overlays": {
+      "size": 1145459,
+      "size_human": "1.09 MB"
+    },
+    "examples": {
+      "size": 6380,
+      "size_human": "6.23 KB"
+    },
+    ".github": {
+      "size": 8817,
+      "size_human": "8.61 KB"
+    },
+    ".github/workflows": {
+      "size": 195239,
+      "size_human": "190.66 KB"
+    },
+    ".github/ISSUE_TEMPLATE": {
+      "size": 1343,
+      "size_human": "1.31 KB"
+    },
+    ".github/workflows_new": {
+      "size": 101332,
+      "size_human": "98.96 KB"
+    },
+    "Founder_Seal": {
+      "size": 1033156,
+      "size_human": "1008.94 KB"
+    },
+    "certificates": {
+      "size": 1139261,
+      "size_human": "1.09 MB"
+    },
+    "make_patches": {
+      "size": 1984,
+      "size_human": "1.94 KB"
+    },
+    "Wiring_Diagrams/PCB_Photos": {
+      "size": 383,
+      "size_human": "383.00 B"
+    },
+    "Wiring_Diagrams/I2S_Taps": {
+      "size": 405,
+      "size_human": "405.00 B"
+    },
+    "make": {
+      "size": 6648,
+      "size_human": "6.49 KB"
+    },
+    ".status": {
+      "size": 387,
+      "size_human": "387.00 B"
+    },
+    "pipeline": {
+      "size": 5462,
+      "size_human": "5.33 KB"
+    },
+    "install/SonicBuilder_CANBridge_Teensy_v1": {
+      "size": 159,
+      "size_human": "159.00 B"
+    },
+    "install/SonicBuilder_CANBridge_Teensy_v1/docs": {
+      "size": 393,
+      "size_human": "393.00 B"
+    },
+    "install/SonicBuilder_CANBridge_Teensy_v1/docs/diagrams": {
+      "size": 5619,
+      "size_human": "5.49 KB"
+    },
+    "install/SonicBuilder_ElectricalValidation_v1": {
+      "size": 159,
+      "size_human": "159.00 B"
+    },
+    "install/SonicBuilder_ElectricalValidation_v1/docs": {
+      "size": 410,
+      "size_human": "410.00 B"
+    },
+    "install/SonicBuilder_ElectricalValidation_v1/docs/diagrams": {
+      "size": 5625,
+      "size_human": "5.49 KB"
+    },
+    "install/SonicBuilder_ToolsAndDocs_v1": {
+      "size": 156,
+      "size_human": "156.00 B"
+    },
+    "install/SonicBuilder_ToolsAndDocs_v1/docs": {
+      "size": 371,
+      "size_human": "371.00 B"
+    },
+    "install/SonicBuilder_ToolsAndDocs_v1/docs/diagrams": {
+      "size": 5558,
+      "size_human": "5.43 KB"
+    },
+    "install/SonicBuilder_WiringExpansion_v1": {
+      "size": 150,
+      "size_human": "150.00 B"
+    },
+    "install/SonicBuilder_WiringExpansion_v1/docs": {
+      "size": 399,
+      "size_human": "399.00 B"
+    },
+    "install/SonicBuilder_WiringExpansion_v1/docs/diagrams": {
+      "size": 5606,
+      "size_human": "5.47 KB"
+    },
+    "firmware": {
+      "size": 2816,
+      "size_human": "2.75 KB"
+    },
+    "patches": {
+      "size": 906,
+      "size_human": "906.00 B"
+    },
+    "exports/ids/20251029_181611_b632b7c": {
+      "size": 184,
+      "size_human": "184.00 B"
+    },
+    ".config/replit/.semgrep": {
+      "size": 1778390,
+      "size_human": "1.70 MB"
+    },
+    ".config/pulse": {
+      "size": 256,
+      "size_human": "256.00 B"
+    },
+    "setup": {
+      "size": 4905,
+      "size_human": "4.79 KB"
+    },
+    "failsafe_tools": {
+      "size": 1058,
+      "size_human": "1.03 KB"
+    },
+    "founder_autodeploy": {
+      "size": 16133,
+      "size_human": "15.75 KB"
+    },
+    "founder_autodeploy/logs": {
+      "size": 358,
+      "size_human": "358.00 B"
+    },
+    "supersonic": {
+      "size": 46918,
+      "size_human": "45.82 KB"
+    },
+    "founder_console": {
+      "size": 14319,
+      "size_human": "13.98 KB"
+    },
+    "workflows": {
+      "size": 4085,
+      "size_human": "3.99 KB"
+    },
+    "founder_infinity": {
+      "size": 12256,
+      "size_human": "11.97 KB"
+    },
+    "founder_infinity/dashboards": {
+      "size": 26277,
+      "size_human": "25.66 KB"
+    },
+    "founder_infinity/services": {
+      "size": 20286,
+      "size_human": "19.81 KB"
+    },
+    "founder_infinity/scripts": {
+      "size": 8967,
+      "size_human": "8.76 KB"
+    },
+    "logs": {
+      "size": 15,
+      "size_human": "15.00 B"
+    },
+    "tests": {
+      "size": 1555,
+      "size_human": "1.52 KB"
+    },
+    "sounds": {
+      "size": 333,
+      "size_human": "333.00 B"
+    },
+    "policies/supersonic": {
+      "size": 937,
+      "size_human": "937.00 B"
+    },
+    "helpers": {
+      "size": 19895,
+      "size_human": "19.43 KB"
+    },
+    "badges": {
+      "size": 113,
+      "size_human": "113.00 B"
+    },
+    "attached_assets": {
+      "size": 2529602,
+      "size_human": "2.41 MB"
+    },
+    "attached_assets/GITHUB Deployment codes": {
+      "size": 224412,
+      "size_human": "219.15 KB"
+    },
+    "attached_assets/new_replit_codes_3/New Replit codes 3": {
+      "size": 835877,
+      "size_human": "816.29 KB"
+    },
+    "attached_assets/new_replit_codes_3/__MACOSX/New Replit codes 3": {
+      "size": 88000,
+      "size_human": "85.94 KB"
+    },
+    "downloads": {
+      "size": 125,
+      "size_human": "125.00 B"
+    },
+    "static": {
+      "size": 23931,
+      "size_human": "23.37 KB"
+    },
+    "snippets": {
+      "size": 3652,
+      "size_human": "3.57 KB"
+    },
+    ".pytest_cache": {
+      "size": 530,
+      "size_human": "530.00 B"
+    },
+    ".pytest_cache/v/cache": {
+      "size": 626,
+      "size_human": "626.00 B"
+    },
+    "build": {
+      "size": 52860789,
+      "size_human": "50.41 MB"
+    }
+  },
+  "errors": [
+    {
+      "path": ".config/pulse/09b08bbab17e-runtime",
+      "error": "[Errno 2] No such file or directory: '.config/pulse/09b08bbab17e-runtime'"
+    },
+    {
+      "path": ".config/pulse/93a6aa8f1ea9-runtime",
+      "error": "[Errno 2] No such file or directory: '.config/pulse/93a6aa8f1ea9-runtime'"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+python3 security_plus_dashboard_bootstrap.py
+git add -A
+git commit -m "Security: CodeQL custom cfg, Licenses report, Docs Security Dashboard"
+git push origin main

@@ -1,0 +1,9 @@
+function _updatePerfLabel(){
+  /* …existing code… */
+  const fps = _fmtFps(_fpsEMA);
+  const rtt = _fmtMs(_rendl(_rttEMA));
+  /* …existing label updates… */
+
+  // 🔔 watchdog
+  perfWatchdogTick(fps, rtt);
+}

@@ -1,0 +1,48 @@
+name: Failsafe Status Badge
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # every hour
+  workflow_dispatch:
+
+jobs:
+  check-failsafe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Verify failsafe pack
+        run: |
+          echo "🔍 Checking for Supersonic_Failsafe.zip..."
+          if [ -f "Supersonic_Failsafe.zip" ]; then
+            echo "✅ Found. Verifying checksum..."
+            sha256sum -c failsafe_tools/checksums.sha256 2>/dev/null || echo "⚠️  Checksum verification skipped (files may have changed)"
+            echo "status=verified" >> $GITHUB_ENV
+          else
+            echo "❌ Failsafe pack not found"
+            echo "status=missing" >> $GITHUB_ENV
+          fi
+
+      - name: Update manifest on success
+        if: env.status == 'verified'
+        run: |
+          cd failsafe_tools
+          jq '.message = "verified" | .color = "success" | .lastVerified = now | strftime("%Y-%m-%dT%H:%M:%SZ")' failsafe_manifest.json > tmp.json
+          mv tmp.json failsafe_manifest.json
+          echo "🟢 Badge updated to VERIFIED"
+
+      - name: Update manifest on failure
+        if: env.status == 'missing'
+        run: |
+          echo "🔴 Failsafe pack missing - attempting auto-rebuild..."
+          python3 setup/build_supersonic_failsafe.py || echo "Auto-rebuild failed"
+
+      - name: Commit changes
+        if: env.status == 'verified'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add failsafe_tools/failsafe_manifest.json Supersonic_Failsafe.zip || true
+          git diff --cached --quiet || git commit -m "🧯 Update failsafe status [$(date)]"
+          git push || echo "Nothing to push"

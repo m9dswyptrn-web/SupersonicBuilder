@@ -1,0 +1,92 @@
+name: Docs Release (Commit-Stamped)
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt PyPDF2
+      - name: Build manual and appendix
+        run: |
+          python scripts/supersonic_build_all.py --version ${{ github.ref_name }} --verify
+          # Build NextGen appendix if present (non-fatal if missing)
+          if [ -f scripts/make_nextgen_appendix.py ]; then
+            python scripts/make_nextgen_appendix.py --in docs/nextgen --out out/NextGen_Appendix_${{ github.ref_name }}.pdf --theme dark || true
+          fi
+      - name: Merge with commit stamp
+        run: |
+          python scripts/merge_pdfs_commit.py \
+            --main out/SonicBuilder_Supersonic_Manual_${{ github.ref_name }}.pdf \
+            --appendix out/NextGen_Appendix_${{ github.ref_name }}.pdf \
+            --out-dir out \
+            --commit ${{ github.sha }} || echo "Merge failed, continuing"
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/SonicBuilder_Supersonic_Manual_${{ github.ref_name }}.pdf
+            out/NextGen_Appendix_${{ github.ref_name }}.pdf
+            out/SonicBuilder_Manual_with_Appendix_${{ github.sha }}.pdf
+          fail_on_unmatched_files: false
+
+  diagnostic-run:
+    needs: [release-docs]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt
+      - name: Collect diagnostics
+        run: |
+          make diag || python tools/diag/diag_collect.py --out diag/diag_bundle.zip
+      - name: Upload diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostics-${{ github.ref_name }}
+          path: diag/diag_bundle.zip
+          retention-days: 30
+
+  support-bundle:
+    needs: [release-docs]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt
+      - name: Create support bundle
+        run: |
+          make support-bundle || python tools/diag/diag_collect.py --out support/support_bundle.zip
+      - name: Upload support bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: support-bundle-${{ github.ref_name }}
+          path: support/support_bundle.zip
+          retention-days: 30
+      - name: Attach support bundle to release (optional)
+        uses: softprops/action-gh-release@v2
+        with:
+          files: support/support_bundle.zip
+        continue-on-error: true

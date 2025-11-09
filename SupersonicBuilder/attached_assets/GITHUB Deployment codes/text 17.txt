@@ -1,0 +1,2 @@
+    add_repo_extras(dry=args.dry_run)
+    add_sbom_tools_and_ci(dry=args.dry_run)

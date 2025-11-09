@@ -1,0 +1,12 @@
+{
+  "meta": {
+    "hostname": "your-machine",
+    "os": "macOS 15.0 arm64",
+    "python": "3.11.7",
+    "backend": "CUDA",
+    "model": "llama-3.1-8b-q4_0.gguf",
+    "commit": "a1b2c3d (if git repo)",
+    "utc": "2025-11-03T19:48:00Z"
+  },
+  "benchmark": { ... full bench data ... }
+}

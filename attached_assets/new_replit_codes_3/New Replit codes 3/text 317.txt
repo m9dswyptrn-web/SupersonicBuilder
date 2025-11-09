@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+# Unified_Supersonic_Deploy_Pack_v2.py
+# Safe, idempotent project scaffolder for:
+# - Agent add-ons (auto learn, memory maintenance, skill hot-reload, sentinel)
+# - Scripts (bench_llm, diagnostics, ingest, optimize, deploy to tauri, tts fallback)
+# - Audio assets (generated WAV tones)
+# - Cloud FastAPI stub
+# - Tauri desktop wrapper (Cargo + conf + Rust main)
+# - package.json patch (adds tauri scripts)
+# - Helpful README and .env.sample
+#
+# It DOES NOT run external commands; it only writes files. Follow the printed
+# "Next steps" to install deps, benchmark and build.
+
+import json, os, stat, sys, struct, wave, math, textwrap
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent
+
+# ----------------------------- helpers ---------------------------------
+def write(path: Path, content: str, executable: bool=False, overwrite: bool=False):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and not overwrite:
+        print(f"→ exists {path} (kept)")
+        return False
+    path.write_text(content, encoding="utf-8")
+    if executable:
+        mode = path.stat().st_mode
+        path.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    print(f"→ wrote {path}")
+    return True
+
+def ensure_line(path: Path, line: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        path.write_text(line + "\n", encoding="utf-8")
+        print(f"→ created {path}")
+        return
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if line.strip() not in [l.strip() for l in lines]:
+        lines.append(line)
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        print(f"→ appended to {path}")
+    else:
+        print(f"→ {path} already contains line")
+
+def write_tone_wav(path: Path, seconds=0.4, freq=880.0, volume=0.4, samplerate=44100):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    n = int(seconds * samplerate)
+    with wave.open(str(path), 'w') as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(samplerate)
+        for i in range(n):
+            s = volume * math.sin(2*math.pi*freq * i / samplerate)
+            w.writeframes(struct.pack('<h', int(max(-1.0, min(1.0, s)) * 32767)))
+    print(f"→ generated {path}")
+
+# ----------------------------- READMEs ---------------------------------
+TOP_README = """\
+# Supersonic: Unified Deploy Pack v2
+
+This pack adds:
+- Agent add-ons (auto learn, memory maintenance, skill hot-reload, sentinel)
+- Scripts (bench_llm, diagnostics, ingest, optimize, deploy to tauri, tts fallback)
+- Audio cues (generated WAV tones) in `assets/audio/`
+- Cloud FastAPI stub (`cloud/fastapi_stub/`)
+- Tauri desktop wrapper (src-tauri/)
+- package.json patched with Tauri dev/build scripts
+
+## Quickstart
+```bash
+# (1) Create & activate venv
+python3 -m venv .venv && source .venv/bin/activate
+python -m pip install --upgrade pip
+
+# (2) Install deps for agent + web UI
+pip install -r agent/requirements.txt -r desktop/webui/requirements.txt
+
+# (3) (Optional) Install cloud stub deps
+pip install -r cloud/fastapi_stub/requirements.txt
+
+# (4) Download/prepare a GGUF model (or place your own at AGENT_MODEL path)
+python scripts/download_gguf.py
+
+# (5) Run local app
+python scripts/run_offline_llm.py
+# open http://127.0.0.1:7860
+
+# (6) Tauri shell
+npm i
+npm run tauri:dev
+npm run tauri:build

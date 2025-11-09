@@ -1,0 +1,29 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+    commands:
+      - echo "🚀 Installing dependencies..."
+      - pip install --upgrade pip
+      - pip install -r supersonic_requirements.txt
+      - pip install pillow
+  build:
+    commands:
+      - echo "🧩 Running Supersonic build chain..."
+      - python make_supersonic_lean_auto.py
+      - python supersonic_build_all.py
+      - python make_supersonic_cards_autoattach.py
+      - python supersonic_build_secure_all.py
+  post_build:
+    commands:
+      - echo "✅ Build complete, packaging artifacts..."
+      - ls -R SonicBuilder/docs
+artifacts:
+  files:
+    - 'SonicBuilder/docs/Mission_Cards_Supersonic*.zip'
+    - 'SonicBuilder/docs/Supersonic_FieldKit*.zip'
+    - 'BUILD_REPORT.md'
+    - 'dist/**/*.zip'
+  discard-paths: no

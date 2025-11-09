@@ -1,0 +1,8 @@
+<title>Supersonic Local</title>
+<h1>Supersonic Local (Offline)</h1>
+<form method="post" action="/ask">
+  <input name="q" style="width:70%" placeholder="Ask the agent..." />
+  <button>Ask</button>
+</form>
+<pre>{{ resp }}</pre>
+'''

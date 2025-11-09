@@ -1,0 +1,4 @@
+<span class="sep">|</span>
+<button id="dp-download-png" class="btn btn-mini" title="Download current page as PNG">⬇️ PNG</button>
+<button id="dp-download-pdf" class="btn btn-mini" title="Download original PDF">⬇️ PDF</button>
+<button id="dp-print"       class="btn btn-mini" title="Print">🖨</button>

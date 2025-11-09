@@ -1,0 +1,5 @@
+export GITHUB_OWNER="YourGitHubUserOrOrg"
+export GITHUB_REPO="SonicBuilder"
+python3 supersonic_super_bootstrap.py
+chmod +x replit_to_github.sh tools/get_pdfjs.sh tools/get_jszip.sh
+./replit_to_github.sh

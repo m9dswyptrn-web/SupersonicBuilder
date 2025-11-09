@@ -1,0 +1,67 @@
+
+# Supersonic Makefile (+ doctor)
+.PHONY: preflight postinstall snapshot push verify deploy clean doctor
+
+PY ?= python3
+ZIP_EXCLUDES ?= .git,__pycache__,node_modules,.mypy_cache,.pytest_cache,.DS_Store
+SNAPSHOT_NAME ?=
+SAFE_REMOTE ?=
+GITHUB_REPOSITORY ?=
+
+define check_remote
+	@set -e; \
+	REM="$$(git remote get-url origin 2>/dev/null || true)"; \
+	if [ -z "$$REM" ]; then \
+	  echo "[ERROR] No remote 'origin' set. Use preflight --fix or set GIT_REMOTE_URL and retry." >&2; exit 3; \
+	fi; \
+	if [ -n "$(SAFE_REMOTE)" ]; then \
+	  case "$$REM" in "$(SAFE_REMOTE)") ;; *) echo "[ERROR] origin ($$REM) != SAFE_REMOTE ($(SAFE_REMOTE))" >&2; exit 4;; esac; \
+	elif [ -n "$(GITHUB_REPOSITORY)" ]; then \
+	  case "$$REM" in *"$(GITHUB_REPOSITORY)".git*|*"$(GITHUB_REPOSITORY)") ;; \
+	    *) echo "[ERROR] origin ($$REM) does not contain $(GITHUB_REPOSITORY)" >&2; exit 4;; esac; \
+	fi; \
+	echo "[OK] Remote origin looks safe: $$REM"
+endef
+
+preflight:
+	@$(PY) supersonic_preflight.py
+
+postinstall:
+	@$(PY) supersonic_post_install.py
+
+snapshot:
+	@ZIP_EXCLUDES="$(ZIP_EXCLUDES)" $(PY) supersonic_post_install.py --zip $(SNAPSHOT_NAME)
+
+push:
+	$(call check_remote)
+	@bash -lc 'git add -A; git status --porcelain || true; \
+	  git commit -m "[sync] supersonic snapshot $$(date -u +%Y-%m-%dT%H:%M:%SZ)" || true; \
+	  git fetch --prune || true; \
+	  git pull --rebase --autostash || git merge --no-edit || true; \
+	  git push --set-upstream origin $$(git branch --show-current || echo main)'
+
+verify:
+	@bash verify_endpoints.sh
+
+deploy: clean
+	@echo "== DEPLOY: preflight (auto-fix enabled) =="
+	@GIT_REMOTE_URL="$(SAFE_REMOTE)" PREFLIGHT_FIX=1 $(PY) supersonic_preflight.py --fix
+	@echo "== DEPLOY: postinstall (wire health/sync/logging) =="
+	@$(MAKE) postinstall
+	@echo "== DEPLOY: snapshot (full project) =="
+	@$(MAKE) snapshot
+	@echo "== DEPLOY: push (safe) =="
+	@$(MAKE) push
+	@echo "== DEPLOY: verify endpoints =="
+	@$(MAKE) verify
+	@echo "== DONE ✅ =="
+
+clean:
+	@echo "Cleaning snapshots and caches…"
+	@rm -f project_snapshot_*.zip *.bak.* *.pyc */*.pyc
+	@rm -rf __pycache__ .mypy_cache .pytest_cache build dist logs/archive/*.log logs/archive/*.log.gz || true
+	@echo "Clean complete."
+
+# New: doctor = comprehensive health report (no installs)
+doctor:
+	@$(PY) supersonic_doctor.py

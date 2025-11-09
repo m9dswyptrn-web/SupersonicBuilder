@@ -1,0 +1,10 @@
+.perf-pop{
+  position:absolute; right:10px; top:52px;
+  min-width:220px; padding:10px 12px;
+  background: rgba(10,10,11,.95);
+  color:#e5e7eb; border:1px solid rgba(255,255,255,.08);
+  border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.45);
+  z-index:1000;
+}
+.perf-row{ display:flex; justify-content:space-between; margin:4px 0; font-size:13px; }
+body[data-theme="light"] .perf-pop{ background:#fff; color:#111; border-color:#ddd; }

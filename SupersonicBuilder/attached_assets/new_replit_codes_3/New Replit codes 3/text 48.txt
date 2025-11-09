@@ -1,0 +1,6 @@
+  // NEW: quality slider + progress
+  const sliderQ   = document.getElementById("dp-quality");
+  const sliderVal = document.getElementById("dp-quality-val");
+  const progWrap  = document.getElementById("dp-progress");
+  const progBar   = document.getElementById("dp-progress-bar");
+  const progText  = document.getElementById("dp-progress-text");

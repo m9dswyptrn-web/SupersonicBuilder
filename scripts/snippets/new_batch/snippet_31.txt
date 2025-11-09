@@ -1,0 +1,8 @@
+# Require a manual confirmation before publishing
+REQUIRE_OK=1 make verify-deep-publish VERSION=5.0.0 OUT=/mnt/data PUSH=github
+
+# Require SHA-256 to start with a known prefix
+CHECK_PREFIX=abcd1234 make verify-deep-publish VERSION=5.0.0 OUT=/mnt/data PUSH=github
+
+# Combine both checks
+REQUIRE_OK=1 CHECK_PREFIX=abcd1234 make verify-deep-publish VERSION=5.0.0 OUT=/mnt/data PUSH=both

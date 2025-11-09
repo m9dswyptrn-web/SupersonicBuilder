@@ -1,0 +1,5 @@
+<div class="modal-actions">
+  <button class="pill" onclick="fixReady()">Fix it for me</button>
+  <button class="pill" onclick="copyModal()">Copy details</button>
+  <button class="pill" onclick="closeModal()">Close</button>
+</div>

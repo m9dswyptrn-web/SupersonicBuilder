@@ -1,0 +1,3 @@
+gh run list -L 5                # CI should be running
+make tag V=1.0.1                # cut another release anytime
+make ship                       # quick commit & push helper

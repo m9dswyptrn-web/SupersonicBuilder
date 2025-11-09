@@ -1,0 +1,2 @@
+#dp-cancel { background: #2b2f36; }
+#dp-cancel:active { filter: brightness(1.1); }

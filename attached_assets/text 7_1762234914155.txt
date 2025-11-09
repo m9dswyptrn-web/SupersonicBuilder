@@ -1,0 +1,21 @@
+<script>
+// defaults
+SETTINGS = Object.assign({ perfAuto: true }, SETTINGS || {});
+
+function applySettingsToUI(){
+  /* …your existing code… */
+  const m = document.getElementById('settingsMenu'); if(!m) return;
+  const $ = (id)=> m.querySelector('#'+id);
+  const perfAuto = $('#optPerfAuto'); if (perfAuto) perfAuto.checked = !!SETTINGS.perfAuto;
+}
+
+function initSettingsBindings(){
+  /* …your existing code… */
+  const m = document.getElementById('settingsMenu'); if(!m) return;
+  const perfAuto = m.querySelector('#optPerfAuto');
+  if (perfAuto && !perfAuto._bound){
+    perfAuto.addEventListener('change', e => { SETTINGS.perfAuto = !!e.target.checked; saveSettings(); });
+    perfAuto._bound = true;
+  }
+}
+</script>

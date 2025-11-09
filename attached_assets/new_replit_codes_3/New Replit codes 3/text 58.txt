@@ -1,0 +1,80 @@
+  btnZip?.addEventListener("click", async () => {
+    try {
+      beginLongTask();
+      resetProgress();
+      const url = buildURL(true).replace("format=png", "format=pdf");
+      if (!pdfDoc || !pdfURL || pdfURL !== url) {
+        wrap.hidden = false; showSpinner(true);
+        pdfURL = url; await loadPDF(pdfURL);
+        if (CANCEL.active) { endLongTask(); return; }
+      }
+
+      const zip = new JSZip();
+      const surface = canvas.parentElement;
+      const sw = surface.clientWidth || 900;
+      const q = getQualityScale();
+      const bump = 1.5 * q;
+      const total = pdfDoc.numPages;
+
+      const tmp = document.createElement("canvas");
+      const tctx = tmp.getContext("2d", { alpha: false });
+
+      for (let p = 1; p <= total; p++) {
+        if (CANCEL.active) { endLongTask(); return; }
+        status(`Rendering page ${p}/${total}…`);
+        setProgress(((p - 1) / total) * 70);
+
+        const pdfPage = await pdfDoc.getPage(p);
+        if (CANCEL.active) { endLongTask(); return; }
+
+        const v1 = pdfPage.getViewport({ scale: 1, rotation });
+        const fitW = (sw / v1.width);
+        const exportScale = fitW * bump;
+
+        const vp = pdfPage.getViewport({ scale: exportScale, rotation });
+        tmp.width = Math.round(vp.width);
+        tmp.height = Math.round(vp.height);
+
+        // cancellable render
+        currentRenderTask = pdfPage.render({ canvasContext: tctx, viewport: vp });
+        try {
+          await currentRenderTask.promise;
+        } catch (e) {
+          if (e?.name !== "RenderingCancelledException") throw e;
+        } finally {
+          currentRenderTask = null;
+        }
+        if (CANCEL.active) { endLongTask(); return; }
+
+        const blob = await new Promise(res => tmp.toBlob(res, "image/png", 1.0));
+        const buf = await blob.arrayBuffer();
+        const fname = `${selMake.value}_${selModel.value}_${selYear.value}_${selDiag.value}_p${String(p).padStart(2,"0")}.png`;
+        zip.file(fname, buf);
+      }
+
+      if (CANCEL.active) { endLongTask(); return; }
+
+      status("Zipping…");
+      const zipBlob = await zip.generateAsync(
+        { type: "blob", compression: "DEFLATE", compressionOptions: { level: 9 } },
+        (meta) => {
+          const pct = 70 + (meta.percent || 0) * 0.30; // 70–100% during zip
+          setProgress(pct, `${Math.round(pct)}%`);
+        }
+      );
+      if (CANCEL.active) { endLongTask(); return; }
+
+      const base = `${selMake.value}_${selModel.value}_${selYear.value}_${selDiag.value}`;
+      downloadBlob(zipBlob, `${base}_all_pages.zip`);
+      setProgress(100, "100%");
+      status("ZIP ready.");
+    } catch (e) {
+      if (!CANCEL.active) {
+        console.error(e);
+        status("ZIP export failed.");
+      }
+    } finally {
+      showSpinner(false);
+      if (!CANCEL.active) endLongTask();
+    }
+  });

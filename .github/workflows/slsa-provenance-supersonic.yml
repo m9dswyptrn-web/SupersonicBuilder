@@ -1,0 +1,43 @@
+
+name: SLSA Provenance (Supersonic)
+on:
+  workflow_dispatch:
+    inputs:
+      subject: { description: 'Target (container digest or file path)', required: true }
+      is-container: { type: boolean, default: true }
+permissions: { id-token: write, contents: read, attestations: write }
+jobs:
+  compute-digest:
+    if: inputs.is-container != true
+    runs-on: ubuntu-latest
+    outputs:
+      base64-subjects: ${{ steps.encode.outputs.subjects }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compute file digest
+        id: digest
+        run: |
+          DIGEST=$(sha256sum "${{ inputs.subject }}" | cut -d' ' -f1)
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+      - name: Encode subjects
+        id: encode
+        run: |
+          JSON='[{"name":"${{ inputs.subject }}","digest":{"sha256":"${{ steps.digest.outputs.digest }}"}}]'
+          BASE64=$(echo -n "$JSON" | base64 -w0)
+          echo "subjects=$BASE64" >> $GITHUB_OUTPUT
+  
+  container-provenance:
+    if: inputs.is-container == true
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.0.0
+    permissions: { id-token: write, contents: read, packages: write, attestations: write }
+    with:
+      image: ${{ inputs.subject }}
+      digest: ${{ inputs.subject }}
+  
+  file-provenance:
+    if: inputs.is-container != true
+    needs: compute-digest
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
+    permissions: { id-token: write, contents: read, attestations: write }
+    with:
+      base64-subjects: ${{ needs.compute-digest.outputs.base64-subjects }}

@@ -1,0 +1,76 @@
+# Project Doctor Report
+
+- Generated: `2025-11-04T22:15:31`
+- Root: `/home/runner/workspace`
+
+## Stack detection
+```json
+{
+  "score": {
+    "fastapi": 11,
+    "flask": 27,
+    "starlette": 0
+  },
+  "hits": {
+    "fastapi": [
+      "supersonic_logging_and_sync_pack.py",
+      "supersonic_post_install.py",
+      "Supersonic_Health_Extension.py",
+      "supersonic_project_doctor.py",
+      "tools/doctor_endpoints.py",
+      "attached_assets/supersonic_post_install_1762278713776.py",
+      "attached_assets/supersonic_post_install_1762280605727.py",
+      "attached_assets/embed_doctor_panel_1762287912841.py",
+      "attached_assets/supersonic_post_install_1762287912841.py",
+      "attached_assets/embed_doctor_panel_1762289670545.py",
+      "attached_assets/supersonic_post_install_1762289670545.py"
+    ],
+    "flask": [
+      "serve_pdfs.py",
+      "founder_webhook_listener.py",
+      "founder_webhook_listener_secure.py",
+      "founder_webhook_listener_fortified.py",
+      "founder_webhook_listener_fortified_persist.py",
+      "replit_feed_dashboard.py",
+      "badge_engine.py",
+      "fusion_summary.py",
+      "sync_monitor_dashboard.py",
+      "fusion_live_charts.py",
+      "supersonic_settings_server.py",
+      "supersonic_logging_and_sync_pack.py",
+      "supersonic_post_install.py",
+      "Supersonic_Health_Extension.py",
+      "supersonic_project_doctor.py",
+      "scripts/replit_automation/replit_automation_284.py",
+      "tools/sync_metrics_api.py",
+      "tools/doctor_endpoints.py",
+      "founder_console/console.py",
+      "founder_infinity/services/badge_engine.py",
+      "founder_infinity/services/autodeploy_api.py",
+      "attached_assets/supersonic_post_install_1762278713776.py",
+      "attached_assets/supersonic_post_install_1762280605727.py",
+      "attached_assets/embed_doctor_panel_1762287912841.py",
+      "attached_assets/supersonic_post_install_1762287912841.py",
+      "attached_assets/embed_doctor_panel_1762289670545.py",
+      "attached_assets/supersonic_post_install_1762289670545.py"
+    ],
+    "starlette": []
+  },
+  "server_file": "serve_pdfs.py"
+}
+```
+
+## Server
+- server_file: `serve_pdfs.py`
+- port_guess: `unknown`
+
+## Templates/Static
+- templates_dir: `templates`
+- static_dir: `.`
+
+## Sync endpoints
+- present: `False`
+
+## Recommendations
+- Server detected: serve_pdfs.py (Flask)
+- No /sync endpoints detected. Control Panel will still work for /health; add /sync/status and /sync/restart later.

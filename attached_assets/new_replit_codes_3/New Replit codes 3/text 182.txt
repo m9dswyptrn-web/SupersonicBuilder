@@ -1,0 +1,7 @@
+<p align="center">
+  <a href="https://github.com/OWNER/REPO/actions"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/OWNER/REPO/supersonic-build.yml?label=build&logo=github"></a>
+  <a href="https://github.com/OWNER/REPO/actions"><img alt="Docs" src="https://img.shields.io/github/actions/workflow/status/OWNER/REPO/docs-mkdocs.yml?label=docs&logo=github"></a>
+  <a href="https://github.com/OWNER/REPO/releases"><img alt="Release" src="https://img.shields.io/github/v/release/OWNER/REPO?display_name=tag&logo=github"></a>
+  <a href="https://OWNER.github.io/REPO/"><img alt="Pages" src="https://img.shields.io/badge/docs-online-00ffff"></a>
+</p>
+"""

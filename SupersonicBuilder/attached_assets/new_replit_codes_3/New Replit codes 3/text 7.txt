@@ -1,0 +1,14 @@
+- name: Start web server (background)
+  run: |
+    python app.py &          # or: gunicorn -w 2 -b 0.0.0.0:8080 app:app &
+    echo $! > server.pid
+    sleep 2
+
+- name: Health check
+  run: |
+    python healthcheck.py --host 127.0.0.1 --port 8080 --retries 60 --sleep 1
+
+- name: Stop server
+  if: always()
+  run: |
+    kill $(cat server.pid) || true

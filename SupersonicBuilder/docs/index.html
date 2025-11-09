@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SonicBuilder • Docs Hub</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Ctext x='8' y='52' font-size='56'%3E⚡%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>⚡ SonicBuilder — Documentation Hub</h1>
+    <p class="subtitle">Live status • Latest builds • Quick downloads</p>
+    <button id="themeToggle" class="btn small" aria-label="Toggle theme">🌓 Theme</button>
+  </header>
+
+  <main>
+    <section class="status-card" id="status">
+      <div class="row">
+        <div><strong>Version:</strong> <span id="ver">…</span></div>
+        <div><strong>Commit:</strong> <code id="sha">…</code></div>
+        <div><strong>Server Time:</strong> <span id="time">…</span></div>
+      </div>
+      <div class="row">
+        <div><strong>PDFs:</strong> <span id="pdfCount">0</span></div>
+        <div><strong>Assets:</strong> <span id="assetCount">0</span></div>
+      </div>
+      <div class="row actions">
+        <a class="btn" href="/latest">⬇ Latest PDF</a>
+        <a class="btn" href="/latest?pattern=dark">⬇ Latest Dark</a>
+        <a class="btn" href="/latest?pattern=light">⬇ Latest Light</a>
+        <a class="btn" href="/pdfs">📄 All PDFs (JSON)</a>
+        <a class="btn" href="/assets">🖼 Assets (JSON)</a>
+      </div>
+    </section>
+
+    <section>
+      <h2>Latest Thumbnails</h2>
+      <div class="thumbs" id="thumbs"></div>
+    </section>
+
+    <section>
+      <h2>Quick Lists</h2>
+      <div class="lists">
+        <div class="list">
+          <h3>PDFs</h3>
+          <ul id="pdfList"></ul>
+        </div>
+        <div class="list">
+          <h3>Assets</h3>
+          <ul id="assetList"></ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>© <span id="year"></span> SonicBuilder • Auto-updating via GitHub Actions • <a href="/status">/status</a></p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

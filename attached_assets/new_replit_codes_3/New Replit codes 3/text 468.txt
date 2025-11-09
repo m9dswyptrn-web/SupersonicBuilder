@@ -1,0 +1,13 @@
+// --- Default Snooze-Until (midnight) ---
+function defaultSnoozeMidnight() {
+  const inp = document.getElementById('optSnoozeUntil');
+  if (!inp) return;
+  const now = new Date();
+  const midnight = new Date(now);
+  midnight.setHours(24, 0, 0, 0); // today → 12:00 AM next day
+  const localISO = midnight.toISOString().slice(0,16);
+  inp.value = localISO;
+}
+
+// Run once after Settings UI render
+setTimeout(defaultSnoozeMidnight, 300);

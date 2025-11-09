@@ -1,0 +1,70 @@
+name: Collect Server Logs (/logs/tail)
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      lines:
+        description: "How many lines to fetch"
+        required: false
+        default: "400"
+
+jobs:
+  fetch-logs:
+    runs-on: ubuntu-latest
+    env:
+      APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+      DOCTOR_KEY:   ${{ secrets.DOCTOR_KEY }}
+    steps:
+      - name: Prep runtime
+        run: |
+          mkdir -p logs
+          echo "APP_BASE_URL=${APP_BASE_URL}"
+          if [ -z "${{ github.event.inputs.lines }}" ]; then LINES=400; else LINES="${{ github.event.inputs.lines }}"; fi
+          echo "LINES=${LINES}" | tee logs/_lines.txt
+
+      - name: Fetch /logs/tail (JSON → .txt)
+        id: pull
+        shell: bash
+        run: |
+          if [ -z "${APP_BASE_URL}" ]; then
+            echo "❌ APP_BASE_URL is empty. Set a repo secret called APP_BASE_URL."
+            exit 1
+          fi
+          if [ -z "${{ github.event.inputs.lines }}" ]; then LINES=400; else LINES="${{ github.event.inputs.lines }}"; fi
+          TS="$(date -u +%Y%m%d_%H%M%S)"
+          OUT="logs/tail_${TS}.txt"
+
+          echo "→ GET ${APP_BASE_URL}/logs/tail?n=${LINES}"
+
+          curl -fsS \
+               -H "X-Doctor-Key: ${DOCTOR_KEY}" \
+               "${APP_BASE_URL}/logs/tail?n=${LINES}" \
+          | python3 - "$OUT" <<'PY'
+import json, sys
+out = sys.argv[1]
+data = json.load(sys.stdin)
+if not data.get("ok"):
+    raise SystemExit("Server returned error: %s" % data.get("error", "unknown"))
+lines = data.get("lines", [])
+with open(out, "w", encoding="utf-8") as f:
+    for ln in lines:
+        f.write(ln.rstrip("\n") + "\n")
+print(f"Wrote {len(lines)} lines to {out}")
+PY
+
+          echo "out_path=${OUT}" >> $GITHUB_OUTPUT
+
+      - name: Attach artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-tail-${{ github.run_id }}
+          path: ${{ steps.pull.outputs.out_path }}
+
+      - name: Show first/last few lines
+        run: |
+          echo "------ head ------"
+          head -n 25 "${{ steps.pull.outputs.out_path }}" || true
+          echo "------ tail ------"
+          tail -n 25 "${{ steps.pull.outputs.out_path }}" || true

@@ -1,0 +1,13 @@
+title: Install Checklists
+preflight:
+  - Battery negative disconnected; wait 2–3 min (SRS safe)
+  - Verify 44-pin harness orientation; latch side noted
+  - Continuity check for speakers to avoid chassis ground
+  - Confirm ground star point is bare-metal, torqued
+  - Measure CAN H/L at OBD: ~2.6V/2.4V (HS); single-wire ~2.5V
+postflight:
+  - ACC wake / RR2 lights / chime present
+  - Fader/balance clean; no phase issues
+  - Reverse camera auto-trigger; polarity correct
+  - Steering controls mapped; dimmer behavior OK
+  - DTC scan clean; no SRS/BCM faults

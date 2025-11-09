@@ -1,0 +1,17 @@
+[Unit]
+Description=Supersonic Local UI (supervised)
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/supersonic
+ExecStart=/usr/bin/python /opt/supersonic/supervisor.py -- python scripts/run_offline_llm.py
+Restart=always
+RestartSec=2
+Environment=PYTHONUNBUFFERED=1
+
+# Optional: slow restart if flapping
+StartLimitIntervalSec=60
+StartLimitBurst=20
+
+[Install]
+WantedBy=multi-user.target

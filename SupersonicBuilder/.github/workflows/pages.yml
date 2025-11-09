@@ -1,0 +1,75 @@
+name: 📄 Pages • Publish PDFs
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [ "dist/**", "docs/**", ".github/workflows/pages.yml", "scripts/pages/**" ]
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-publish
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Prepare site structure
+        run: |
+          set -e
+          mkdir -p public/downloads
+          
+          # Copy docs/ to public/ (if exists)
+          if [ -d docs ]; then
+            rsync -a --delete docs/ public/ || true
+          fi
+          
+          # Copy all PDFs from dist/ to public/downloads/
+          if [ -d dist ]; then
+            rsync -av --delete --exclude=".gitkeep" dist/ public/downloads/ 2>/dev/null || true
+          fi
+          
+          # Create latest.pdf (copy of newest)
+          LATEST="$(ls -1t public/downloads/*.pdf 2>/dev/null | head -n1 || true)"
+          if [ -n "$LATEST" ]; then
+            cp -f "$LATEST" public/downloads/latest.pdf
+            echo "✅ Created latest.pdf: $(basename "$LATEST")"
+          fi
+
+      - name: Build downloads index.json
+        run: |
+          cd public && python ../scripts/pages/make_downloads_json.py
+
+      - name: Generate dynamic content in index.html
+        run: |
+          # Run Python script to inject badges and recent PDFs list
+          cd public && python ../scripts/pages/build_pages_index.py
+          
+      - name: Upload artifact for Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

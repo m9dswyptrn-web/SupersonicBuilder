@@ -1,0 +1,10 @@
+@app.route("/api/env/scan", methods=["GET"])
+def api_env_scan():
+    """
+    Lists discovered .gguf candidates with size/mtime/score (best first).
+    """
+    try:
+        cands = _find_gguf_candidates()
+        return jsonify({"ok": True, "candidates": cands})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})

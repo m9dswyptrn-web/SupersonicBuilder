@@ -1,0 +1,26 @@
+/* Dark gallery base styles */ 
+:root { color-scheme: dark; }
+html, body { margin:0; padding:0; background:#0f1116; color:#e6e6e6; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+h1, h2, h3 { color:#f0f3ff; }
+a { color:#8ab4ff; text-decoration:none; }
+a:hover { text-decoration:underline; }
+.container { max-width: 1120px; margin: 0 auto; padding: 24px; }
+.grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap:16px; }
+.card { background:#121826; border:1px solid #1f2535; border-radius:10px; overflow:hidden; box-shadow:0 0 0 1px rgba(0,0,0,.05), 0 8px 24px rgba(0,0,0,.35); }
+.card img { display:block; width:100%; height:auto; }
+.card .meta { padding:10px 12px; font-size:.9rem; color:#a9b1c7; }
+.header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0 20px; border-bottom:1px solid #21283a; margin-bottom:18px; }
+.header .title { font-size:1.4rem; font-weight:700; }
+.group { margin-top:28px; }
+.group h2 { margin:0 0 10px 0; font-size:1.2rem; }
+.footer { margin:28px 0 8px; font-size:.85rem; color:#93a1bb; }
+/* Lightbox overlay */
+.lightbox-backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.86); z-index:9999; align-items:center; justify-content:center; }
+.lightbox-backdrop.active { display:flex; }
+.lightbox-stage { max-width:95vw; max-height:88vh; }
+.lightbox-stage img { display:block; max-width:95vw; max-height:88vh; border-radius:8px; box-shadow:0 10px 40px rgba(0,0,0,.6); }
+.lightbox-caption { color:#e6e6e6; text-align:center; margin-top:10px; font-size:.95rem; opacity:.9; }
+.lightbox-close { position:fixed; top:14px; right:20px; font-size:28px; color:#e6e6e6; cursor:pointer; line-height:1; }
+.lightbox-close:hover { color:#ffffff; }
+/* Simple badges */
+.badge { display:inline-block; padding:2px 8px; border:1px solid #2a3350; border-radius:999px; background:#121826; color:#b8c1d9; font-size:.78rem; margin-right:8px; }

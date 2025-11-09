@@ -1,0 +1,2 @@
+/* One-tap performance mode: pause nonessential animations */
+.reduced-motion * { animation: none !important; }

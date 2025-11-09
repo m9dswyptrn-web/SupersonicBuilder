@@ -1,0 +1,9 @@
+# default: version 5.0.0, output current dir, no release push
+.\Create_SonicBuilder_Shortcut.ps1
+
+# customize version/output
+.\Create_SonicBuilder_Shortcut.ps1 -Version "5.0.0" -OutDir "." 
+
+# auto-publish to GitHub (requires gh auth) or both (gh + S3)
+.\Create_SonicBuilder_Shortcut.ps1 -Version "5.0.0" -OutDir "." -Push "github"
+.\Create_SonicBuilder_Shortcut.ps1 -Version "5.0.0" -OutDir "." -Push "both"

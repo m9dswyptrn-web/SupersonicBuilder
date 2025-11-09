@@ -1,0 +1,4 @@
+# Full publish-on-success (diff MD + HTML auto-generated & attached)
+make verify-deep-publish VERSION=5.0.0 OUT=/mnt/data PUSH=github
+# or
+make verify-deep-publish VERSION=5.0.0 OUT=/mnt/data PUSH=both

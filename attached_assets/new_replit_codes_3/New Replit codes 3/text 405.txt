@@ -1,0 +1,32 @@
+# ---- .env helpers ----
+
+@app.route("/api/env/template", methods=["GET"])
+def api_env_template():
+    """
+    Returns a prefilled .env template based on current detection.
+    Opened in a new tab by the UI so you can copy/save it as .env.
+    """
+    sample = [
+        f'AGENT_MODEL={read_env_var("AGENT_MODEL","gguf/llama-3.1-8b-q4_0.gguf")}',
+        f'LLM_CTX={read_env_var("LLM_CTX","4096")}',
+        f'LLM_THREADS={read_env_var("LLM_THREADS","4")}',
+        f'DOCS_DIR={read_env_var("DOCS_DIR","docs")}',
+        f'PORT={PORT}',
+        '# REQUIRE_RECENT_BENCH=1  # uncomment to enforce fresh bench for readiness',
+        '# BENCH_FRESH_SEC=43200   # 12h freshness window'
+    ]
+    body = "\n".join(sample) + "\n"
+    return Response(body, mimetype="text/plain",
+                    headers={"Content-Disposition": "inline; filename=.env.template"})
+
+# (Optional) allow writing .env from the UI. Not used by default.
+@app.route("/api/env/write", methods=["POST"])
+def api_env_write():
+    content = request.get_data(as_text=True) or request.form.get("content", "")
+    if not content.strip():
+        return jsonify({"ok": False, "error": "no content provided"})
+    try:
+        Path(".env").write_text(content, encoding="utf-8")
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})

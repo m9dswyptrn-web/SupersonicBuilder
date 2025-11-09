@@ -1,0 +1,1 @@
+<button id="dp-cancel" class="btn btn-mini" title="Cancel current export/render">✖ Cancel</button>

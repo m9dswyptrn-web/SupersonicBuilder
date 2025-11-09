@@ -1,0 +1,1 @@
+el.persistLast.checked = !!s.persistLast;

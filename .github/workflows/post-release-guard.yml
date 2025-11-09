@@ -1,0 +1,25 @@
+name: Post-Release Guard
+
+on:
+  release:
+    types: [published, edited, released]
+  schedule:
+    - cron: "11 5 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run post-release guard
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          python3 scripts/guards/post_release_guard.py

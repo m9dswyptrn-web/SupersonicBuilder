@@ -1,0 +1,24 @@
+.beacon-wrap { display:flex; align-items:center; gap:8px; margin-left:10px; }
+.beacon {
+  width:14px; height:14px; border-radius:50%;
+  box-shadow:0 0 8px rgba(0,0,0,.35);
+  border:1px solid rgba(255,255,255,.08);
+}
+@keyframes pulse-green {
+  0%{ box-shadow:0 0 0 0 rgba(16,185,129,.8); }
+  70%{ box-shadow:0 0 0 10px rgba(16,185,129,0); }
+  100%{ box-shadow:0 0 0 0 rgba(16,185,129,0); }
+}
+@keyframes pulse-yellow {
+  0%{ box-shadow:0 0 0 0 rgba(245,158,11,.8); }
+  70%{ box-shadow:0 0 0 10px rgba(245,158,11,0); }
+  100%{ box-shadow:0 0 0 0 rgba(245,158,11,0); }
+}
+@keyframes pulse-red {
+  0%{ box-shadow:0 0 0 0 rgba(239,68,68,.8); }
+  70%{ box-shadow:0 0 0 10px rgba(239,68,68,0); }
+  100%{ box-shadow:0 0 0 0 rgba(239,68,68,0); }
+}
+.beacon-green  { background:#10b981; animation:pulse-green 2.2s infinite; }
+.beacon-yellow { background:#f59e0b; animation:pulse-yellow 2.2s infinite; }
+.beacon-red    { background:#ef4444; animation:pulse-red   1.8s infinite; }

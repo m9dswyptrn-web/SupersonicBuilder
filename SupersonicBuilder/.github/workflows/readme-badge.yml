@@ -1,0 +1,54 @@
+name: 🏷️ README • Latest Download badge
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [ "downloads/**", ".github/workflows/readme-badge.yml" ]
+  schedule:
+    - cron: "0 12 * * 1"  # weekly sanity refresh
+
+permissions:
+  contents: write
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build context
+        run: |
+          set -e
+          if [ -f downloads/index.json ]; then
+            LATEST=$(jq -r '.latest // empty' downloads/index.json)
+          else
+            LATEST=""
+          fi
+          echo "LATEST_FILE=$LATEST" >> $GITHUB_ENV
+          echo "PAGES_URL=https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}" >> $GITHUB_ENV
+
+      - name: Patch README badge
+        shell: bash
+        run: |
+          set -e
+          BADGE_URL="https://img.shields.io/badge/latest-download-blue?logo=adobeacrobatreader&logoColor=white"
+          TARGET="${PAGES_URL}/downloads/latest.pdf"
+          START="<!--BEGIN:PAGES_BADGES-->"
+          END="<!--END:PAGES_BADGES-->"
+          BLOCK="$START
+[![Latest Download](${BADGE_URL})](${TARGET})
+$END"
+          awk -v start="$START" -v end="$END" -v block="$BLOCK" '
+            BEGIN{inblock=0}
+            index($0,start){print block; inblock=1; next}
+            index($0,end){inblock=0; next}
+            !inblock{print}
+          ' README.md > README.tmp && mv README.tmp README.md
+
+      - name: Commit
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs(readme): refresh Latest Download badge [skip ci]"
+          commit_user_name: "pages-bot"
+          commit_user_email: "pages-bot@users.noreply.github.com"

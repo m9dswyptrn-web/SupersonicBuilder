@@ -1,0 +1,5 @@
+description: Android ADB configuration
+environment:
+  ANDROID_USE_ADB: '1'
+  ANDROID_ADB_PATH: 'adb          # optional if adb is on PATH'
+source: text 24.txt

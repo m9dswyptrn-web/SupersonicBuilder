@@ -1,0 +1,2 @@
+# Requires GitHub CLI (gh) and you being logged in: gh auth login
+python builder.py gh-publish --tag v3.2.1

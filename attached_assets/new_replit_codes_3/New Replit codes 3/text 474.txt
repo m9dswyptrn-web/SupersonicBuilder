@@ -1,0 +1,10 @@
+function initSettingsBindings(){
+  // ...existing bindings...
+  const m = document.getElementById('settingsMenu'); if(!m) return;
+
+  const sw = m.querySelector('#optMuteSwitch');
+  if (sw && !sw._bound) {
+    sw.addEventListener('change', (e)=> handleMuteSwitchChange(e.target.checked));
+    sw._bound = true;
+  }
+}

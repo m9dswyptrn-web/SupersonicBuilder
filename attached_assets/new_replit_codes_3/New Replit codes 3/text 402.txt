@@ -1,0 +1,44 @@
+<script>
+async function refreshReady(){
+  try{
+    const r = await fetch('/api/readyz');
+    const j = await r.json();
+    const ledR = document.getElementById('ledReady');
+    const rt  = document.getElementById('readyText');
+
+    ledR.className = 'led ' + (j.ok ? 'ready-ok' : 'ready-no');
+
+    // Build a helpful tooltip explaining readiness
+    const parts = [
+      `ok=${j.ok ? 'true' : 'false'}`,
+      j.backend         ? `backend=${j.backend}` : null,
+      `model_ready=${j.model_ready ? 'true' : 'false'}`,
+      `backend_known=${j.backend_known ? 'true' : 'false'}`
+    ];
+
+    if (j.require_recent_bench !== undefined) {
+      parts.push(`require_recent_bench=${j.require_recent_bench ? 'true' : 'false'}`);
+      if (j.require_recent_bench) {
+        parts.push(`bench_ok=${j.bench_ok ? 'true' : 'false'}`);
+        if (j.bench_age_sec !== null && j.bench_age_sec !== undefined) {
+          parts.push(`bench_age_sec=${j.bench_age_sec}`);
+        }
+        parts.push(`bench_fresh_sec=${j.bench_fresh_sec}`);
+      }
+    }
+
+    const tip = parts.filter(Boolean).join(' · ');
+    ledR.title = tip || 'Readiness LED';
+    const extra = (j.require_recent_bench && !j.bench_ok) ? ' (bench stale)' : '';
+    rt.textContent = `Ready: ${j.ok ? 'yes' : 'no'}${j.backend ? ' backend=' + j.backend : ''}${extra}`;
+    rt.title = tip || 'Readiness details';
+  }catch(e){
+    const ledR = document.getElementById('ledReady');
+    const rt  = document.getElementById('readyText');
+    ledR.className = 'led ready-no';
+    ledR.title = 'Readiness: unreachable';
+    rt.textContent = 'Ready: error — cannot reach /api/readyz';
+    rt.title = 'Cannot reach /api/readyz';
+  }
+}
+</script>

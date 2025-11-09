@@ -1,0 +1,144 @@
+<script>
+// ====== FPS sampler (EMA + min/max) ======
+let _fpsLast = performance.now();
+let _fpsEMA = 60;           // start optimistic
+let _fpsMin = 999, _fpsMax = 0;
+
+function _rafTick(t){
+  const dt = t - _fpsLast;
+  _fpsLast = t;
+  if (dt > 0) {
+    const inst = 1000 / dt;
+    // Exponential moving average for stability
+    _fpsEMA = _fpsEMA * 0.9 + inst * 0.1;
+    _fpsMin = Math.min(_fpsMin, inst);
+    _fpsMax = Math.max(_fpsMax, inst);
+    _updatePerfLabel();
+  }
+  requestAnimationFrame(_rafTick);
+}
+requestAnimationFrame(_rafTick);
+
+// ====== Latency sampler (RTT) ======
+let _rttEMA = 0, _rttMin = 1e9, _rttMax = 0;
+async function pingOnce(){
+  try {
+    const t0 = performance.now();
+    const url = `/api/ping?t=${encodeURIComponent(Date.now())}`;
+    const res = await fetch(url, { cache:'no-store' });
+    const t1 = performance.now();
+    if (res.ok){
+      const rtt = Math.max(0, t1 - t0);
+      // EMA with gentle smoothing
+      _rttEMA = _rttEMA === 0 ? rtt : (_rttEMA*0.85 + rtt*0.15);
+      _rttMin = Math.min(_rttMin, rtt);
+      _rttMax = Math.max(_rttMax, rtt);
+      _updatePerfLabel();
+    }
+  } catch(e) {
+    // mark as high latency on error
+    _rttEMA = 999; _rttMax = Math.max(_rttMax, 999);
+    _updatePerfLabel();
+  }
+}
+setInterval(pingOnce, 1500);
+pingOnce();
+
+// ====== UI wiring ======
+function _fmtFps(x){ return Math.max(0, Math.round(x)); }
+function _fmtMs(x){ return Math.max(0, Math.round(x)); }
+
+function _perfColorFor(fps, rtt){
+  // Green if smooth & snappy, yellow if okay, red otherwise
+  const fpsOK   = fps >= 50;
+  const fpsWarn = fps >= 30;
+  const rttOK   = rtt <= 100;
+  const rttWarn = rtt <= 300;
+
+  if (fpsOK && rttOK) return 'green';
+  if (fpsWarn && rttWarn) return 'yellow';
+  return 'red';
+}
+
+function _updatePerfLabel(){
+  const t = document.getElementById('msPerfTxt');
+  const icon = document.getElementById('msPerfIcon');
+  const ppFps = document.getElementById('ppFps');
+  const ppRtt = document.getElementById('ppRtt');
+  const pfmin = document.getElementById('ppFpsMin');
+  const pfmax = document.getElementById('ppFpsMax');
+  const prmin = document.getElementById('ppRttMin');
+  const prmax = document.getElementById('ppRttMax');
+  if (!t || !icon) return;
+
+  const fps = _fmtFps(_fpsEMA);
+  const rtt = _fmtMs(_rendl(_rttEMA));
+  const color = _perfColorFor(fps, rtt);
+  const dot = (color==='green'?'🟢':(color==='yellow'?'🟡':'🔴'));
+
+  t.textContent = `${fps} fps / ${rtt} ms`;
+  icon.textContent = '⏱️ ' + dot;
+
+  if (ppFps)  ppFps.textContent  = `${fps} fps`;
+  if (ppRtt)  ppRtt.textContent  = `${rtt} ms`;
+  if (pfmin)  pfmin.textContent  = `${_fmtFps(_fpsMin)}`
+  if (pfmax)  pfmax.textContent  = `${_fmtFps(_fpsMax)}`
+  if (prmin)  prmin.textContent  = `${_fmtMs(_rttMin)}`
+  if (prmax)  prmax.textContent  = `${_fmtMs(_rttMax)}`
+}
+function _rendl(x){ return isFinite(x) ? x : 0; }
+
+// Toggle popover on click
+(function(){
+  const btn = document.getElementById('msPerf');
+  const pop = document.getElementById('msPerfPop');
+  const burst = document.getElementById('ppBurstBtn');
+  if(!btn || !pop) return;
+
+  btn.addEventListener('click', ()=>{
+    pop.style.display = (pop.style.display==='none' || !pop.style.display) ? 'block' : 'off';
+    if (pop.style.display !== 'block') pop.style.display = 'none';
+  });
+
+  // 5s benchmark: ping every 250ms and collect fps/rtt stats
+  if (burst){
+    burst.addEventListener('click', async ()=>{
+      showToast('Running 5s perf sample…');
+      let localFpsMin=999, localFpsMax=0, localRttMin=1e9, localRttMax=0, rttSum=0, rttN=0;
+      const endAt = performance.now()+5000;
+      const pingFast = async ()=>{
+        const t0 = performance.now();
+        try{
+          const res = await fetch(`/api/ping?t=${Date.now()}`, {cache:'no-store'});
+          const t1 = performance.now();
+          if(res.ok){
+            const r = t1 - t0; rttSum += r; rttN++; localRttMin=Math.min(localRttMin,r); localRttMax=Math.max(localRttMax,r);
+          }
+        }catch(_){}
+      };
+      while(performance.now() < endAt){
+        // sample instantaneous fps based on last frame
+        const fpsInst = 1000 / Math.max(1, performance.now() - _fpsLast);
+        localFpsMin = Math.min(localFpsMin, fpsInst);
+        localFpsMax = Math.max(localFpsMax, fpsInst);
+        pingFast();
+        await new Promise(r=>setTimeout(r, 250));
+      }
+      const avgRtt = rttN ? (rttSum/rttN) : NaN;
+      document.getElementById('ppFpsMin').textContent = `${_fmtFps(localFpsMin)}`;
+      document.getElementById('ppFpsMax').textContent = `${_fmtFps(localFpsMax)}`;
+      document.getElementById('ppRttMin').textContent = isFinite(localRttMin)? `${_fmtMs(localRttMin)}` : '—';
+      document.getElementById('ppRttMax').textContent = isFinite(localRttMax)? `${_fmtMs(localRttMax)}` : '—';
+      document.getElementById('ppRtt').textContent    = isFinite(avgRtt)? `${_fmtMs(avgRtt)} ms` : '—';
+      showToast('Perf sample done');
+    });
+  }
+
+  // close popover on outside click
+  document.addEventListener('click', (e)=>{
+    if (!pop.contains(e.target) && e.target !== btn) {
+      pop.style.display = 'none';
+    }
+  });
+})();
+</script>

@@ -1,0 +1,49 @@
+name: pr-docs-reset-command
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  pull-requests: write
+  issues: write
+  contents: read
+
+jobs:
+  docs_reset_command:
+    if: ${{ github.event.comment.body == '/docs-reset' && github.event.issue.pull_request }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate commenter permissions
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {owner, repo} = context.repo;
+            const username = context.payload.comment.user.login;
+            const {data: perm} = await github.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username });
+            if (!['admin','write'].includes(perm.permission)) {
+              core.setFailed(`❌ ${username} lacks maintainer rights.`);
+            } else {
+              core.info(`✅ ${username} is authorized.`);
+            }
+
+      - name: Remove docs:ready label (if present)
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {owner, repo} = context.repo;
+            const issue_number = context.payload.issue.number;
+            const labelName = 'docs:ready';
+
+            // Get labels on PR
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({ owner, repo, issue_number });
+            const has = labels.some(l => l.name === labelName);
+
+            if (has) {
+              await github.rest.issues.removeLabel({ owner, repo, issue_number, name: labelName });
+              core.info(`Removed '${labelName}' from PR #${issue_number}`);
+            } else {
+              core.info(`'${labelName}' not present on PR #${issue_number} — nothing to remove.`);
+            }

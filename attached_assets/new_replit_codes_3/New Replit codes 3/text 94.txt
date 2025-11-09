@@ -1,0 +1,12 @@
+<script>
+  (function() {
+    try {
+      var saved = localStorage.getItem("supersonic-theme");
+      var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+      var theme = (saved === "dark" || saved === "light") ? saved : (dark ? "dark":"light");
+      document.documentElement.classList.add("js-ready"); // optional
+      document.body.classList.add(theme);
+      document.body.dataset.theme = theme;
+    } catch(_) {}
+  })();
+</script>

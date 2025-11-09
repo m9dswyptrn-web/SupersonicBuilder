@@ -1,0 +1,5 @@
+cd SonicBuilder\tools
+# Dry run (preview actions)
+.\uninstall_sonicbuilder.ps1 -OutDir "C:\path\to\out" -RemoveShortcuts -PurgeArtifacts -DryRun
+# Actual cleanup
+.\uninstall_sonicbuilder.ps1 -OutDir "C:\path\to\out" -RemoveShortcuts -PurgeArtifacts

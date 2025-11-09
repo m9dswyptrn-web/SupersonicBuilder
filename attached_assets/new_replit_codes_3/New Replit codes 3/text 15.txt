@@ -1,0 +1,4 @@
+# Catalog for UI to populate dropdowns
+@app.get("/api/diagrams/catalog")
+def diagrams_catalog():
+    return jsonify(_load_index()), 200

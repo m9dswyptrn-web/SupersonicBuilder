@@ -1,0 +1,40 @@
+<script>
+function perfWatchdogTick(currentFps, currentRttMs){
+  const P = SETTINGS.perf || {};
+  const FPS_MIN        = P.fpsMin ?? 25;
+  const FPS_RELEASE    = P.fpsRelease ?? 40;
+  const FPS_MIN_DUR    = P.fpsDurationMs ?? 2000;
+  const RTT_MAX        = P.rttMaxMs ?? 500;
+  const RTT_MAX_DUR    = P.rttDurationMs ?? 3000;
+  const COOLDOWN       = P.cooldownMs ?? 15000;
+
+  const now = Date.now();
+
+  // --- FPS path ---
+  if (currentFps < FPS_MIN){
+    if (_lowFpsSince == null) _lowFpsSince = now;
+    const sustained = (now - _lowFpsSince) >= FPS_MIN_DUR;
+    if (sustained && (now - _lastFpsAlert) >= COOLDOWN){
+      _lastFpsAlert = now;
+      showToast('⚠️ Low FPS detected — reducing motion / audio can help');
+      if (SETTINGS?.perfAuto) applyPerfTweaks();
+    }
+  } else {
+    _lowFpsSince = null;
+    if (currentFps >= FPS_RELEASE && _perfTweaksActive) restorePerfTweaks();
+  }
+
+  // --- RTT path ---
+  if (currentRttMs >= RTT_MAX){
+    if (_highRttSince == null) _highRttSince = now;
+    const sustained = (now - _highRttSince) >= RTT_MAX_DUR;
+    if (sustained && (now - _lastRttAlert) >= COOLDOWN){
+      _lastRttAlert = now;
+      showToast('🌐 High latency — network busy or server load');
+      if (SETTINGS?.perfAuto && !_perfTweaksActive) applyPerfTweaks();
+    }
+  } else {
+    _highRttSince = null;
+  }
+}
+</script>

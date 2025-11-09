@@ -1,0 +1,5 @@
+<button id="theme-toggle" class="btn btn-mini" aria-haspopup="true" aria-expanded="false"
+        aria-label="Toggle theme (Dark / Light / System)" title="Toggle theme">
+  <span id="theme-icon">🌙</span>
+  <span id="theme-label" class="muted" style="margin-left:.25rem;">Dark</span>
+</button>

@@ -1,0 +1,6 @@
+# Tools for local runs (CI already has them)
+python3 -m pip install --upgrade pip
+pip install pre-commit bandit codespell pip-audit safety
+pre-commit autoupdate
+pre-commit install
+pre-commit run --all-files || true

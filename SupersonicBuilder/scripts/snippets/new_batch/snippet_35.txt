@@ -1,0 +1,5 @@
+# Normal publish-on-success flow (diff will auto-generate)
+make verify-deep-publish VERSION=5.0.0 OUT=/mnt/data PUSH=github
+
+# Just generate a diff report on demand (optional)
+bash SonicBuilder/tools/prepublish_diff.sh /mnt/data 5.0.0

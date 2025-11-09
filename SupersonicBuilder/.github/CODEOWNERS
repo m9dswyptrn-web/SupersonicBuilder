@@ -1,0 +1,23 @@
+# CODEOWNERS
+# Default owner for everything in the repo
+* @ChristopherElgin
+
+# CI/CD and workflows
+/.github/ @ChristopherElgin
+
+# Deployment configurations
+/Dockerfile @ChristopherElgin
+/docker-compose.yml @ChristopherElgin
+/Procfile @ChristopherElgin
+/render.yaml @ChristopherElgin
+
+# Core application
+/supersonic_*.py @ChristopherElgin
+/builder.py @ChristopherElgin
+/requirements.txt @ChristopherElgin
+
+# Scripts and templates
+/scripts/** @ChristopherElgin
+/templates/** @ChristopherElgin
+/assets/** @ChristopherElgin
+/config/** @ChristopherElgin

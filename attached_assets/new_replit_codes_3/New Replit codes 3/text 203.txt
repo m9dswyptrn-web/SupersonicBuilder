@@ -1,0 +1,8 @@
+<script>
+  window.SonicDocs = Object.assign({}, window.SonicDocs || {}, {
+    owner: "OWNER",
+    repo: "REPO",
+    // OPTIONAL: provide a GitHub token to enable direct artifact downloads.
+    // token: "ghp_xxx"
+  });
+</script>

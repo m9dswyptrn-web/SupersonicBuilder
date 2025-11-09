@@ -1,0 +1,40 @@
+def play_ping(ok: bool, msg: str = "", volume: float | None = None):
+    if is_muted_now():
+        return {"played": False, "reason": "muted"}
+    script = Path("scripts/post_tune_ping.py")
+    if not script.exists():
+        return {"played": False, "reason": "post_tune_ping.py not found"}
+    try:
+        env = os.environ.copy()
+        if volume is not None:
+            env["VOLUME"] = str(volume)        # pass to script
+        args = [sys.executable, str(script)]
+        if volume is not None:
+            args += ["--volume", str(volume)]
+        if ok:
+            subprocess.run(args, check=False, env=env)
+        else:
+            subprocess.run(args + ["--error", msg or "Triggered error ping"], check=False, env=env)
+        return {"played": True}
+    except Exception as e:
+        return {"played": False, "reason": str(e)}
+
+def speak_status_message():
+    if is_muted_now():
+        return {"spoken": False, "reason": "muted"}
+    stat = detect_status()
+    ctx = read_env_var("LLM_CTX", "n/a")
+    th  = read_env_var("LLM_THREADS", "n/a")
+    msg = f"Supersonic status {stat['status']}. Backend {stat['backend']}. Model {stat['model']}. Context {ctx}. Threads {th}."
+    script = Path("scripts/post_tune_ping.py")
+    if not script.exists():
+        return {"spoken": False, "reason": "post_tune_ping.py not found"}
+    try:
+        env = os.environ.copy()
+        vol = request.headers.get("X-Volume")
+        if vol is not None:
+            env["VOLUME"] = vol
+        subprocess.run([sys.executable, str(script), "--say", msg, "--volume", vol or ""], check=False, env=env)
+        return {"spoken": True, "message": msg}
+    except Exception as e:
+        return {"spoken": False, "reason": str(e)}

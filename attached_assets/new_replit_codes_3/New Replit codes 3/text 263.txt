@@ -1,0 +1,12 @@
+---
+
+## What this gives you today
+- Click-to-run **local app** (Flask UI) using your **offline Tech Agent** (RAG + SkillPacks).  
+- A clean **“Online Assist”** microservice you can turn on later (bigger model/TTS/STT/etc.).  
+- A structure that’s easy to wrap with **Tauri** for a proper desktop app icon you can click.
+
+If you want, I’ll now:
+1) **Add llama.cpp bindings** to the agent so you can run a small local GGUF model, and  
+2) Ship a minimal **Tauri wrapper** manifest + build notes so you can produce a single .app/.exe.  
+
+Say the word: “**ship llama.cpp + Tauri wrapper**” and I’ll drop those next.

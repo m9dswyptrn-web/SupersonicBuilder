@@ -1,0 +1,109 @@
+<script>
+function safeSettingsForExport(){
+  // Only include UI preferences; exclude volatile runtime bits if any.
+  // If you added other UI state later, include it here intentionally.
+  const {
+    sound, voice, autoSpeakOnReady,
+    volume, volumes, presets, lastPresetMin,
+    muteSwitch
+  } = SETTINGS || {};
+  return {
+    version: 1,
+    exported_at: new Date().toISOString(),
+    data: {
+      sound: !!sound,
+      voice: !!voice,
+      autoSpeakOnReady: !!autoSpeakOnReady,
+      volume: Number(volume ?? 1.0),
+      volumes: Object.assign({ready:1,online:1,error:1,bench:1,voice:1}, volumes || {}),
+      presets: Array.isArray(presets) ? presets : [5,30,60],
+      lastPresetMin: Number.isFinite(lastPresetMin) ? lastPresetMin : null,
+      muteSwitch: !!muteSwitch
+    }
+  };
+}
+
+function downloadBlobJSON(obj, filename){
+  const blob = new Blob([JSON.stringify(obj, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 0);
+}
+
+function exportSettings(){
+  try{
+    const payload = safeSettingsForExport();
+    const ts = new Date().toISOString().replace(/[:.]/g,'-');
+    downloadBlobJSON(payload, `supersonic-settings-${ts}.json`);
+    showToast('Settings exported');
+  }catch(e){
+    console.warn(e); showToast('Export failed');
+  }
+}
+
+function isValidSettingsPayload(j){
+  if (!j || typeof j !== 'object') return false;
+  if (!('data' in j)) return false;
+  const d = j.data;
+  // Minimal structural checks
+  if (typeof d.sound !== 'boolean') return false;
+  if (typeof d.voice !== 'boolean') return false;
+  if (typeof d.autoSpeakOnReady !== 'boolean') return false;
+  if (typeof d.volume !== 'number') return false;
+  if (!d.volumes || typeof d.volumes !== 'object') return false;
+  if (!Array.isArray(d.presets)) return false;
+  return true;
+}
+
+function mergeImportedSettings(d){
+  // Preserve unknown future keys by shallow-merge into current SETTINGS
+  SETTINGS.sound = !!d.sound;
+  SETTINGS.voice = !!d.voice;
+  SETTINGS.autoSpeakOnReady = !!d.autoSpeakOnReady;
+  SETTINGS.volume = Math.max(0, Math.min(1, Number(d.volume || 1)));
+  SETTINGS.volumes = Object.assign(
+    {ready:1,online:1,error:1,bench:1,voice:1},
+    d.volumes || {}
+  );
+  SETTINGS.presets = (Array.isArray(d.presets) ? d.presets : [5,30,60]).map(v=>parseInt(v,10)).filter(v=>Number.isFinite(v) && v>=1 && v<=1440).sort((a,b)=>a-b);
+  SETTINGS.lastPresetMin = Number.isFinite(d.lastPresetMin) ? d.lastPresetMin : null;
+  SETTINGS.muteSwitch = !!d.muteSwitch;
+}
+
+function wireImportHandler(){
+  const inp = document.getElementById('settingsFile');
+  if(!inp || inp._bound) return;
+  inp.addEventListener('change', async (e)=>{
+    const file = e.target.files && e.target.files[0];
+    if(!file) return;
+    try{
+      const text = await file.text();
+      const json = JSON.parse(text);
+      if (!isValidSettingsPayload(json)){ showToast('Invalid settings file'); return; }
+      mergeImportedSettings(json.data);
+      saveSettings();
+      // Re-apply everywhere
+      applySettingsToUI();
+      applySettingsToRuntime();
+      renderPresetEditor && renderPresetEditor();
+      renderPresetButtons && renderPresetButtons();
+      // Sync switch & banners
+      syncMuteSwitchFromServer && syncMuteSwitchFromServer();
+      pollMuteBanner && pollMuteBanner();
+      showToast('Settings imported');
+    }catch(err){
+      console.warn(err); showToast('Import failed');
+    }finally{
+      e.target.value = ''; // reset for next import
+    }
+  });
+  inp._bound = true;
+}
+
+// Bind on boot
+setTimeout(wireImportHandler, 0);
+</script>

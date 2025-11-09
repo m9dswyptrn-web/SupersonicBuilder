@@ -1,0 +1,5 @@
+<script>
+// keep it updated alongside your other polls
+setInterval(pollMuteBanner, 5000);
+pollMuteBanner();
+</script>

@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sync Metrics Dashboard - Supersonic</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: #fff;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 30px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 16px;
+            backdrop-filter: blur(10px);
+        }
+        h1 {
+            font-size: 42px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .subtitle {
+            font-size: 18px;
+            opacity: 0.9;
+            font-weight: 300;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        .stat-card {
+            background: rgba(255,255,255,0.15);
+            border-radius: 12px;
+            padding: 24px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        }
+        .stat-label {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            opacity: 0.8;
+            margin-bottom: 8px;
+        }
+        .stat-value {
+            font-size: 36px;
+            font-weight: 700;
+            line-height: 1;
+            margin-bottom: 4px;
+        }
+        .stat-unit {
+            font-size: 16px;
+            opacity: 0.7;
+            font-weight: 300;
+        }
+        
+        .chart-section {
+            background: rgba(255,255,255,0.15);
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .chart-title {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+        
+        svg.sparkline {
+            width: 100%;
+            height: 80px;
+            display: block;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .status-ok { background: rgba(76,175,80,0.3); border: 1px solid #4caf50; }
+        .status-warn { background: rgba(255,152,0,0.3); border: 1px solid #ff9800; }
+        .status-error { background: rgba(244,67,54,0.3); border: 1px solid #f44336; }
+        
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        .history-table th,
+        .history-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .history-table th {
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 12px;
+            letter-spacing: 1px;
+            opacity: 0.8;
+        }
+        .history-table tr:hover {
+            background: rgba(255,255,255,0.05);
+        }
+        
+        .refresh-notice {
+            text-align: center;
+            opacity: 0.6;
+            font-size: 14px;
+            margin-top: 30px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 60px;
+            font-size: 18px;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 Sync Metrics Dashboard</h1>
+            <div class="subtitle">Continuous GitHub ⇄ Replit Sync Analytics</div>
+        </header>
+        
+        <div id="loading" class="loading">
+            Loading metrics...
+        </div>
+        
+        <div id="dashboard" style="display:none;">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Success Rate (24h)</div>
+                    <div class="stat-value" id="successRate">—</div>
+                    <div class="stat-unit">%</div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-label">Total Syncs (24h)</div>
+                    <div class="stat-value" id="totalSyncs">—</div>
+                    <div class="stat-unit">operations</div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-label">Avg Duration</div>
+                    <div class="stat-value" id="avgDuration">—</div>
+                    <div class="stat-unit">seconds</div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-label">Files Changed</div>
+                    <div class="stat-value" id="filesChanged">—</div>
+                    <div class="stat-unit">total</div>
+                </div>
+            </div>
+            
+            <div class="chart-section">
+                <div class="chart-title">📈 Hourly Sync Activity</div>
+                <svg class="sparkline" id="hourlySpark"></svg>
+            </div>
+            
+            <div class="chart-section">
+                <div class="chart-title">📜 Recent Sync History</div>
+                <table class="history-table" id="historyTable">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Status</th>
+                            <th>Duration</th>
+                            <th>Files</th>
+                            <th>Commit</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="refresh-notice">
+            Dashboard auto-refreshes every 30 seconds
+        </div>
+    </div>
+    
+    <script>
+        async function fetchMetrics() {
+            try {
+                const response = await fetch('/api/sync/metrics');
+                if (!response.ok) throw new Error('Failed to fetch');
+                return await response.json();
+            } catch (e) {
+                console.error('Failed to fetch metrics:', e);
+                return null;
+            }
+        }
+        
+        function renderStats(stats) {
+            document.getElementById('successRate').textContent = stats.success_rate.toFixed(1);
+            document.getElementById('totalSyncs').textContent = stats.total_syncs;
+            document.getElementById('avgDuration').textContent = stats.avg_duration_sec.toFixed(2);
+            document.getElementById('filesChanged').textContent = stats.total_files_changed;
+        }
+        
+        function renderSparkline(hourly) {
+            const svg = document.getElementById('hourlySpark');
+            if (!hourly || hourly.length === 0) {
+                svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#fff" opacity="0.5">No data available</text>';
+                return;
+            }
+            
+            const width = svg.clientWidth;
+            const height = 80;
+            const padding = 10;
+            
+            const maxValue = Math.max(...hourly.map(h => h.total), 1);
+            const xStep = (width - 2 * padding) / (hourly.length - 1 || 1);
+            
+            // Generate SVG path
+            const points = hourly.map((h, i) => {
+                const x = padding + i * xStep;
+                const y = height - padding - ((h.total / maxValue) * (height - 2 * padding));
+                return `${x},${y}`;
+            });
+            
+            const pathData = 'M' + points.join(' L');
+            
+            svg.innerHTML = `
+                <polyline
+                    points="${points.join(' ')}"
+                    fill="none"
+                    stroke="#4caf50"
+                    stroke-width="2"
+                    stroke-linejoin="round"
+                />
+                ${hourly.map((h, i) => `
+                    <circle
+                        cx="${padding + i * xStep}"
+                        cy="${height - padding - ((h.total / maxValue) * (height - 2 * padding))}"
+                        r="3"
+                        fill="${h.failed > 0 ? '#f44336' : '#4caf50'}"
+                    >
+                        <title>${h.hour}: ${h.total} syncs (${h.successful} OK, ${h.failed} failed)</title>
+                    </circle>
+                `).join('')}
+            `;
+        }
+        
+        function renderHistory(entries) {
+            const tbody = document.getElementById('historyBody');
+            if (!entries || entries.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;opacity:0.5;">No sync history available</td></tr>';
+                return;
+            }
+            
+            // Show last 15 entries
+            const recent = entries.slice(-15).reverse();
+            
+            tbody.innerHTML = recent.map(e => {
+                const timestamp = new Date(e.timestamp).toLocaleString();
+                const status = e.event_type === 'sync_success' ? 'ok' : 'error';
+                const statusBadge = e.event_type === 'sync_success' 
+                    ? '<span class="status-badge status-ok">Success</span>'
+                    : '<span class="status-badge status-error">Failed</span>';
+                
+                const duration = e.duration_sec ? `${e.duration_sec.toFixed(2)}s` : '—';
+                const files = e.files_changed !== undefined ? e.files_changed : '—';
+                const commit = e.commit_hash ? e.commit_hash.substring(0, 8) : '—';
+                
+                return `
+                    <tr>
+                        <td>${timestamp}</td>
+                        <td>${statusBadge}</td>
+                        <td>${duration}</td>
+                        <td>${files}</td>
+                        <td><code>${commit}</code></td>
+                    </tr>
+                `;
+            }).join('');
+        }
+        
+        async function updateDashboard() {
+            const data = await fetchMetrics();
+            if (!data) return;
+            
+            renderStats(data.stats);
+            renderSparkline(data.hourly);
+            renderHistory(data.recent);
+            
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('dashboard').style.display = 'block';
+        }
+        
+        // Initial load
+        updateDashboard();
+        
+        // Auto-refresh every 30 seconds
+        setInterval(updateDashboard, 30000);
+    </script>
+</body>
+</html>

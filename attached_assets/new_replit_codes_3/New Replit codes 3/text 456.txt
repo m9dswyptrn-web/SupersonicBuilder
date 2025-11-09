@@ -1,0 +1,13 @@
+@app.route("/api/status/sound", methods=["POST"])
+def api_status_sound():
+    ok = request.args.get("ok", "1") in ("1","true","True","yes","y")
+    msg = request.args.get("msg", "")
+    vol = get_req_volume()
+    res = play_ping(ok, msg, volume=vol)
+    return jsonify(res)
+
+@app.route("/api/status/speak", methods=["POST"])
+def api_status_speak():
+    # speak_status_message() reads X-Volume directly; call it
+    res = speak_status_message()
+    return jsonify(res)

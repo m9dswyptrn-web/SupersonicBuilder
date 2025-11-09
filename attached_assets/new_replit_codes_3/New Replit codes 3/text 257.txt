@@ -1,0 +1,3 @@
+pip install -r cloud/fastapi_stub/requirements.txt
+python scripts/run_cloud.py
+# toggled by APP_MODE=online in .env

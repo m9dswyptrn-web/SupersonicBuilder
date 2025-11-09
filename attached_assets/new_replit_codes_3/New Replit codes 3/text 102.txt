@@ -1,0 +1,37 @@
+const menu = document.getElementById("theme-menu");
+
+function openMenu() {
+  if (!btn || !menu) return;
+  btn.setAttribute("aria-expanded", "true");
+  menu.hidden = false;
+  // position under the button
+  const r = btn.getBoundingClientRect();
+  menu.style.left = r.left + "px";
+  menu.style.top  = (r.bottom + window.scrollY) + "px";
+}
+function closeMenu() {
+  if (!btn || !menu) return;
+  btn.setAttribute("aria-expanded", "false");
+  menu.hidden = true;
+}
+
+btn?.addEventListener("click", (e) => {
+  if (!menu) { setUserTheme(); return; }      // fallback to cycle mode
+  const expanded = btn.getAttribute("aria-expanded") === "true";
+  expanded ? closeMenu() : openMenu();
+});
+
+menu?.addEventListener("click", (e) => {
+  const t = e.target.closest(".menu-item");
+  if (!t) return;
+  const pick = t.dataset.theme;               // "dark" | "light" | "system"
+  localStorage.setItem(KEY, pick);
+  applyTheme(desiredTheme());
+  closeMenu();
+});
+
+document.addEventListener("click", (e) => {
+  if (!menu || menu.hidden) return;
+  if (e.target === btn || btn.contains(e.target) || menu.contains(e.target)) return;
+  closeMenu();
+});

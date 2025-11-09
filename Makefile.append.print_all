@@ -1,0 +1,18 @@
+# ==== Printing Pro (Two-Up + Raster) ========================================
+.PHONY: two_up_dark two_up_dark_raster two_up_light two_up_light_raster
+
+# Two-up frames with crop marks (dark)
+two_up_dark:
+	$(PY) scripts/two_up_crops.py --input output/sonic_manual_dark.pdf --output output/sonic_manual_dark_two_up.pdf
+
+# Rasterized content placement (dark)
+two_up_dark_raster:
+	$(PY) scripts/two_up_crops.py --input output/sonic_manual_dark.pdf --output output/sonic_manual_dark_two_up_raster.pdf --rasterize --dpi 300
+
+# Two-up frames with crop marks (light)
+two_up_light:
+	$(PY) scripts/two_up_crops.py --input output/sonic_manual_light.pdf --output output/sonic_manual_light_two_up.pdf
+
+# Rasterized content placement (light)
+two_up_light_raster:
+	$(PY) scripts/two_up_crops.py --input output/sonic_manual_light.pdf --output output/sonic_manual_light_two_up_raster.pdf --rasterize --dpi 300

@@ -1,0 +1,3 @@
+export REQUIRE_RECENT_BENCH=1
+export BENCH_FRESH_SEC=43200  # 12h
+python scripts/run_offline_llm.py

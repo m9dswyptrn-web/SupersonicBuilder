@@ -1,0 +1,80 @@
+<script>
+// Show/hide the quick row together with the main banner
+function renderMuteBanner(mutated){
+  const row = document.getElementById('muteRow');
+  const quick = document.getElementById('muteQuickRow');
+  const lbl = document.getElementById('muteStatus');
+  if (!row || !lbl) return;
+
+  if (!mutated || !mutated.muted) {
+    row.style.display = 'none';
+    if (quick) quick.style.display = 'none';
+    return;
+  }
+  const now = mutated.server_now || Math.floor(Date.now()/1000);
+  const until = mutated.until_ts || 0;
+
+  const d = new Date(until * 1000);
+  const hh = String(d.getHours()).padStart(2,'0');
+  const mm = String(d.getMinutes()).padStart(2,'0');
+  lbl.textContent = `🔕 Muted until ${hh}:${mm}`;
+
+  row.style.display = 'flex';
+  if (quick) quick.style.display = 'flex';
+}
+
+// Quick mute presets (set absolute minutes from now)
+async function quickMute(mins){
+  try{
+    await fetch('/api/mute?minutes=' + encodeURIComponent(mins), {method:'POST'});
+    showToast(`Muted for ${mins} minutes`);
+    // Keep UI in sync
+    const sw = document.getElementById('optMuteSwitch');
+    if (sw) sw.checked = true;
+    SETTINGS.muteSwitch = true; saveSettings?.();
+    pollMuteBanner();
+    startSnoozeTicker && startSnoozeTicker();
+  }catch(e){
+    showToast('Mute failed');
+  }
+}
+
+// Extend current mute to next local midnight
+async function extendMuteToMidnight(){
+  try{
+    // Get current server state
+    const rs = await fetch('/api/mute');
+    const j = await rs.json();
+    const nowSec = j.server_now || Math.floor(Date.now()/1000);
+
+    // Compute local next midnight
+    const now = new Date();
+    const midnight = new Date(now);
+    midnight.setHours(24,0,0,0); // start of next day
+    const midnightSec = Math.floor(midnight.getTime()/1000);
+
+    // If already past midnight (edge case), push to next day’s midnight
+    const target = midnightSec <= nowSec ? midnightSec + 86400 : midnightSec;
+
+    // If current mute already beyond that, just confirm and refresh UI
+    if ((j.until_ts || 0) >= target){
+      showToast('Already muted past midnight');
+      pollMuteBanner();
+      return;
+    }
+
+    // Set new until timestamp
+    const form = new URLSearchParams({ until_ts: String(target) });
+    await fetch('/api/mute', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: form });
+
+    showToast('Muted until midnight');
+    const sw = document.getElementById('optMuteSwitch');
+    if (sw) sw.checked = true;
+    SETTINGS.muteSwitch = true; saveSettings?.();
+    pollMuteBanner();
+    startSnoozeTicker && startSnoozeTicker();
+  }catch(e){
+    showToast('Extend to midnight failed');
+  }
+}
+</script>

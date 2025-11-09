@@ -1,0 +1,10 @@
+{
+  "voice_pack": "FlightOps",
+  "volume": 1.0,
+  "rate": 185,
+  "dashboard_auto_refresh": true,
+  "telemetry_interval_sec": 30,
+  "theme": "dark",
+  "show_changelog_cards": true,
+  "advanced_tools": false
+}

@@ -1,0 +1,18 @@
+async function loadCatalog() {
+  status("Loading catalog…");
+  try {
+    const res = await fetch("/api/diagrams/catalog");
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    catalog = await res.json();
+
+    // populate makes...
+    // (existing code unchanged)
+
+    status("Catalog ready.");
+    catalogReadyResolve && catalogReadyResolve();   // <-- add this line
+  } catch (e) {
+    console.error(e);
+    status("Failed to load catalog.");
+    catalogReadyResolve && catalogReadyResolve();   // still resolve so awaiting code continues
+  }
+}

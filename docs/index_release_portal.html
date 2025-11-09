@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Supersonic Control Core v4 — Release Portal</title>
+  <style>
+    :root {
+      --bg: #0b0c10;
+      --text: #e5e5e5;
+      --accent: #00ffff;
+      --sub: #888;
+      --border: #1f2833;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      text-align: center;
+    }
+    h1 {
+      color: var(--accent);
+      font-size: 2.5rem;
+      margin-bottom: 0.3em;
+      text-shadow: 0 0 10px var(--accent);
+    }
+    p {
+      max-width: 600px;
+      color: var(--sub);
+      line-height: 1.6;
+    }
+    .panel {
+      border: 1px solid var(--border);
+      padding: 1.5em 2em;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.02);
+      box-shadow: 0 0 10px rgba(0, 255, 255, 0.1);
+    }
+    a.btn {
+      display: inline-block;
+      margin-top: 1em;
+      padding: 0.75em 2em;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      text-decoration: none;
+      border-radius: 6px;
+      transition: all 0.2s ease-in-out;
+    }
+    a.btn:hover {
+      background-color: var(--accent);
+      color: var(--bg);
+      box-shadow: 0 0 20px var(--accent);
+    }
+    .footer {
+      position: absolute;
+      bottom: 20px;
+      color: var(--sub);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h1>🚀 Supersonic Control Core v4</h1>
+    <p>
+      Welcome to the Supersonic Release Portal.<br/>
+      Your system is live, verified, and humming at Mach 2.<br/>
+      Review your latest tagged build, integrity reports, and AI release notes below.
+    </p>
+
+    <a href="../AI_RELEASE_NOTES.md" class="btn">📘 View AI Release Notes</a>
+    <a href="../SHA256SUMS.txt" class="btn">🔐 Verify Integrity</a>
+    <a href="../Supersonic_ControlCore_Addons_v4.zip" class="btn">⬇️ Download Add-ons v4</a>
+    <a href="./index_diagnostics.html" class="btn">🛰️ System Diagnostics</a>
+  </div>
+
+  <div class="footer">
+    © 2025 Supersonic Systems — "Fast is fine. Supersonic is better."
+  </div>
+</body>
+</html>

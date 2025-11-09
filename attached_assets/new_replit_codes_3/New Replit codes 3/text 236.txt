@@ -1,0 +1,4 @@
+python3 docs_health_bootstrap.py
+git add -A
+git commit -m "CI: docs health (lint, links, strict build, nav check)"
+git push origin main

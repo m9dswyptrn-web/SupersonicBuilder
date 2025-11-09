@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ------------------------------------------------------
+# SupersonicBuilder — one-shot release tool
+#  • Bumps semver, creates an annotated tag, pushes tag
+#  • Uses $GH_PAT if provided (classic or fine-grained)
+#  • Never leaves token in your 'origin' remote
+# ------------------------------------------------------
+# Usage examples (run from repo root):
+#   tools/release_now.sh --patch
+#   tools/release_now.sh --minor
+#   tools/release_now.sh --major
+#   tools/release_now.sh --tag v2.3.0
+#   GH_PAT=ghp_XXXX tools/release_now.sh --patch --push-branch
+#
+# Optional env:
+#   GH_PAT        : GitHub token (not required for read-only)
+#   BRANCH        : Branch to push as well (default: main)
+#   CLEAN_OK=1    : Allow dirty working tree
+# ------------------------------------------------------
+
+BRANCH="${BRANCH:-main}"
+
+detect_repo() {
+  local url
+  url="$(git config --get remote.origin.url || true)"
+  url="${url%.git}"
+  if [[ "$url" =~ github\.com[:/]+([^/]+)/([^/]+)$ ]]; then
+    echo "${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
+  else
+    echo ""
+  fi
+}
+
+REPO="${REPO:-$(detect_repo)}"
+if [[ -z "$REPO" ]]; then
+  echo "❌ Could not detect REPO from origin (need owner/repo)"; exit 1
+fi
+
+# git sanity
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  echo "❌ Not a git repo."; exit 1
+fi
+
+# require clean tree unless overridden
+if [[ "${CLEAN_OK:-0}" != "1" ]]; then
+  if [[ -n "$(git status --porcelain)" ]]; then
+    echo "❌ Working tree not clean. Commit or stash first."; exit 1
+  fi
+fi
+
+# ----- parse args
+BUMP="patch"
+EXPLICIT_TAG=""
+PRE_ID=""
+PUSH_BRANCH=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --patch) BUMP="patch"; shift;;
+    --minor) BUMP="minor"; shift;;
+    --major) BUMP="major"; shift;;
+    --pre)   PRE_ID="${2:-}"; shift 2;;
+    --tag)   EXPLICIT_TAG="${2:-}"; shift 2;;
+    --push-branch) PUSH_BRANCH=1; shift;;
+    -h|--help)
+      sed -n '1,80p' "$0"; exit 0;;
+    *) echo "Unknown arg: $1" >&2; exit 2;;
+  esac
+done
+
+# ----- read latest tag
+LATEST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo 'v0.0.0')"
+BASE="${LATEST_TAG#v}"
+BASE="${BASE%%-*}"    # drop any -rc suffix
+IFS='.' read -r MA MI PA <<<"${BASE:-0.0.0}"
+MA=${MA:-0}; MI=${MI:-0}; PA=${PA:-0}
+
+bump() {
+  local major=$1 minor=$2 patch=$3 kind=$4
+  case "$kind" in
+    major) echo "$((major+1)).0.0";;
+    minor) echo "$major.$((minor+1)).0";;
+    patch) echo "$major.$minor.$((patch+1))";;
+    *)     echo "$major.$minor.$patch";;
+  esac
+}
+
+if [[ -n "$EXPLICIT_TAG" ]]; then
+  NEXT="${EXPLICIT_TAG#v}"
+else
+  NEXT="$(bump "$MA" "$MI" "$PA" "$BUMP")"
+fi
+
+[[ -n "$PRE_ID" ]] && NEXT="${NEXT}-${PRE_ID}"
+NEXT_TAG="v${NEXT}"
+
+# guard if tag exists (idempotent)
+if git rev-parse "$NEXT_TAG" >/dev/null 2>&1; then
+  echo "✅ ${NEXT_TAG} already exists. Nothing to do."; exit 0
+fi
+
+# create annotated tag
+git fetch --tags >/dev/null
+git tag -a "$NEXT_TAG" -m "SupersonicBuilder $NEXT_TAG"
+
+# prepare remotes
+ORIGIN_URL="$(git config --get remote.origin.url)"
+CLEAN_URL="https://github.com/${REPO}.git"
+TEMP_URL="$CLEAN_URL"
+if [[ -n "${GH_PAT:-}" ]]; then
+  TEMP_URL="https://x-access-token:${GH_PAT}@github.com/${REPO}.git"
+fi
+
+# switch to temp remote (no token persisted afterwards)
+git remote set-url origin "$TEMP_URL"
+
+# push tag
+git push origin "$NEXT_TAG"
+
+# optionally push branch
+if [[ "$PUSH_BRANCH" -eq 1 ]]; then
+  git push origin "${BRANCH}:${BRANCH}"
+fi
+
+# restore clean remote URL
+git remote set-url origin "$CLEAN_URL"
+
+echo "🎉 Released ${NEXT_TAG}"

@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""
+SonicBuilder Supersonic – One-and-Done GitHub Deployer
+- Fresh git init (optional)
+- Git LFS for large assets (WAV/PNG/GIF/PDF/ZIP)
+- Commit all content, tag release, push
+- Auto-create GitHub repo + release if GH CLI is available
+"""
+
+import argparse, os, shutil, subprocess, sys, textwrap
+
+ASSET_PATTERNS = [
+    "*.wav", "*.mp3",
+    "*.png", "*.jpg", "*.jpeg", "*.gif",
+    "*.pdf", "*.zip",
+    "docs/assets/*", "assets/*", "voicepacks/*"
+]
+
+GITATTRIBUTES_LINES = [
+    # Ensure large/binary assets use LFS and don’t blow up Git history
+    "*.wav filter=lfs diff=lfs merge=lfs -text",
+    "*.mp3 filter=lfs diff=lfs merge=lfs -text",
+    "*.png filter=lfs diff=lfs merge=lfs -text",
+    "*.jpg filter=lfs diff=lfs merge=lfs -text",
+    "*.jpeg filter=lfs diff=lfs merge=lfs -text",
+    "*.gif filter=lfs diff=lfs merge=lfs -text",
+    "*.pdf filter=lfs diff=lfs merge=lfs -text",
+    "*.zip filter=lfs diff=lfs merge=lfs -text",
+]
+
+DEFAULT_COMMIT = 'feat: Supersonic v4 Ultimate Edition – Initial Release'
+DEFAULT_RELEASE_TITLE = 'Supersonic v4 Ultimate Edition'
+DEFAULT_RELEASE_NOTES = 'See DEPLOYMENT_GUIDE.md for details.'
+
+def run(cmd, check=True, capture=False):
+    kwargs = {}
+    if capture:
+        kwargs["stdout"] = subprocess.PIPE
+        kwargs["stderr"] = subprocess.STDOUT
+        kwargs["text"] = True
+    print(f"↪ {cmd}")
+    proc = subprocess.run(cmd, shell=True, **kwargs)
+    if check and proc.returncode != 0:
+        if capture:
+            print(proc.stdout)
+        sys.exit(proc.returncode)
+    return proc
+
+def have(cmd):
+    return shutil.which(cmd) is not None
+
+def ensure_git_installed():
+    if not have("git"):
+        print("❌ git is not installed in this environment.")
+        sys.exit(1)
+
+def ensure_lfs_installed():
+    if have("git"):
+        run("git lfs install", check=False)
+
+def write_gitattributes():
+    path = ".gitattributes"
+    existing = []
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            existing = f.read().splitlines()
+    merged = list(existing)
+    for line in GITATTRIBUTES_LINES:
+        if line not in merged:
+            merged.append(line)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(merged) + "\n")
+    print("✅ .gitattributes updated for LFS assets.")
+
+def track_lfs_assets():
+    for pattern in ASSET_PATTERNS:
+        run(f"git lfs track \"{pattern}\"", check=False)
+    # Ensure .gitattributes is included
+    run("git add .gitattributes", check=False)
+
+def fresh_init():
+    if os.path.isdir(".git"):
+        shutil.rmtree(".git")
+        print("🧹 Removed previous .git history.")
+    run("git init")
+    run("git branch -M main")
+
+def stage_and_commit(message):
+    run("git add -A")
+    # Allow empty to still create commit (useful in CI)
+    run(f"git commit -m \"{message}\" --allow-empty")
+
+def create_repo_with_gh(owner, repo, visibility):
+    if not have("gh"):
+        print("ℹ️ gh (GitHub CLI) not found. Falling back to manual push instructions.")
+        return False
+    vis_flag = "--public" if visibility == "public" else "--private"
+    run(f"gh repo create {owner}/{repo} {vis_flag} --source=. --push")
+    return True
+
+def push_tag_and_release_with_gh(version, title, notes):
+    # Push tag and create release
+    run(f"git tag -a {version} -m \"Release {version}\"", check=False)
+    run(f"git push origin {version}", check=False)
+    if have("gh"):
+        run(
+            " ".join([
+                "gh release create", version,
+                f"--title \"{title} - {version}\"",
+                f"--notes \"{notes}\""
+            ]),
+            check=False
+        )
+
+def print_manual_remote(owner, repo, version):
+    remote = f"https://github.com/{owner}/{repo}.git"
+    manual = f"""
+    🔧 Manual push (no gh):
+
+      git remote add origin {remote}
+      git push -u origin main
+      git tag -a {version} -m "Release {version}"
+      git push origin {version}
+
+    Then create a release at: https://github.com/{owner}/{repo}/releases/new
+    """
+    print(textwrap.dedent(manual))
+
+def ensure_repo_name(repo):
+    # simple sanity
+    bad = any(c in repo for c in " @:/\\")
+    if bad or not repo:
+        print("❌ Invalid repo name. Use only letters, numbers, '-' or '_'.")
+        sys.exit(1)
+
+def main():
+    parser = argparse.ArgumentParser(description="SonicBuilder one-and-done GitHub deployer")
+    parser.add_argument("--owner", required=True, help="GitHub owner/org (e.g., ChristopherElgin)")
+    parser.add_argument("--repo", required=True, help="Repository name (e.g., SonicBuilderSupersonic)")
+    parser.add_argument("--version", default="v1.0.0", help="Release version tag (default: v1.0.0)")
+    parser.add_argument("--public", action="store_true", help="Create repo as public")
+    parser.add_argument("--private", action="store_true", help="Create repo as private")
+    parser.add_argument("--fresh", action="store_true", help="Remove existing .git and re-init")
+    parser.add_argument("--message", default=DEFAULT_COMMIT, help="Commit message")
+    args = parser.parse_args()
+
+    visibility = "public" if args.public and not args.private else "private" if args.private else "public"
+    ensure_repo_name(args.repo)
+    ensure_git_installed()
+    ensure_lfs_installed()
+
+    if args.fresh:
+        fresh_init()
+    else:
+        # Ensure we’re on main and repo exists
+        if not os.path.isdir(".git"):
+            fresh_init()
+        else:
+            run("git rev-parse --is-inside-work-tree")
+
+    write_gitattributes()
+    track_lfs_assets()
+
+    # Make sure LFS patterns are staged too
+    stage_and_commit(args.message)
+
+    created = create_repo_with_gh(args.owner, args.repo, visibility)
+    if not created:
+        print_manual_remote(args.owner, args.repo, args.version)
+
+    # Always attempt push main; for gh it already pushed, but harmless if repeated
+    run("git push -u origin main", check=False)
+    push_tag_and_release_with_gh(args.version, DEFAULT_RELEASE_TITLE, DEFAULT_RELEASE_NOTES)
+
+    print("\n✅ Done. Your Supersonic build is on GitHub (or the commands to finish are printed above).")
+    print("Next steps:")
+    print("  1) Enable GitHub Pages: Settings → Pages → Branch: main / Folder: /docs")
+    print("  2) Check Actions tab for workflows.")
+    print("  3) Generate remaining voice packs if needed:")
+    print("       make -f make/ControlCore.mk ai-voicepacks")
+    print("  4) Launch AI console locally:")
+    print("       make -f make/ControlCore.mk ai-console")
+    print("  5) Add status banner to README if not already included (docs/status_banner.md).")
+
+if __name__ == "__main__":
+    main()

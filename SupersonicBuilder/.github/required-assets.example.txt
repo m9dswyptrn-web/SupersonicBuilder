@@ -1,0 +1,9 @@
+# One glob-like regex pattern per line (matched case-insensitively against asset names)
+# At least one "manual" PDF file stamped with _g<commit>:
+.*manual.*_g[0-9a-f]{7,12}\.pdf$
+
+# At least one "appendix" PDF file stamped with _g<commit>:
+.*appendix.*_g[0-9a-f]{7,12}\.pdf$
+
+# Example: two-up field cards bundle (optional; comment out to ignore)
+# .*TwoUp.*_g[0-9a-f]{7,12}\.pdf$

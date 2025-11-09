@@ -1,0 +1,12 @@
+# Preflight will check gh/aws auth and python deps
+make preflight
+
+# Make a draft GitHub release (recommended first run)
+DRAFT=1 make release VERSION=5.0.0 OUT=/mnt/data PUSH=github
+
+# Publish to GitHub (non-draft)
+make release VERSION=5.0.0 OUT=/mnt/data PUSH=github
+
+# Mirror to S3 (requires aws + AWS_BUCKET)
+make release VERSION=5.0.0 OUT=/mnt/data PUSH=s3
+make release VERSION=5.0.0 OUT=/mnt/data PUSH=both

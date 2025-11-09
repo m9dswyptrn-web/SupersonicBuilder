@@ -1,0 +1,22 @@
+<!-- Mini Status Bar -->
+<div id="miniStatus" class="mini-status" aria-label="System indicators">
+  <button class="ms-item" id="msHealth" title="Service status">
+    <span class="dot" id="msHealthDot"></span><span class="ms-label" id="msHealthTxt">—</span>
+  </button>
+
+  <button class="ms-item" id="msMute" title="Mute state">
+    <span id="msMuteIcon">🔔</span><span class="ms-label" id="msMuteTxt">sound on</span>
+  </button>
+
+  <button class="ms-item" id="msTheme" title="Theme">
+    <span id="msThemeIcon">🎨</span><span class="ms-label" id="msThemeTxt">—</span>
+  </button>
+
+  <button class="ms-item" id="msCloud" title="Cloud sync">
+    <span id="msCloudIcon">☁️</span><span class="ms-label" id="msCloudTxt">—</span>
+  </button>
+
+  <button class="ms-item" id="msSettings" title="Open Settings" onclick="toggleSettings()">
+    ⚙️
+  </button>
+</div>

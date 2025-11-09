@@ -1,0 +1,15 @@
+
+name: SBOM & Attestation (Supersonic)
+on:
+  workflow_dispatch: { inputs: { attest: { type: boolean, default: false } } }
+  push: { branches: [ main ] }
+permissions: { contents: read, id-token: write, attestations: write, packages: write }
+jobs:
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anchore/sbom-action@v0.17.6
+        with: { path: ./, artifact-name: sbom-supersonic.spdx.json, format: spdx-json }
+      - uses: actions/upload-artifact@v4
+        with: { name: sbom-supersonic, path: sbom-supersonic.spdx.json }

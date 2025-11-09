@@ -1,0 +1,18 @@
+name: Pages • Smoke
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Pages • Build & Publish Latest PDF"]
+    types: [completed]
+
+jobs:
+  check-latest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify latest.pdf is reachable
+        run: |
+          URL="https://m9dswyptrn-web.github.io/SonicBuilder/downloads/latest.pdf"
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+          [ "$code" = "200" ] || { echo "❌ $URL returned HTTP $code"; exit 1; }
+          echo "✅ $URL is live"

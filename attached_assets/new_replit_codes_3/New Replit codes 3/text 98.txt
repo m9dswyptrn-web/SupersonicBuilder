@@ -1,0 +1,22 @@
+function applyTheme(theme) {
+  if (theme === current) return;
+  current = theme;
+
+  document.body.classList.remove("dark", "light");
+  document.body.classList.add(theme);
+  document.body.dataset.theme = theme;
+
+  const saved = localStorage.getItem(KEY) || "system";
+  // icon + label reflect *applied* theme (dark/light), and show saved mode
+  if (icon) icon.textContent = theme === "dark" ? "🌙" : "☀️";
+  if (label) {
+    const modeText = (saved === "dark" || saved === "light" || saved === "system") ? saved : "system";
+    // Capitalize nicely
+    label.textContent = modeText.charAt(0).toUpperCase() + modeText.slice(1);
+  }
+  if (btn) btn.setAttribute("aria-expanded", "false");
+
+  // Broadcast
+  const ev = new CustomEvent("themechange", { detail: { theme } });
+  window.dispatchEvent(ev);
+}

@@ -1,0 +1,30 @@
+# pages
+write(ROOT / "docs" / "index.md", INDEX_MD)
+write(ROOT / "docs" / "quickstart.md", QUICKSTART_MD)
+write(ROOT / "docs" / "build-run.md", BUILD_RUN_MD)
+write(ROOT / "docs" / "diagrams" / "picker.md", PICKER_MD)
+write(ROOT / "docs" / "diagrams" / "export.md", EXPORT_MD)
+write(ROOT / "docs" / "devops" / "ci.md", CI_MD)
+write(ROOT / "docs" / "devops" / "releases.md", RELEASES_MD)
+write(ROOT / "docs" / "about.md", ABOUT_MD)
+
+# tiny placeholder image
+(ROOT / "docs" / "assets").mkdir(parents=True, exist_ok=True)
+with open(ROOT / "docs" / "assets" / "preview_placeholder.png", "wb") as f:
+    f.write(ASSET_PNG)
+print("→ wrote docs/assets/preview_placeholder.png")
+
+# workflow
+write(ROOT / ".github" / "workflows" / "docs-mkdocs.yml", WORKFLOW)
+
+# badges snippet
+write(ROOT / "README_badges_snippet.md", BADGES)
+
+print("\n✅ MkDocs bootstrap complete.")
+print("Next:")
+print("  1) Replace OWNER/REPO in mkdocs.yml and README_badges_snippet.md")
+print("     and in docs/*.md links (search/replace).")
+print("  2) (Optional) Remove old Pages workflow to avoid conflicts:")
+print("       git rm .github/workflows/pages.yml  # if you added a prior static Pages workflow")
+print("  3) Commit & push to main. CI will build and publish to gh-pages.")
+print("  4) First time only: Settings → Pages → Source: GitHub Actions (auto after first deploy).")

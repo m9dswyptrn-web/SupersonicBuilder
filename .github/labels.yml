@@ -1,0 +1,18 @@
+- name: bug
+  color: d73a4a
+  description: Something isn't working
+- name: feature
+  color: a2eeef
+  description: New feature or enhancement
+- name: chore
+  color: cfd3d7
+  description: Maintenance, refactors, dependency bumps
+- name: docs
+  color: 0075ca
+  description: Documentation-only changes
+- name: build
+  color: 5319e7
+  description: Build system / CI
+- name: good first issue
+  color: 7057ff
+  description: Good for newcomers

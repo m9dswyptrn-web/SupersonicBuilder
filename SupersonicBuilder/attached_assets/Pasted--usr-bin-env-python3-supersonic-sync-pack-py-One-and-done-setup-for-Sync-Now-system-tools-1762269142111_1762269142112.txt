@@ -1,0 +1,468 @@
+#!/usr/bin/env python3
+"""
+supersonic_sync_pack.py
+One-and-done setup for "Sync Now" system:
+- tools/continuous_sync.py
+- Makefile sync-once
+- Server routes (FastAPI or Flask) with cooldown & status
+- Nightly GitHub Action
+- Commit & push
+
+Run:
+  python3 supersonic_sync_pack.py
+"""
+
+from __future__ import annotations
+import os, re, sys, json, textwrap, subprocess
+from pathlib import Path
+from datetime import datetime
+
+ROOT = Path(__file__).resolve().parent
+TOOLS = ROOT / "tools"
+GITHUB = ROOT / ".github" / "workflows"
+DOCS  = ROOT / "docs"
+
+# ---------- Helpers ----------
+def sh(cmd: str, check=True, capture=False, env=None):
+    print(f"$ {cmd}")
+    r = subprocess.run(cmd, shell=True, check=check, cwd=str(ROOT),
+                       text=True,
+                       stdout=subprocess.PIPE if capture else None,
+                       stderr=subprocess.STDOUT if capture else None,
+                       env=env or os.environ.copy())
+    return r.stdout if capture else ""
+
+def write_if_changed(path: Path, content: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    new = content.rstrip() + "\n"
+    if path.exists() and path.read_text(encoding="utf-8") == new:
+        print(f"= {path} unchanged")
+        return False
+    path.write_text(new, encoding="utf-8")
+    print(f"+ wrote {path}")
+    return True
+
+def ensure_make_target(target: str, body: str):
+    mk = ROOT / "Makefile"
+    if not mk.exists():
+        mk.write_text(f"{target}:\n\t{body}\n", encoding="utf-8")
+        print(f"+ created Makefile with {target}")
+        return True
+    txt = mk.read_text(encoding="utf-8")
+    if re.search(rf"^\s*{re.escape(target)}\s*:", txt, re.M):
+        print(f"= Makefile already has {target}")
+        return False
+    with mk.open("a", encoding="utf-8") as f:
+        f.write(f"\n{target}:\n\t{body}\n")
+    print(f"+ appended {target} to Makefile")
+    return True
+
+def detect_framework() -> tuple[str|None, Path|None]:
+    """
+    Return ("fastapi"|"flask"|None, main_file_path|None)
+    Scans top-level .py files for an app = FastAPI(...) / Flask(...)
+    """
+    candidates = list(ROOT.glob("*.py")) + list((ROOT/"app").glob("*.py"))
+    kind = None
+    main = None
+    for p in candidates:
+        try:
+            t = p.read_text(encoding="utf-8", errors="ignore")
+        except:  # noqa
+            continue
+        if re.search(r"\bFastAPI\s*\(", t) or "from fastapi" in t:
+            kind, main = "fastapi", p
+            break
+        if re.search(r"\bFlask\s*\(", t) or "from flask" in t:
+            kind, main = "flask", p
+            break
+    return kind, main
+
+def patch_attach(main_path: Path, attach_line: str, import_line: str):
+    txt = main_path.read_text(encoding="utf-8")
+    if attach_line in txt:
+        print(f"= {main_path.name} already wired for sync routes")
+        return False
+    # place right after the first app= line
+    m = re.search(r"^\s*app\s*=\s*(FastAPI|Flask)\s*\(.*$", txt, re.M)
+    if not m:
+        # fallback: append
+        new = txt
+        if import_line not in new:
+            new += "\n" + import_line + "\n"
+        new += attach_line + "\n"
+        write_if_changed(main_path, new)
+        print(f"+ appended attach in {main_path.name}")
+        return True
+    insert_at = m.end()
+    pre = txt[:insert_at] + "\n"
+    post = txt[insert_at:]
+    block = ""
+    if import_line not in txt:
+        block += "\n" + import_line
+    block += "\n" + attach_line + "\n"
+    new = pre + block + post
+    write_if_changed(main_path, new)
+    print(f"+ inserted attach after app= line in {main_path.name}")
+    return True
+
+def setup_git_with_token():
+    token = os.environ.get("GH_TOKEN", "").strip()
+    if not token:
+        print("! GH_TOKEN not set; will try normal git push (may prompt in Replit)")
+        return
+    try:
+        url = sh("git remote get-url origin", capture=True).strip()
+        if url.startswith("https://") and "@github.com" not in url:
+            authed = url.replace("https://", f"https://x-access-token:{token}@")
+            sh(f'git remote set-url origin "{authed}"')
+            print("= configured origin with token for non-interactive push")
+    except subprocess.CalledProcessError:
+        print("! No git remote 'origin' found. Initialize your repo / add remote.")
+
+# ---------- File templates ----------
+CONTINUOUS_SYNC = r'''#!/usr/bin/env python3
+import argparse, os, subprocess, sys, time, tempfile, json
+from datetime import datetime
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+def run(cmd, check=True, capture=False, env=None):
+    print(f"$ {' '.join(cmd)}")
+    res = subprocess.run(cmd, cwd=ROOT, check=check, text=True,
+                         env=env or os.environ.copy(),
+                         stdout=subprocess.PIPE if capture else None,
+                         stderr=subprocess.STDOUT if capture else None)
+    return res.stdout if capture else ""
+
+def git_config_identity():
+    author = os.environ.get("GIT_AUTHOR_NAME") or "SonicBuilder Bot"
+    email  = os.environ.get("GIT_AUTHOR_EMAIL") or "sonicbuilder-bot@local"
+    run(["git","config","user.name",author])
+    run(["git","config","user.email",email])
+
+def branch_name():
+    out = run(["git","rev-parse","--abbrev-ref","HEAD"], capture=True).strip()
+    return out or "main"
+
+def changed_files():
+    status = run(["git","status","--porcelain"], capture=True)
+    return bool(status.strip())
+
+def add_all():
+    run(["git","add","-A"])
+
+def commit_if_changes(msg):
+    if changed_files():
+        run(["git","commit","-m",msg])
+        return True
+    print("No changes to commit.")
+    return False
+
+def push(branch):
+    token = os.environ.get("GH_TOKEN")
+    if not token:
+        print("WARNING: GH_TOKEN not set; push skipped.")
+        return
+    repo = run(["git","remote","get-url","origin"], capture=True).strip()
+    if repo.startswith("https://") and "@github.com" not in repo:
+        authed = repo.replace("https://", f"https://x-access-token:{token}@")
+        run(["git","remote","set-url","origin",authed])
+    run(["git","push","origin",branch])
+
+def run_health_scan():
+    try:
+        run(["make","health-scan"])
+    except subprocess.CalledProcessError:
+        scan = ROOT / "supersonic_full_health_scan.py"
+        if scan.exists():
+            run(["python3",str(scan),"--scan-only"])
+        else:
+            print("Health scan script not found; continuing…")
+
+def rebuild_docs():
+    upd = ROOT / "supersonic_doc_updater.py"
+    if upd.exists():
+        run(["python3",str(upd)])
+    tools = ROOT / "tools"
+    for s in ["budgets_history.py","budgets_asset_history.py","budgets_report.py"]:
+        p = tools / s
+        if p.exists():
+            run(["python3",str(p)])
+
+def cycle(dry=False):
+    git_config_identity()
+    br = branch_name()
+    run_health_scan()
+    rebuild_docs()
+    add_all()
+    msg = f"chore(sync): auto health+docs @ {datetime.utcnow().isoformat(timespec='seconds')}Z"
+    if dry:
+        print("[DRY] Would commit:", msg); return
+    made = commit_if_changes(msg)
+    if made:
+        push(br)
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--once", action="store_true")
+    ap.add_argument("--watch", action="store_true")
+    ap.add_argument("--interval", type=int, default=600)
+    ap.add_argument("--dry-run", action="store_true")
+    args = ap.parse_args()
+    if args.once:
+        cycle(dry=args.dry_run); return
+    if args.watch:
+        while True:
+            try: cycle(dry=args.dry_run)
+            except Exception as e: print("[sync] error:", e)
+            time.sleep(args.interval)
+    else:
+        print("Tip: --once or --watch")
+if __name__=="__main__": main()
+'''
+
+FASTAPI_ROUTES = r'''# server_sync_fastapi.py
+import os, shlex, subprocess, time, threading, tempfile, json
+from pathlib import Path
+from fastapi import FastAPI, Request
+from pydantic import BaseModel
+from datetime import datetime
+
+SYNC_MIN_INTERVAL_SEC = int(os.environ.get("SYNC_MIN_INTERVAL_SEC","120"))
+SYNC_CMD = "make sync-once"
+SYNC_WORKDIR = os.path.dirname(__file__)
+
+_lock = threading.Lock()
+_last = Path(tempfile.gettempdir()) / "sonic_sync_last_run.json"
+_running = False
+
+class SyncResp(BaseModel):
+    ok: bool
+    message: str
+    code: int | None = None
+    stdout: str | None = None
+    stderr: str | None = None
+    next_allowed_in_sec: int | None = None
+    running: bool | None = None
+
+def _load_last():
+    if _last.exists():
+        try: return json.loads(_last.read_text())
+        except Exception: return {}
+    return {}
+
+def _save_last(payload: dict):
+    try: _last.write_text(json.dumps(payload))
+    except Exception: pass
+
+def _secs_since(ts: float) -> int:
+    return int(time.time() - ts)
+
+def attach_sync_routes(app: FastAPI):
+    @app.post("/sync-trigger")
+    def sync_trigger(_: Request) -> SyncResp:
+        global _running
+        with _lock:
+            last = _load_last()
+            last_ts = float(last.get("ts",0))
+            since = _secs_since(last_ts) if last_ts else SYNC_MIN_INTERVAL_SEC+1
+            if _running:
+                return SyncResp(ok=True, message="Sync already running",
+                                 running=True,
+                                 next_allowed_in_sec=max(0, SYNC_MIN_INTERVAL_SEC - since))
+            if since < SYNC_MIN_INTERVAL_SEC:
+                return SyncResp(ok=False, message="Rate limited",
+                                 next_allowed_in_sec=SYNC_MIN_INTERVAL_SEC - since)
+            _running = True
+        try:
+            r = subprocess.run(shlex.split(SYNC_CMD), cwd=SYNC_WORKDIR,
+                               capture_output=True, text=True, timeout=900)
+            ok = (r.returncode==0)
+            tail=4000
+            return SyncResp(ok=ok, message=("Sync ok" if ok else "Sync failed"),
+                            code=r.returncode, stdout=r.stdout[-tail:], stderr=r.stderr[-tail:])
+        finally:
+            with _lock:
+                _running=False; _save_last({"ts": time.time()})
+
+    @app.get("/sync-status")
+    def sync_status():
+        last = _load_last()
+        last_ts = float(last.get("ts",0))
+        since = _secs_since(last_ts) if last_ts else None
+        return {
+            "running": _running,
+            "last_run_epoch": last_ts,
+            "last_run_iso": datetime.utcfromtimestamp(last_ts).isoformat()+"Z" if last_ts else None,
+            "min_interval_sec": SYNC_MIN_INTERVAL_SEC,
+            "next_allowed_in_sec": max(0, SYNC_MIN_INTERVAL_SEC - since) if since is not None else 0,
+        }
+'''
+
+FLASK_ROUTES = r'''# server_sync_flask.py
+import os, shlex, subprocess, time, threading, tempfile, json
+from pathlib import Path
+from flask import Flask, jsonify, request
+from datetime import datetime
+
+SYNC_MIN_INTERVAL_SEC = int(os.environ.get("SYNC_MIN_INTERVAL_SEC","120"))
+SYNC_CMD = "make sync-once"
+SYNC_WORKDIR = os.path.dirname(__file__)
+
+_lock = threading.Lock()
+_last = Path(tempfile.gettempdir()) / "sonic_sync_last_run.json"
+_running = False
+
+def _load_last():
+    if _last.exists():
+        try: return json.loads(_last.read_text())
+        except Exception: return {}
+    return {}
+
+def _save_last(payload: dict):
+    try: _last.write_text(json.dumps(payload))
+    except Exception: pass
+
+def _secs_since(ts: float) -> int:
+    return int(time.time() - ts)
+
+def attach_sync_routes(app: Flask):
+    @app.post("/sync-trigger")
+    def sync_trigger():
+        global _running
+        with _lock:
+            last = _load_last()
+            last_ts = float(last.get("ts",0))
+            since = _secs_since(last_ts) if last_ts else SYNC_MIN_INTERVAL_SEC+1
+            if _running:
+                return jsonify({"ok":True,"message":"Sync already running",
+                                "running":True,
+                                "next_allowed_in_sec":max(0, SYNC_MIN_INTERVAL_SEC - since)})
+            if since < SYNC_MIN_INTERVAL_SEC:
+                return jsonify({"ok":False,"message":"Rate limited",
+                                "next_allowed_in_sec": SYNC_MIN_INTERVAL_SEC - since}), 429
+            _running = True
+        try:
+            r = subprocess.run(shlex.split(SYNC_CMD), cwd=SYNC_WORKDIR,
+                               capture_output=True, text=True, timeout=900)
+            ok = (r.returncode==0); tail=4000
+            return jsonify({"ok":ok,"message":("Sync ok" if ok else "Sync failed"),
+                            "code":r.returncode,"stdout":r.stdout[-tail:],"stderr":r.stderr[-tail:]}), (200 if ok else 500)
+        finally:
+            with _lock:
+                _running=False; _save_last({"ts": time.time()})
+
+    @app.get("/sync-status")
+    def sync_status():
+        last = _load_last()
+        last_ts = float(last.get("ts",0))
+        since = _secs_since(last_ts) if last_ts else None
+        return jsonify({
+            "running": _running,
+            "last_run_epoch": last_ts,
+            "last_run_iso": datetime.utcfromtimestamp(last_ts).isoformat()+"Z" if last_ts else None,
+            "min_interval_sec": SYNC_MIN_INTERVAL_SEC,
+            "next_allowed_in_sec": max(0, SYNC_MIN_INTERVAL_SEC - since) if since is not None else 0,
+        })
+'''
+
+NIGHTLY = r'''name: Nightly Health & Docs Sync
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Health scan
+        run: make health-scan || true
+      - name: Rebuild docs
+        run: |
+          if [ -f supersonic_doc_updater.py ]; then python3 supersonic_doc_updater.py; fi
+          if [ -f tools/budgets_history.py ]; then python3 tools/budgets_history.py; fi
+          if [ -f tools/budgets_asset_history.py ]; then python3 tools/budgets_asset_history.py; fi
+          if [ -f tools/budgets_report.py ]; then python3 tools/budgets_report.py; fi
+      - name: Commit & push
+        run: |
+          git config user.name  "SonicBuilder Bot"
+          git config user.email "sonicbuilder-bot@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo "No changes"; exit 0; fi
+          git commit -m "chore(sync): nightly health + docs sync"
+          git push
+'''
+
+# ---------- Do the work ----------
+def main():
+    print("=== Supersonic Sync Pack ===")
+    changed = False
+
+    # 0) sanity
+    gh_repo = os.environ.get("GITHUB_REPOSITORY","").strip()
+    gh_token = os.environ.get("GH_TOKEN","").strip()
+    if not gh_repo:
+        print("! NOTE: GITHUB_REPOSITORY not set (recommended).")
+    if not gh_token:
+        print("! NOTE: GH_TOKEN not set (push may prompt/skip).")
+
+    # 1) tools/continuous_sync.py
+    changed |= write_if_changed(TOOLS/"continuous_sync.py", CONTINUOUS_SYNC)
+    try: os.chmod(TOOLS/"continuous_sync.py", 0o755)
+    except: pass
+
+    # 2) Makefile target
+    changed |= ensure_make_target("sync-once", "python3 tools/continuous_sync.py --once")
+
+    # 3) server routes (detect framework)
+    fw, main = detect_framework()
+    print(f"= framework: {fw or 'unknown'}  main file: {main.name if main else 'n/a'}")
+    if fw == "fastapi":
+        changed |= write_if_changed(ROOT/"server_sync_fastapi.py", FASTAPI_ROUTES)
+        # auto-attach
+        attach = "from server_sync_fastapi import attach_sync_routes\nattach_sync_routes(app)"
+        changed |= patch_attach(main, "attach_sync_routes(app)", "from server_sync_fastapi import attach_sync_routes")
+    elif fw == "flask":
+        changed |= write_if_changed(ROOT/"server_sync_flask.py", FLASK_ROUTES)
+        attach = "from server_sync_flask import attach_sync_routes\nattach_sync_routes(app)"
+        changed |= patch_attach(main, "attach_sync_routes(app)", "from server_sync_flask import attach_sync_routes")
+    else:
+        print("! Could not detect FastAPI/Flask app file; routes written but not attached.")
+        print("  - If FastAPI: add `from server_sync_fastapi import attach_sync_routes; attach_sync_routes(app)`")
+        print("  - If Flask:   add `from server_sync_flask import attach_sync_routes; attach_sync_routes(app)`")
+
+    # 4) nightly action
+    changed |= write_if_changed(GITHUB/"nightly-sync.yml", NIGHTLY)
+
+    # 5) commit & push
+    setup_git_with_token()
+    sh("git add -A", check=False)
+    if changed:
+        sh('git commit -m "chore(sync): install/refresh continuous sync + routes + nightly action"', check=False)
+    else:
+        print("= no file changes to commit")
+    try:
+        sh("git push", check=False)
+    except Exception as e:
+        print("! push failed (ok if no token / remote):", e)
+
+    # 6) recap
+    print("\n=== Done")
+    print("Endpoints (after server restarts):")
+    print("  POST /sync-trigger   → runs one sync (cooldown default 120s)")
+    print("  GET  /sync-status    → {running, last_run_iso, next_allowed_in_sec}")
+    print("\nFrontend hook example:")
+    print('  fetch("/sync-trigger",{method:"POST"}).then(r=>r.json()).then(console.log)')
+    print("\nEnv you can set in Replit:")
+    print("  GH_TOKEN (repo scope) • GITHUB_REPOSITORY • SESSION_SECRET • SYNC_MIN_INTERVAL_SEC")
+
+if __name__ == "__main__":
+    main()

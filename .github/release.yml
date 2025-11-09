@@ -1,0 +1,22 @@
+changelog:
+  categories:
+    - title: "🚀 Features"
+      labels: [feature, enhancement]
+    - title: "🐛 Fixes"
+      labels: [fix, bug]
+    - title: "🧰 Maintenance"
+      labels: [chore, docs, ci, build]
+  exclude:
+    labels: [skip-changelog]
+  template: |
+    ## 📦 Sonic Builder ${{VERSION}}
+
+    ✅ This release includes:
+    - Dark & Light manuals with footer & metadata
+    - Rasterized two-up print masters (dark/light)
+    - SHA256 checksums for integrity verification
+
+    📥 **Download links below**
+    *(These assets are automatically attached by the workflow)*
+
+    🧾 Print \`*_two_up_raster.pdf\` for field cards or shop binders.

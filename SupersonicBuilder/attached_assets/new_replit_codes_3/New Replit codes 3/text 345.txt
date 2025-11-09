@@ -1,0 +1,7 @@
+# (venv active)
+pip uninstall -y llama-cpp-python
+# Pick ONE platform flag set from above, e.g.:
+export CMAKE_ARGS="-DLLAMA_CUBLAS=on"        # or METAL/HIPBLAS/SYCL
+pip install --force-reinstall --no-binary llama-cpp-python llama-cpp-python==0.3.2
+python scripts/run_offline_llm.py
+python scripts/bench_llm.py

@@ -1,0 +1,8 @@
+function setUserTheme(next) {
+  const saved = localStorage.getItem(KEY) || "system";
+  let newPref;
+  if (next) newPref = next;
+  else newPref = saved === "dark" ? "light" : saved === "light" ? "system" : "dark";
+  localStorage.setItem(KEY, newPref);
+  applyTheme(desiredTheme());
+}

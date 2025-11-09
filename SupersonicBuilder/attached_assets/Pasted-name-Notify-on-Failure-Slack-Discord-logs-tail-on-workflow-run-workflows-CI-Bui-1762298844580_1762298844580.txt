@@ -1,0 +1,74 @@
+name: Notify on Failure (Slack/Discord + /logs/tail)
+
+on:
+  workflow_run:
+    workflows: ["CI", "Build", "Tests", "Deploy"]  # list the workflows you want to monitor
+    types: [completed]
+
+jobs:
+  notify:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prep env
+        id: prep
+        run: |
+          echo "RUN_URL=${{ github.event.workflow_run.html_url }}" >> $GITHUB_OUTPUT
+          echo "RUN_NAME=${{ github.event.workflow_run.name }}" >> $GITHUB_OUTPUT
+          echo "REPO=${{ github.repository }}" >> $GITHUB_OUTPUT
+          echo "COMMIT=${{ github.event.workflow_run.head_sha }}" >> $GITHUB_OUTPUT
+
+      # Pull latest logs from your app
+      - name: Tail server logs
+        id: tail
+        uses: ./.github/workflows/logs_tail_post.yml
+        with:
+          lines: "600"
+        secrets:
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          DOCTOR_KEY:   ${{ secrets.DOCTOR_KEY }}
+
+      - name: Read tail text into env
+        id: read
+        run: |
+          FILE="${{ steps.tail.outputs.out_path }}"
+          echo "LOG_FILE=$FILE" >> $GITHUB_OUTPUT
+          echo "---- FIRST 60 ----"
+          head -n 60 "$FILE" || true
+          echo "---- LAST 60 ----"
+          tail -n 60 "$FILE" || true
+
+      # Slack (if configured)
+      - name: Notify Slack
+        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ steps.prep.outputs.RUN_URL }}
+          RUN_NAME: ${{ steps.prep.outputs.RUN_NAME }}
+          REPO: ${{ steps.prep.outputs.REPO }}
+          COMMIT: ${{ steps.prep.outputs.COMMIT }}
+        run: |
+          SNIP="$(tail -n 80 "${{ steps.read.outputs.LOG_FILE }}" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+          PAYLOAD=$(cat <<JSON
+          {
+            "text": ":rotating_light: *Build Failed* — \`${REPO}\` · \`${RUN_NAME}\`\n<${RUN_URL}|Open run>\nCommit: \`${COMMIT}\`\n\n*Last 80 log lines:*\n```$SNIP```"
+          }
+          JSON
+          )
+          curl -fsS -X POST -H 'Content-type: application/json' --data "$PAYLOAD" "$SLACK_WEBHOOK_URL"
+
+      # Discord (if configured)
+      - name: Notify Discord
+        if: ${{ secrets.DISCORD_WEBHOOK_URL != '' }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          RUN_URL: ${{ steps.prep.outputs.RUN_URL }}
+          RUN_NAME: ${{ steps.prep.outputs.RUN_NAME }}
+          REPO: ${{ steps.prep.outputs.REPO }}
+          COMMIT: ${{ steps.prep.outputs.COMMIT }}
+        run: |
+          SNIP="$(tail -n 80 "${{ steps.read.outputs.LOG_FILE }}")"
+          CONTENT="🚨 **Build Failed** — \`${REPO}\` · \`${RUN_NAME}\`\n<${RUN_URL}>\nCommit: \`${COMMIT}\`\n\n**Last 80 log lines:**\n\`\`\`\n$SNIP\n\`\`\`"
+          curl -fsS -H "Content-Type: application/json" -X POST \
+            -d "$(jq -n --arg c "$CONTENT" '{content:$c}')" \
+            "$DISCORD_WEBHOOK_URL"

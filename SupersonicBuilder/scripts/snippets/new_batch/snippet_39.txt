@@ -1,0 +1,1 @@
+make verify-deep-publish VERSION=5.0.0 OUT=/mnt/data PUSH=github

@@ -1,0 +1,73 @@
+app = Flask(name)
+
+@app.route(”/”, methods=[“GET”])
+def index():
+return render_template_string(TPL, resp=””)
+
+@app.route(”/ask”, methods=[“POST”])
+def ask():
+q = request.form.get(“q”,””).strip()
+out = agent.query(q)
+return render_template_string(TPL, resp=out)
+
+@app.route(”/api/ingest”, methods=[“POST”])
+def ingest():
+status = “ingested”
+try:
+d = Path(os.getenv(“DOCS_DIR”,“docs”))
+status = agent.ingest_dir(d)
+except Exception as e:
+status = f”error: {e}”
+return jsonify({“status”: status})
+
+if name == “main”:
+app.run(host=“127.0.0.1”, port=PORT, debug=False)
+“””
+
+—————————– run helpers —————————–
+
+RUN_LLM = “””
+#!/usr/bin/env python3
+import os, subprocess, sys
+os.environ.setdefault(“APP_MODE”, “offline”)
+os.environ.setdefault(“AGENT_MODEL”, “gguf/llama-3.1-8b-q4_0.gguf”)
+subprocess.run([sys.executable, “desktop/webui/app.py”], check=False)
+“””
+
+DL_GGUF = “””
+#!/usr/bin/env python3
+import sys, shutil
+from pathlib import Path
+import urllib.request
+URL = “https://huggingface.co/TheBloke/Llama-3.1-8B-GGUF/resolve/main/llama-3.1-8b.Q4_K_M.gguf?download=true”
+DEST = Path(“gguf/llama-3.1-8b-q4_0.gguf”)
+DEST.parent.mkdir(parents=True, exist_ok=True)
+print(f”Downloading to {DEST} …”)
+with urllib.request.urlopen(URL) as r, open(DEST, “wb”) as f:
+shutil.copyfileobj(r, f)
+print(“Done.”)
+“””
+
+—————————– package.json patch –––––––––––
+
+def patch_package_json():
+pj = ROOT / “package.json”
+if pj.exists():
+try:
+data = json.loads(pj.read_text(encoding=“utf-8”))
+except Exception:
+data = {}
+else:
+data = {“name”: “sonicbuilder-supersonic”, “private”: True}
+dev = data.setdefault(“devDependencies”, {})
+dev.setdefault(”@tauri-apps/cli”, “^1.6.0”)
+scripts = data.setdefault(“scripts”, {})
+scripts.setdefault(“tauri:dev”, “tauri dev”)
+scripts.setdefault(“tauri:build”, “tauri build”)
+pj.write_text(json.dumps(data, indent=2) + “\n”, encoding=“utf-8”)
+print(“→ patched package.json”)
+
+—————————– write everything ————————
+
+def main():
+print(”=== Unified Supersonic Deploy Pack v2 ===”)

@@ -1,0 +1,24 @@
+<script>
+function localDatetimeToISO(dtLocal){
+  // dtLocal: "YYYY-MM-DDTHH:MM"
+  // Convert to ISO with timezone offset -> server will parse
+  try{
+    const d = new Date(dtLocal);
+    return d.toISOString(); // in Z (UTC)
+  }catch(e){ return null; }
+}
+
+async function snoozeUntil(){
+  const inp = document.getElementById('optSnoozeUntil');
+  if(!inp || !inp.value){ showToast('Pick a time first'); return; }
+  const iso = localDatetimeToISO(inp.value);
+  if(!iso){ showToast('Invalid time'); return; }
+  try{
+    await fetch('/api/mute', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: new URLSearchParams({ until_iso: iso }) });
+    showToast('Muted until set time');
+    startSnoozeTicker();
+  }catch(e){
+    showToast('Mute failed');
+  }
+}
+</script>

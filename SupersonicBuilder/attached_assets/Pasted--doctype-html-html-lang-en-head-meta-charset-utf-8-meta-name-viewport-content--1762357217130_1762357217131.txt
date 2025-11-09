@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Supersonic Control Panel</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#0b0f17;color:#e9eef5;margin:0;padding:24px}
+    .wrap{max-width:900px;margin:0 auto}
+    h1{margin:0 0 12px;font-size:24px}
+    .row{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
+    button{border:0;border-radius:8px;padding:12px 16px;cursor:pointer}
+    .ok{background:#1f6feb;color:white}
+    .warn{background:#9e6c00;color:white}
+    pre{background:#0f1624;color:#cfe1ff;padding:12px;border-radius:8px;overflow:auto}
+    .pill{display:inline-block;border-radius:999px;padding:4px 10px;background:#0f223f;color:#9bd}
+    .toast{position:fixed;right:16px;bottom:16px;background:#17263e;color:#e9eef5;padding:12px 16px;border-radius:8px;opacity:0;transform:translateY(12px);transition:.2s}
+    .toast.show{opacity:1;transform:translateY(0)}
+    a{color:#9bd}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Supersonic Control Panel</h1>
+  <div class="pill">/health • /sync/status • /sync/restart</div>
+
+  <div class="row">
+    <button class="ok" id="btn-health">Check Health</button>
+    <button class="ok" id="btn-status">Sync Status</button>
+    <button class="warn" id="btn-restart">Restart Service</button>
+    <a href="/docs/HEALTH_REPORT.md" target="_blank">Open HEALTH_REPORT.md</a>
+  </div>
+
+  <pre id="out">Ready.</pre>
+</div>
+
+<div id="toast" class="toast">Done</div>
+
+<script>
+const out = document.getElementById('out');
+const toast = document.getElementById('toast');
+
+function show(msg){ out.textContent = typeof msg==="string" ? msg : JSON.stringify(msg,null,2); }
+function notify(msg){ toast.textContent = msg; toast.classList.add('show'); setTimeout(()=>toast.classList.remove('show'), 2200); }
+
+async function hit(url, opts){
+  const r = await fetch(url, Object.assign({headers:{'Content-Type':'application/json'}}, opts||{}));
+  let body = null; try{ body = await r.json(); }catch(_){}
+  return { ok: r.ok, status: r.status, body };
+}
+
+document.getElementById('btn-health').onclick = async ()=>{
+  const r = await hit('/health');
+  show(r); notify('Health checked');
+};
+document.getElementById('btn-status').onclick = async ()=>{
+  const r = await hit('/sync/status');
+  show(r); notify('Status loaded');
+};
+document.getElementById('btn-restart').onclick = async ()=>{
+  const r = await hit('/sync/restart', {method:'POST'});
+  show(r); notify('Restart requested — server will reload…');
+  setTimeout(()=>location.reload(), 1500);
+};
+</script>
+</body>
+</html>

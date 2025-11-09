@@ -1,0 +1,9 @@
+# Save the file above as ship_to_github.py (root folder)
+
+# Option A: Create the repo via GitHub CLI (easy)
+#   - Install gh in Replit (or run locally)
+#   - You'll be prompted to auth the first time: gh auth login
+python3 ship_to_github.py --gh-create m9dswy.ptrn-web/SonicBuilder --version 0.1.0
+
+# Option B: Push to an existing repo URL instead of creating
+python3 ship_to_github.py --remote https://github.com/<you>/<repo>.git --version 0.1.0

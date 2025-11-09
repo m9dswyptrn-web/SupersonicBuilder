@@ -1,0 +1,6 @@
+.lightbox-backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.86); z-index:9999; align-items:center; justify-content:center; }
+.lightbox-backdrop.active { display:flex; }
+.lightbox-stage { max-width:95vw; max-height:88vh; }
+.lightbox-stage img { display:block; max-width:95vw; max-height:88vh; border-radius:8px; box-shadow:0 10px 40px rgba(0,0,0,.6); }
+.lightbox-caption { color:#e6e6e6; text-align:center; margin-top:10px; font-size:.95rem; opacity:.9; }
+.lightbox-close { position:fixed; top:14px; right:20px; font-size:28px; color:#e6e6e6; cursor:pointer; line-height:1; }

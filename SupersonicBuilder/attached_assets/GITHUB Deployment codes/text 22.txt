@@ -1,0 +1,5 @@
+# Option A: create the repo (recommended)
+python3 ship_to_github_supersonic.py --gh-create <owner>/<repo> --version 1.0.0
+
+# Option B: push to an existing repo
+python3 ship_to_github_supersonic.py --remote https://github.com/<you>/<repo>.git --version 1.0.0

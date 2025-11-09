@@ -1,0 +1,25 @@
+# ---- Release bump & tag helpers --------------------------------------------
+.PHONY: release patch minor major
+# Usage:
+#   make release PATCH=1         # bumps patch and tags/pushes
+#   make release MINOR=1         # bumps minor and tags/pushes
+#   make release MAJOR=1         # bumps major and tags/pushes
+#   make release PRE=rc.1        # add prerelease suffix
+#   make patch|minor|major       # convenience aliases (no prerelease)
+
+# Default part = patch
+RELEASE_PART := $(if $(MAJOR),major,$(if $(MINOR),minor,$(if $(PATCH),patch,patch)))
+RELEASE_PRE  := $(PRE)
+
+release:
+	@echo ">> Bumping $(RELEASE_PART) $(if $(RELEASE_PRE),with pre=$(RELEASE_PRE),)"
+	@NEWV=$$( $(PY) scripts/bump_version.py --part $(RELEASE_PART) $(if $(RELEASE_PRE),--pre $(RELEASE_PRE),) | head -n1 ); \	echo "New version: $$NEWV"; \	git add VERSION; \	git commit -m "chore(release): bump to $$NEWV" || echo "Nothing to commit"; \	git tag $$NEWV; \	git push; git push --tags
+
+patch:
+	$(MAKE) release PATCH=1
+
+minor:
+	$(MAKE) release MINOR=1
+
+major:
+	$(MAKE) release MAJOR=1

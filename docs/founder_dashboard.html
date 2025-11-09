@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>⚡ SonicBuilder Founder Control Dashboard</title>
+<style>
+body {
+  background: #0b0c10;
+  color: #c5c6c7;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  margin: 0; padding: 0;
+}
+header {
+  background: linear-gradient(90deg, #45a29e, #66fcf1);
+  color: #0b0c10;
+  text-align: center;
+  padding: 1em;
+  font-size: 1.4em;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+section {
+  padding: 1.5em;
+  max-width: 900px;
+  margin: auto;
+}
+h2 { color: #66fcf1; margin-top: 1.5em; }
+button {
+  background: #45a29e;
+  border: none;
+  padding: 0.8em 1.5em;
+  color: #0b0c10;
+  font-size: 1em;
+  font-weight: bold;
+  border-radius: 8px;
+  margin: 0.5em 0.5em;
+  cursor: pointer;
+  transition: 0.3s;
+}
+button:hover {
+  background: #66fcf1;
+  color: #0b0c10;
+}
+button:disabled {
+  background: #1f2833;
+  color: #45a29e;
+  cursor: not-allowed;
+}
+.status-box {
+  background: #1f2833;
+  border-radius: 8px;
+  padding: 1em;
+  margin-top: 1em;
+  box-shadow: 0 0 10px rgba(102,252,241,0.2);
+  white-space: pre-wrap;
+  font-family: 'Courier New', monospace;
+  max-height: 400px;
+  overflow-y: auto;
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1em;
+  margin-top: 1em;
+}
+.stat-card {
+  background: #1f2833;
+  border-radius: 8px;
+  padding: 1em;
+  text-align: center;
+  box-shadow: 0 0 10px rgba(102,252,241,0.2);
+}
+.stat-value {
+  font-size: 2em;
+  color: #66fcf1;
+  font-weight: bold;
+}
+.stat-label {
+  font-size: 0.9em;
+  color: #c5c6c7;
+  margin-top: 0.5em;
+}
+.footer {
+  text-align: center;
+  color: #45a29e;
+  font-size: 0.8em;
+  padding: 2em 1em;
+  margin-top: 2em;
+  border-top: 1px solid #1f2833;
+}
+a {
+  color: #66fcf1;
+  text-decoration: none;
+}
+a:hover { text-decoration: underline; }
+.alert {
+  background: #1f2833;
+  border-left: 4px solid #66fcf1;
+  padding: 1em;
+  margin: 1em 0;
+  border-radius: 4px;
+}
+.alert.warning {
+  border-left-color: #ffa500;
+}
+.alert.error {
+  border-left-color: #ff5555;
+}
+.badge-img {
+  margin: 0.3em;
+}
+</style>
+</head>
+<body>
+<header>⚡ SonicBuilder Founder Control Dashboard</header>
+
+<section>
+  <div class="alert">
+    <strong>🎛️ Control Panel</strong><br>
+    Monitor deployment status, view logs, and manage the autonomous scheduler.
+  </div>
+
+  <h2>📊 Live Statistics</h2>
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-value" id="totalCycles">--</div>
+      <div class="stat-label">Total Cycles</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="successCount">--</div>
+      <div class="stat-label">Successes</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="failureCount">--</div>
+      <div class="stat-label">Failures</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="uptime">--</div>
+      <div class="stat-label">Uptime</div>
+    </div>
+  </div>
+
+  <h2>🔧 Deploy Control</h2>
+  <p>
+    View live status from scheduler logs and control autonomous deployment.
+  </p>
+
+  <div>
+    <button onclick="fetchStatus()">🔄 Refresh Status</button>
+    <button onclick="viewVerifyLog()">📄 View Verify Log</button>
+    <button onclick="downloadLogs()">💾 Download Logs</button>
+  </div>
+
+  <div class="alert warning" style="margin-top: 1em;">
+    <strong>ℹ️ Manual Controls</strong><br>
+    To pause/resume the scheduler or trigger manual deploys, use the Replit shell:<br>
+    • Pause: <code style="background:#0b0c10;padding:2px 6px;border-radius:3px;">touch pause.flag</code><br>
+    • Resume: <code style="background:#0b0c10;padding:2px 6px;border-radius:3px;">rm pause.flag</code><br>
+    • Deploy: <code style="background:#0b0c10;padding:2px 6px;border-radius:3px;">python3 supersonic_autodeploy.py</code>
+  </div>
+
+  <h2>📋 Scheduler Log</h2>
+  <div id="status" class="status-box">Loading scheduler log...</div>
+
+  <h2>📈 Deployment Info</h2>
+  <ul style="line-height: 2em;">
+    <li><strong>Last Deploy:</strong> <span id="lastDeploy">--</span></li>
+    <li><strong>Next Auto Run:</strong> <span id="nextRun">--</span></li>
+    <li><strong>Scheduler Status:</strong> <span id="schedulerStatus">--</span></li>
+    <li><strong>Repository:</strong> <a href="https://github.com/m9dswyptrn-web/SonicBuilder" target="_blank">m9dswyptrn-web/SonicBuilder</a></li>
+    <li><strong>GitHub Pages:</strong> <a href="https://m9dswyptrn-web.github.io/SonicBuilder/" target="_blank">Live Site</a></li>
+  </ul>
+
+  <h2>🏷️ Live Badges</h2>
+  <p>
+    <a href="https://github.com/m9dswyptrn-web/SonicBuilder/actions" target="_blank">
+      <img class="badge-img" src="https://img.shields.io/github/actions/workflow/status/m9dswyptrn-web/SonicBuilder/ci-build.yml?label=Build&logo=github&style=for-the-badge" alt="CI Build" />
+    </a>
+    <a href="https://github.com/m9dswyptrn-web/SonicBuilder/actions" target="_blank">
+      <img class="badge-img" src="https://img.shields.io/github/actions/workflow/status/m9dswyptrn-web/SonicBuilder/ci-release.yml?label=Release&logo=github&style=for-the-badge" alt="CI Release" />
+    </a>
+    <a href="https://m9dswyptrn-web.github.io/SonicBuilder" target="_blank">
+      <img class="badge-img" src="https://img.shields.io/badge/Docs-Live-success?logo=github&style=for-the-badge" alt="Documentation" />
+    </a>
+  </p>
+
+  <h2>📦 Quick Links</h2>
+  <ul style="line-height: 2em;">
+    <li><a href="https://m9dswyptrn-web.github.io/SonicBuilder/docs/SHA256.txt" target="_blank">📋 Checksums (SHA256.txt)</a></li>
+    <li><a href="https://m9dswyptrn-web.github.io/SonicBuilder/docs/SIGNATURE.asc" target="_blank">🔐 Signature (SIGNATURE.asc)</a></li>
+    <li><a href="https://raw.githubusercontent.com/m9dswyptrn-web/SonicBuilder/main/verify.log" target="_blank">📄 Verify Log</a></li>
+    <li><a href="https://raw.githubusercontent.com/m9dswyptrn-web/SonicBuilder/main/scheduler.log" target="_blank">📊 Scheduler Log</a></li>
+    <li><a href="https://github.com/m9dswyptrn-web/SonicBuilder/releases" target="_blank">📦 Releases</a></li>
+  </ul>
+</section>
+
+<div class="footer">
+  ⚡ SonicBuilder Founder Console — v2.0.9+ULTRA<br>
+  Live at <a href="https://m9dswyptrn-web.github.io/SonicBuilder/">m9dswyptrn-web.github.io/SonicBuilder</a>
+</div>
+
+<script>
+let lastFetchTime = null;
+
+async function fetchStatus() {
+  const box = document.getElementById('status');
+  box.textContent = 'Loading...';
+  
+  try {
+    // Fetch scheduler log from GitHub
+    const res = await fetch('https://raw.githubusercontent.com/m9dswyptrn-web/SonicBuilder/main/scheduler.log?t=' + Date.now());
+    
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
+    
+    const text = await res.text();
+    
+    if (!text || text.trim().length === 0) {
+      box.textContent = "ℹ️ Scheduler log is empty. Scheduler may not have started yet.\n\nTo start the scheduler, run:\n  nohup python3 supersonic_scheduler_ultra.py &";
+      return;
+    }
+    
+    // Display last 100 lines
+    const lines = text.trim().split('\n');
+    const displayLines = lines.slice(-100);
+    box.textContent = displayLines.join('\n');
+    
+    // Parse statistics
+    parseStatistics(lines);
+    
+    // Find last deploy
+    const lastDeployLine = lines.reverse().find(l => l.includes('deployment succeeded') || l.includes('BUILD VERIFIED'));
+    if (lastDeployLine) {
+      const match = lastDeployLine.match(/\[(.*?)\]/);
+      if (match) {
+        document.getElementById('lastDeploy').textContent = match[1];
+      }
+    }
+    
+    // Check scheduler status
+    const isPaused = lines.some(l => l.includes('Pause flag detected'));
+    const schedulerStatus = isPaused ? '⏸️ Paused' : '🟢 Running';
+    document.getElementById('schedulerStatus').textContent = schedulerStatus;
+    
+    // Estimate next run (12 hours from last deploy)
+    if (lastDeployLine) {
+      document.getElementById('nextRun').textContent = 'Approx. 12h after last deploy';
+    }
+    
+    lastFetchTime = new Date();
+    
+  } catch (err) {
+    box.textContent = `⚠️ Unable to fetch scheduler log:\n${err.message}\n\nPossible reasons:\n- Scheduler not started yet\n- Repository is private\n- Network issue\n\nTo check locally, run:\n  cat scheduler.log`;
+  }
+}
+
+function parseStatistics(lines) {
+  // Find stats line
+  const statsLine = lines.reverse().find(l => l.includes('Stats:'));
+  
+  if (statsLine) {
+    const successMatch = statsLine.match(/(\d+) successes/);
+    const failureMatch = statsLine.match(/(\d+) failures/);
+    
+    if (successMatch) {
+      document.getElementById('successCount').textContent = successMatch[1];
+    }
+    if (failureMatch) {
+      document.getElementById('failureCount').textContent = failureMatch[1];
+    }
+  }
+  
+  // Count total cycles
+  const cycleLines = lines.filter(l => l.includes('Cycle #'));
+  if (cycleLines.length > 0) {
+    const lastCycle = cycleLines[cycleLines.length - 1];
+    const match = lastCycle.match(/Cycle #(\d+)/);
+    if (match) {
+      document.getElementById('totalCycles').textContent = match[1];
+    }
+  }
+  
+  // Calculate uptime
+  const firstLine = lines[0];
+  if (firstLine) {
+    const match = firstLine.match(/\[(.*?)\]/);
+    if (match) {
+      const startTime = new Date(match[1]);
+      const now = new Date();
+      const uptimeHours = Math.floor((now - startTime) / (1000 * 60 * 60));
+      document.getElementById('uptime').textContent = uptimeHours + 'h';
+    }
+  }
+}
+
+async function viewVerifyLog() {
+  const box = document.getElementById('status');
+  box.textContent = 'Loading verify.log...';
+  
+  try {
+    const res = await fetch('https://raw.githubusercontent.com/m9dswyptrn-web/SonicBuilder/main/verify.log?t=' + Date.now());
+    const text = await res.text();
+    box.textContent = text || "No verify log available yet.";
+  } catch (err) {
+    box.textContent = `⚠️ Unable to fetch verify.log: ${err.message}`;
+  }
+}
+
+function downloadLogs() {
+  const links = [
+    'https://raw.githubusercontent.com/m9dswyptrn-web/SonicBuilder/main/scheduler.log',
+    'https://raw.githubusercontent.com/m9dswyptrn-web/SonicBuilder/main/verify.log'
+  ];
+  
+  links.forEach(url => {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = url.split('/').pop();
+    a.click();
+  });
+  
+  alert('📥 Download started for scheduler.log and verify.log');
+}
+
+// Auto-refresh every 30 seconds
+setInterval(() => {
+  if (document.getElementById('status').textContent !== 'Loading...') {
+    fetchStatus();
+  }
+}, 30000);
+
+// Initial load
+fetchStatus();
+</script>
+</body>
+</html>

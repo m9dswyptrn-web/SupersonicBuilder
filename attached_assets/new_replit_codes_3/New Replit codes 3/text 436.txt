@@ -1,0 +1,1 @@
+<button class="pill" onclick="reloadNow()" title="Restart the app process (supervisor will relaunch)">Reload (hot) ♻️</button>

@@ -1,0 +1,30 @@
+name: Pages Smoke Test
+on:
+  schedule: [ { cron: "*/20 * * * *" } ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Install deps
+        run: pip install requests
+      - name: Probe Pages + assert keyword
+        env:
+          URL: https://m9dswyptrn-web.github.io/SonicBuilder/
+          KEYWORD: SonicBuilder
+        run: |
+          python - << 'PY'
+          import os, requests
+          url=os.getenv("URL"); kw=os.getenv("KEYWORD")
+          r=requests.get(url, timeout=15)
+          print("Status:", r.status_code)
+          ok = r.ok and (kw.lower() in r.text.lower())
+          assert ok, f"Smoke failed: ok={r.ok}, code={r.status_code}, keyword_present={kw.lower() in r.text.lower()}"
+          print("✅ Pages OK & keyword present.")
+          PY

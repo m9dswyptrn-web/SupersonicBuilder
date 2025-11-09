@@ -1,0 +1,51 @@
+import json
+import time
+
+def test_health_shape(client):
+    r = client.get("/health")
+    assert r.status_code == 200
+    payload = r.get_json()
+    assert payload["ok"] is True
+    assert payload["status"] in ("ok", "degraded")
+    # Basic keys present
+    for key in ("uptime_sec", "disk", "checks", "cpu_count", "loadavg", "memory", "http_5xx"):
+        assert key in payload
+
+def test_metrics_json_shape(client, doctor_headers):
+    r = client.get("/metrics", headers=doctor_headers)
+    assert r.status_code == 200
+    payload = r.get_json()
+    assert payload["ok"] is True
+    # Expect core sections
+    for key in ("uptime_sec", "disk", "loadavg", "memory", "errors_last_5m", "http_5xx"):
+        assert key in payload
+    assert isinstance(payload["http_5xx"]["count"], int)
+
+def test_metrics_prometheus_exposition(client, doctor_headers):
+    r = client.get("/metrics?format=prom", headers=doctor_headers)
+    assert r.status_code == 200
+    ct = r.headers.get("Content-Type", "")
+    assert "text/plain" in ct
+    body = r.data.decode("utf-8", errors="replace")
+    assert "# HELP app_uptime_seconds" in body
+    assert "app_disk_bytes" in body
+
+def test_5xx_counter_increments(client, doctor_headers):
+    # Read current count
+    before = client.get("/metrics", headers=doctor_headers).get_json()["http_5xx"]["count"]
+
+    # Register a test route that throws 500 (idempotent)
+    from serve_pdfs import app
+    if "__pytest_boom" not in app.view_functions:
+        def _boom():
+            1 / 0  # deliberate 500
+        app.add_url_rule("/__pytest_boom", "__pytest_boom", _boom)
+
+    # Hit it a couple times to ensure logs are written
+    for _ in range(2):
+        client.get("/__pytest_boom", headers=doctor_headers)
+    # Give the logger a breath to flush and file rotation to settle
+    time.sleep(0.3)
+
+    after = client.get("/metrics", headers=doctor_headers).get_json()["http_5xx"]["count"]
+    assert after >= before + 1, f"5xx counter did not increase (before={before}, after={after})"

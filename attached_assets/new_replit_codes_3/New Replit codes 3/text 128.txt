@@ -1,0 +1,11 @@
+function setCacheNote(msg) {
+  const n = document.getElementById("dp-cache-note");
+  if (n) n.textContent = msg || "";
+}
+// after each status(), also call setCacheNote with a shorter message:
+status("Catalog ready (matched version)."); setCacheNote("Source: local cache (version match)");
+status("Catalog ready (TTL cache).");       setCacheNote("Source: local cache (TTL)");
+status("Catalog updated (background).");    setCacheNote("Source: refreshed");
+status("Catalog ready.");                    setCacheNote("Source: server");
+status("Offline: using cached catalog.");    setCacheNote("Source: offline cache");
+status("Failed to load catalog (no cache).");setCacheNote("Source: unavailable");

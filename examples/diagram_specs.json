@@ -1,0 +1,56 @@
+{
+  "block": {
+    "kind": "block",
+    "title": "Android HU Audio Stack",
+    "nodes": [
+      { "id": "HU",  "label": "Android 15 Head Unit", "group": "core" },
+      { "id": "DSP", "label": "External DSP",         "group": "audio" },
+      { "id": "AMP", "label": "Power Amp",            "group": "audio" },
+      { "id": "SPK", "label": "Speakers",             "group": "audio" }
+    ],
+    "edges": [
+      { "from": "HU",  "to": "DSP", "label": "USB Audio / I2S" },
+      { "from": "DSP", "to": "AMP", "label": "RCA L/R" },
+      { "from": "AMP", "to": "SPK", "label": "Ch 1–4" }
+    ]
+  },
+
+  "wiring": {
+    "kind": "wiring",
+    "title": "Chevy Sonic LTZ Wiring (Simplified)",
+    "nodes": [
+      { "id": "HU",  "label": "Android HU" },
+      { "id": "MIC", "label": "Mic" },
+      { "id": "CAM", "label": "Rear Cam" },
+      { "id": "CAN", "label": "CAN Module" },
+      { "id": "AMP", "label": "AMP" },
+      { "id": "FL",  "label": "Front Left" },
+      { "id": "FR",  "label": "Front Right" },
+      { "id": "RL",  "label": "Rear Left" },
+      { "id": "RR",  "label": "Rear Right" }
+    ],
+    "wires": [
+      { "from":"HU","to":"CAN","color":"#00ffff","label":"GMLAN" },
+      { "from":"HU","to":"MIC","color":"#cccccc","label":"3.5mm" },
+      { "from":"HU","to":"CAM","color":"#ffcc00","label":"CAM TRIG" },
+      { "from":"HU","to":"AMP","color":"#66ff66","label":"RCA L/R" },
+      { "from":"AMP","to":"FL","color":"#ffffff","label":"WHT/WHT-BLK" },
+      { "from":"AMP","to":"FR","color":"#aaaaaa","label":"GRY/GRY-BLK" },
+      { "from":"AMP","to":"RL","color":"#00ff66","label":"GRN/GRN-BLK" },
+      { "from":"AMP","to":"RR","color":"#a064ff","label":"PUR/PUR-BLK" }
+    ]
+  },
+
+  "pipeline": {
+    "kind": "pipeline",
+    "title": "Supersonic Secure Build Pipeline",
+    "stages": [
+      { "id":"A", "label":"Build" },
+      { "id":"B", "label":"Docs & Cards" },
+      { "id":"C", "label":"QR & Dashboard" },
+      { "id":"D", "label":"FieldKit ZIP" },
+      { "id":"E", "label":"Secure Sign & Release" }
+    ],
+    "flow": ["A","B","C","D","E"]
+  }
+}
