@@ -1,0 +1,18 @@
+# MAKEFRAG.repo — Include in your Makefile to wire repo URL + version tooling
+# Usage:
+#   -include MAKEFRAG.repo
+#
+# Targets:
+#   make stamp_meta VERSION=v2.0.9 IN=output/manual.pdf
+#   make bump TO=v2.0.9 FROM=v2.0.8
+
+PY ?= python
+
+# Canonical URL (GitHub preferred, else Replit)
+SB_REPO_URL ?= https://08abbd3d-777f-4af5-b274-466c8cc1c573-00-1ko1zjf07c39i.riker.replit.dev
+
+stamp_meta:
+	$(PY) scripts/pdf_meta_stamp.py --in "$(IN)" --out "$(OUT)" --version "$(VERSION)"
+
+bump:
+	$(PY) scripts/version_bump.py --root . --from "$(FROM)" --to "$(TO)"

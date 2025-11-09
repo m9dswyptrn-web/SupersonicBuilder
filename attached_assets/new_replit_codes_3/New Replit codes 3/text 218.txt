@@ -1,0 +1,4 @@
+python3 changelog_bootstrap.py
+git add -A
+git commit -m "Docs: auto Changelog sync from GitHub Releases"
+git push origin main

@@ -1,0 +1,21 @@
+@app.route("/api/env/template", methods=["GET"])
+def api_env_template():
+    """
+    Returns a prefilled .env template based on detection and autoscan.
+    If current AGENT_MODEL path is missing, insert the best local .gguf suggestion.
+    """
+    suggested_model = _suggest_model_path()
+    # If the current env had a path that exists, _suggest_model_path returns it;
+    # otherwise it returns our best scan candidate or default.
+    sample = [
+        f'AGENT_MODEL={suggested_model}',
+        f'LLM_CTX={read_env_var("LLM_CTX","4096")}',
+        f'LLM_THREADS={read_env_var("LLM_THREADS","4")}',
+        f'DOCS_DIR={read_env_var("DOCS_DIR","docs")}',
+        f'PORT={PORT}',
+        '# REQUIRE_RECENT_BENCH=1  # uncomment to enforce fresh bench for readiness',
+        '# BENCH_FRESH_SEC=43200   # 12h freshness window'
+    ]
+    body = "\n".join(sample) + "\n"
+    return Response(body, mimetype="text/plain",
+                    headers={"Content-Disposition": "inline; filename=.env.template"})

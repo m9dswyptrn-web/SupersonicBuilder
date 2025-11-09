@@ -1,0 +1,3 @@
+let catalog = {};
+let catalogReadyResolve;
+const catalogReady = new Promise(res => (catalogReadyResolve = res));

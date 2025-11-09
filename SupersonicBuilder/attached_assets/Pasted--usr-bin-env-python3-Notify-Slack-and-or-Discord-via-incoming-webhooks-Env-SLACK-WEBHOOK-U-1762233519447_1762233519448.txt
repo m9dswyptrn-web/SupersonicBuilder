@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+"""
+Notify Slack and/or Discord via incoming webhooks.
+Env:
+  SLACK_WEBHOOK_URL      (optional)
+  DISCORD_WEBhook_URL    (optional)
+Args:
+  --status   one of: success, failure, warning
+  --title    short title
+  --text     long/markdown text
+  --url      link to release/run
+"""
+from __future__ import annotations
+import json, os, sys, argparse, urllib.request
+
+def post(url: str, payload: dict):
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        r.read()
+
+def slack_color(status: str) -> str:
+    return {"success":"#2eb886", "failure":"#e01e5a", "warning":"#ecb22e"}.get(status, "#439fe0")
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--status", default="success")
+    ap.add_argument("--title", required=True)
+    ap.add_argument("--text", default="")
+    ap.add_argument("--url", default="")
+    args = ap.parse_args()
+
+    slack = os.getenv("SLACK_WEBHOOK_URL", "").strip()
+    disc  = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
+
+    status = args.status.lower()
+    title  = args.title.strip()
+    text   = args.text.strip()
+    url    = args.url.strip()
+
+    if slack:
+        payload = {
+            "attachments":[
+                {
+                    "color": slack_color(status),
+                    "title": title,
+                    "title_link": url or None,
+                    "text": text or "",
+                    "footer": f"Status: {status}",
+                }
+            ]
+        }
+        try: post(slack, payload)
+        except Exception as e: print(f"[slack] WARN: {e}", file=sys.stderr)
+
+    if disc:
+        # Discord simple embed
+        color = {"success":0x2eb886, "failure":0xe01e5a, "warning":0xecb22e}.get(status, 0x439fe0)
+        payload = {
+            "embeds":[
+                {
+                    "title": title,
+                    "url": url or None,
+                    "description": text[:4000],
+                    "color": color
+                }
+            ]
+        }
+        try: post(disc, payload)
+        except Exception as e: print(f"[discord] WARN: {e}", file=sys.stderr)
+
+    if not slack and not disc:
+        print("No webhooks configured (set SLACK_WEBHOOK_URL and/or DISCORD_WEBHOOK_URL).")
+
+if __name__ == "__main__":
+    main()

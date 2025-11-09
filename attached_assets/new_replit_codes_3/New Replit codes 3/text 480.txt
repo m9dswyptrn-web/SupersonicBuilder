@@ -1,0 +1,60 @@
+<script>
+// Render the "Muted until …" line under the beacon
+function renderMuteBanner(mutated){
+  const row = document.getElementById('muteRow');
+  const lbl = document.getElementById('muteStatus');
+  const btn = document.getElementById('muteExtendBtn');
+  if (!row || !lbl || !btn) return;
+
+  if (!mutated || !mutated.muted) {
+    row.style.display = 'none';
+    return;
+  }
+  const now = mutated.server_now || Math.floor(Date.now()/1000);
+  const until = mutated.until_ts || 0;
+  const remaining = Math.max(0, until - now);
+
+  // pretty time string
+  const d = new Date(until * 1000);
+  const hh = String(d.getHours()).padStart(2,'0');
+  const mm = String(d.getMinutes()).padStart(2,'0');
+
+  lbl.textContent = `🔕 Muted until ${hh}:${mm}`;
+  row.style.display = 'flex';
+}
+
+// Poll server mute status (extends your existing tick)
+async function pollMuteBanner(){
+  try {
+    const r = await fetch('/api/mute');
+    const j = await r.json();
+    renderMuteBanner(j);
+  } catch(e) {
+    // if error, hide banner (don’t spam)
+    const row = document.getElementById('muteRow');
+    if (row) row.style.display = 'none';
+  }
+}
+
+// Extend current mute by +10 minutes from the *later* of (now, current until)
+async function extendMute10(){
+  try{
+    // read current server state
+    const r = await fetch('/api/mute'); 
+    const j = await r.json();
+    const now = j.server_now || Math.floor(Date.now()/1000);
+    const base = Math.max(now, j.until_ts || now);
+    const extended = base + (10 * 60);
+
+    // set new until
+    const form = new URLSearchParams({ until_ts: String(extended) });
+    await fetch('/api/mute', { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body: form });
+    showToast('Mute extended +10m');
+    // refresh UI
+    pollMuteBanner();
+    startSnoozeTicker && startSnoozeTicker();
+  }catch(e){
+    showToast('Failed to extend mute');
+  }
+}
+</script>

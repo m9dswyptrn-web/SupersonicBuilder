@@ -1,0 +1,205 @@
+name: Supersonic v4 — Build & Release
+
+on:
+  push:
+    tags: [ "v*" ]        # e.g. v2.4.0
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (optional if you pushed a tag)"
+        required: false
+      draft:
+        description: "Create as draft?"
+        required: false
+        default: "false"
+      prerelease:
+        description: "Mark as prerelease?"
+        required: false
+        default: "false"
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: "3.x"
+  AI_ASSET: "SonicBuilder_Supersonic_Overlays_MEGA_v2.zip"
+  SUP_AUTOPUSH: "1"
+  SUP_ENGINE_MODE: "hybrid"
+  QUIET: "1"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: 📦 Install deps
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; else \
+            pip install watchdog colorama rich requests pyttsx3 playsound semver openai; fi
+
+      - name: 🔐 (Optional) Restore cosign key
+        if: ${{ secrets.SUP_SIGN_KEY_B64 != '' }}
+        run: |
+          echo "${{ secrets.SUP_SIGN_KEY_B64 }}" | base64 -d > cosign.key
+          chmod 600 cosign.key
+
+      - name: 🧪 Preflight doctor
+        run: python3 scripts/doctor.py || true
+
+      - name: 🧠 Smart semver bump
+        env:
+          SUP_AUTOPUSH: ${{ env.SUP_AUTOPUSH }}
+        run: python3 scripts/version_bump.py
+
+      - name: 🏗️ Build (AI summary)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SUP_ENGINE_MODE: ${{ env.SUP_ENGINE_MODE }}
+          QUIET: ${{ env.QUIET }}
+        run: |
+          # Prefer Make if wired, fallback to direct helper
+          if [ -f make/ControlCore.mk ]; then
+            make -f make/ControlCore.mk ai-build || true
+          else
+            python3 helpers/supersonic_core.py build --ai || true
+          fi
+
+      - name: 🔏 Integrity (SHA256 + cosign if key present)
+        run: python3 scripts/integrity.py
+
+      - name: 🧾 SBOM + Security scan (best-effort)
+        run: python3 scripts/sbom_scan.py || true
+
+      - name: 📝 AI Release notes
+        run: python3 scripts/release_notes_ai.py || true
+
+      - name: 📎 Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: supersonic-mega-zip
+          path: ${{ env.AI_ASSET }}
+          if-no-files-found: ignore
+
+      - name: 🔎 Resolve tag & URLs
+        id: meta
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.tag }}"
+          if [ -z "$TAG" ]; then TAG="$(git describe --tags --abbrev=0)"; fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "repo=${{ github.repository }}" >> $GITHUB_OUTPUT
+          echo "release_url=https://github.com/${{ github.repository }}/releases/tag/$TAG" >> $GITHUB_OUTPUT
+          echo "pages_url=https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/$TAG/" >> $GITHUB_OUTPUT
+
+      - name: 🟩 Inject Pages badge (doc polish)
+        if: ${{ hashFiles('docs/README_ControlCore.md') != '' }}
+        run: |
+          sed -i "s#(\\./)#(${{ steps.meta.outputs.pages_url }})#g" docs/README_ControlCore.md || true
+          git add docs/README_ControlCore.md && git commit -m "docs: update Pages badge for ${{ steps.meta.outputs.tag }}" || true
+          git push || true
+
+      - name: 🚀 Create/Update GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG='${{ steps.meta.outputs.tag }}'
+          TITLE="${TAG} (Supersonic v4)"
+          BODY="docs/README_ControlCore.md"
+          [ -f "docs/Supersonic_Overlays_MEGA_v2_ReleaseBody.md" ] && BODY="docs/Supersonic_Overlays_MEGA_v2_ReleaseBody.md"
+          gh release view "$TAG" >/dev/null 2>&1 \
+            && gh release edit "$TAG" --title "$TITLE" --notes-file "$BODY" \
+            || gh release create "$TAG" --title "$TITLE" --notes-file "$BODY"
+          if [ -f "${{ env.AI_ASSET }}" ]; then
+            gh release upload "$TAG" "${{ env.AI_ASSET }}" --clobber
+          fi
+
+      - name: 📦 Normalize artifact filenames for Pages/Diagnostics
+        run: |
+          # Ensure expected names exist (best-effort)
+          test -f AI_RELEASE_NOTES.md || echo "# AI Release Notes" > AI_RELEASE_NOTES.md
+          test -f SHA256SUMS.txt || echo "(checksums will appear here if generated)" > SHA256SUMS.txt
+          # Prefer common scanner output names (whatever exists gets copied)
+          for f in sbom.json syft.json sbom.txt sbom.yaml; do
+            if [ -f "$f" ]; then cp -f "$f" sbom.json; break; fi
+          done
+          for f in trivy.txt pip-audit.txt scan.txt; do
+            if [ -f "$f" ]; then cp -f "$f" scan.txt; break; fi
+          done
+
+      - name: ⬆️ Upload artifacts to the Release (raw files)
+        if: ${{ always() }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG='${{ steps.meta.outputs.tag }}'
+          # Upload if they exist
+          for f in AI_RELEASE_NOTES.md SHA256SUMS.txt sbom.json scan.txt logs/supersonic_changelog.log; do
+            [ -f "$f" ] && gh release upload "$TAG" "$f" --clobber || true
+          done
+          # Optional cosign signature beside ZIP
+          if [ -f "Supersonic_ControlCore_Addons_v4.zip.sig" ]; then
+            gh release upload "$TAG" "Supersonic_ControlCore_Addons_v4.zip.sig" --clobber || true
+          fi
+
+      - name: 🌐 Publish tag assets to GitHub Pages (/<tag>/…)
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          TAG='${{ steps.meta.outputs.tag }}'
+
+          # Prepare a temp workspace for gh-pages update
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Fetch gh-pages or create if missing
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            git fetch origin gh-pages:gh-pages
+            git checkout gh-pages
+          else
+            git checkout --orphan gh-pages
+            rm -rf .
+            echo "<!doctype html><meta charset=utf-8><title>Supersonic Pages</title>Supersonic Pages ready." > index.html
+            git add index.html
+            git commit -m "init gh-pages"
+            git push origin gh-pages
+          fi
+
+          # Make the tag directory and copy artifacts
+          mkdir -p "$TAG/docs" "$TAG/logs"
+          # If your repo already has docs/index.html and docs/index_diagnostics.html, copy them:
+          if [ -f docs/index.html ]; then cp -f docs/index.html "$TAG/docs/index.html"; fi
+          if [ -f docs/index_diagnostics.html ]; then cp -f docs/index_diagnostics.html "$TAG/docs/index_diagnostics.html"; fi
+
+          # Copy build artifacts (best-effort)
+          [ -f AI_RELEASE_NOTES.md ] && cp -f AI_RELEASE_NOTES.md "$TAG/AI_RELEASE_NOTES.md" || true
+          [ -f SHA256SUMS.txt ] && cp -f SHA256SUMS.txt "$TAG/SHA256SUMS.txt" || true
+          [ -f sbom.json ] && cp -f sbom.json "$TAG/sbom.json" || true
+          [ -f scan.txt ] && cp -f scan.txt "$TAG/scan.txt" || true
+          [ -f logs/supersonic_changelog.log ] && cp -f logs/supersonic_changelog.log "$TAG/logs/supersonic_changelog.log" || true
+          [ -f Supersonic_ControlCore_Addons_v4.zip ] && cp -f Supersonic_ControlCore_Addons_v4.zip "$TAG/Supersonic_ControlCore_Addons_v4.zip" || true
+          [ -f Supersonic_ControlCore_Addons_v4.zip.sig ] && cp -f Supersonic_ControlCore_Addons_v4.zip.sig "$TAG/Supersonic_ControlCore_Addons_v4.zip.sig" || true
+
+          # Commit & push gh-pages
+          git add "$TAG"
+          git commit -m "pages: publish assets for $TAG" || true
+          git push origin gh-pages || true
+
+      - name: 🔔 Webhook notify (Discord/Slack)
+        env:
+          SUP_DISCORD_WEBHOOK: ${{ secrets.SUP_DISCORD_WEBHOOK }}
+          SUP_SLACK_WEBHOOK:   ${{ secrets.SUP_SLACK_WEBHOOK }}
+        run: |
+          # Uses logs/supersonic_changelog.log when available
+          python3 scripts/notify_webhooks.py --asset "${{ env.AI_ASSET }}" || true

@@ -1,0 +1,11 @@
+# Runs visible?
+gh run list -L 5
+
+# Last Known Good
+make ai-lastgood
+
+# Voice assets healthy?
+make ai-voicepack-smoke
+
+# Try preview (doesn't change repo)
+make ai-voicepack-preview PACK=commander

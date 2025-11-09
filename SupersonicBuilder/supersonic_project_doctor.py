@@ -1,0 +1,387 @@
+#!/usr/bin/env python3
+"""
+Supersonic Project Doctor
+- Scans repository to detect Flask/FastAPI server, endpoints, templates/static paths
+- Reports findings to docs/PROJECT_DOCTOR_REPORT.{md,json}
+- (Optional) Installs a pre-wired Control Panel page + /panel route (FastAPI or Flask)
+- (Optional) Creates a full ZIP snapshot of the current project
+
+Usage:
+  python3 supersonic_project_doctor.py            # scan only (dry run)
+  python3 supersonic_project_doctor.py --apply-panel
+  python3 supersonic_project_doctor.py --zip
+  python3 supersonic_project_doctor.py --apply-panel --zip
+"""
+
+from __future__ import annotations
+import os, re, sys, json, shutil, zipfile, datetime
+from pathlib import Path
+from typing import Dict, Any, List, Optional
+
+ROOT = Path(os.getcwd())
+DOCS = ROOT / "docs"
+DOCS.mkdir(exist_ok=True)
+
+SKIP_DIRS = {
+    ".git", ".hg", ".svn", ".venv", "venv", "__pycache__", "node_modules", ".mypy_cache",
+    ".pytest_cache", ".ruff_cache", ".idea", ".vscode", "dist", "build", "site-packages"
+}
+
+SERVER_HINTS = (
+    ("fastapi", r"\bfrom\s+fastapi\s+import\b|\bFastAPI\s*\("),
+    ("flask",   r"\bfrom\s+flask\s+import\b|\bFlask\s*\("),
+    ("starlette", r"\bfrom\s+starlette\b|\bStarlette\s*\("),
+)
+
+SYNC_ROUTE_HINTS = (
+    r'@app\.(get|post|put|patch|delete)\(["\']\/sync\/status',
+    r'@app\.(get|post|put|patch|delete)\(["\']\/sync\/restart',
+    r'@app\.(get|post|put|patch|delete)\(["\']\/health["\']',
+)
+
+PORT_HINTS = (
+    r"\bport\s*=\s*(\d{2,5})",
+    r"host\s*=\s*['\"]0\.0\.0\.0['\"].*?[,)]\s*.*?(\d{2,5})",
+    r"uvicorn\.run\([^)]*port\s*=\s*(\d{2,5})",
+    r"app\.run\([^)]*port\s*=\s*(\d{2,5})",
+)
+
+TEMPLATE_HINTS = (
+    r"Jinja2Templates\s*\(\s*directory\s*=\s*['\"](.+?)['\"]\s*\)",
+    r"Flask\([^)]*template_folder\s*=\s*['\"](.+?)['\"]",
+)
+
+STATIC_HINTS = (
+    r"StaticFiles\s*\(\s*directory\s*=\s*['\"](.+?)['\"]\s*\)",
+    r"Flask\([^)]*static_folder\s*=\s*['\"](.+?)['\"]",
+)
+
+PANEL_HTML = """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Supersonic Control Panel</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="doctor-key" content="{{ doctor_key|default('') }}">
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; color:#eaeaea; background:#0f1115; padding:24px; }
+    .card { background:#171a21; border:1px solid #2a2f3a; border-radius:12px; padding:16px; max-width:800px; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; }
+    .btn { appearance:none; border:0; border-radius:10px; padding:10px 14px; cursor:pointer; background:#1e90ff; color:white; font-weight:600; }
+    .btn:disabled{opacity:.6; cursor:not-allowed;}
+    .toast { position: fixed; right:16px; bottom:16px; background:#111; color:#fff; padding:12px 14px; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.35); display:none; z-index:9999; }
+    .toast.show{ display:block; }
+    pre { background:#0b0d11; border:1px solid #232734; padding:12px; border-radius:8px; overflow:auto; }
+  </style>
+</head>
+<body>
+  <h1>Supersonic Control Panel</h1>
+  <div class="card">
+    <div class="row">
+      <button id="btnStatus" class="btn" style="background:#5865f2;">📊 Check Sync Status</button>
+      <button id="btnRestartSync" class="btn">⟳ Restart Sync</button>
+      <button id="btnHealth" class="btn" style="background:#2ea043;">❤️ Health</button>
+    </div>
+    <pre id="out" style="margin-top:14px;"></pre>
+  </div>
+  <div id="syncToast" class="toast" role="status" aria-live="polite"></div>
+<script>
+(function(){
+  const doctorKey = (document.querySelector('meta[name="doctor-key"]')?.content || "").trim();
+  const out = document.getElementById('out');
+  const toast = document.getElementById('syncToast');
+  const H = doctorKey ? {'X-Doctor-Key': doctorKey} : {};
+  function showToast(msg, ms=4200){ toast.textContent = msg; toast.classList.add('show'); setTimeout(()=>toast.classList.remove('show'), ms); }
+  async function call(path, method='GET', body=null){
+    const res = await fetch(path, { method, headers: Object.assign({'Content-Type':'application/json'}, H), body: body?JSON.stringify(body):undefined });
+    let data; try{ data = await res.json(); }catch{ data = {error:'Non-JSON', status: res.status}; }
+    return {ok: res.ok, status: res.status, data};
+  }
+  document.getElementById('btnStatus').onclick = async ()=>{
+    const r = await call('/sync/status');
+    out.textContent = JSON.stringify(r.data, null, 2);
+    showToast(r.ok ? '✅ Status loaded' : '⚠️ Status error');
+  };
+  document.getElementById('btnRestartSync').onclick = async (e)=>{
+    e.target.disabled = true;
+    try{
+      const r = await call('/sync/restart','POST');
+      out.textContent = JSON.stringify(r.data, null, 2);
+      showToast(r.ok && !r.data.error ? '✅ Sync restarted' : '⚠️ Restart failed');
+    }finally{ e.target.disabled = false; }
+  };
+  document.getElementById('btnHealth').onclick = async ()=>{
+    const r = await call('/health');
+    out.textContent = JSON.stringify(r.data, null, 2);
+    showToast(r.ok?'✅ Health ok':'⚠️ Health error');
+  };
+})();
+</script>
+</body></html>
+"""
+
+FASTAPI_PATCH = r"""
+# --- Supersonic Control Panel (/panel) ---
+try:
+    import os
+    from fastapi import Request
+    from fastapi.responses import HTMLResponse
+    from fastapi.templating import Jinja2Templates
+    from fastapi.staticfiles import StaticFiles
+    _SUP_tpl_dir = os.getenv("TEMPLATES_DIR", "templates")
+    if not any(isinstance(r, StaticFiles) for r in getattr(app, 'routes', [])):
+        app.mount("/static", StaticFiles(directory=os.getenv("STATIC_DIR", "static")), name="static")
+    _SUP_templates = Jinja2Templates(directory=_SUP_tpl_dir)
+    @app.get("/panel", response_class=HTMLResponse)
+    def _supersonic_panel(request: Request):
+        return _SUP_templates.TemplateResponse("panel.html", {"request": request, "doctor_key": os.getenv("DOCTOR_KEY","")})
+except Exception as _e:
+    print("[Supersonic] /panel route install skipped:", _e)
+# --- /end Supersonic Control Panel ---
+"""
+
+FLASK_PATCH = r"""
+# --- Supersonic Control Panel (/panel) ---
+try:
+    import os
+    from flask import render_template
+    @app.route("/panel")
+    def _supersonic_panel():
+        return render_template("panel.html", doctor_key=os.getenv("DOCTOR_KEY",""))
+except Exception as _e:
+    print("[Supersonic] /panel route install skipped:", _e)
+# --- /end Supersonic Control Panel ---
+"""
+
+def walk_files() -> List[Path]:
+    files: List[Path] = []
+    for p, ds, fs in os.walk(ROOT):
+        rel = Path(p).relative_to(ROOT)
+        if any(part in SKIP_DIRS for part in rel.parts):
+            ds[:] = []
+            continue
+        for f in fs:
+            files.append(Path(p) / f)
+    return files
+
+def read_text_safe(p: Path) -> str:
+    try:
+        return p.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return ""
+
+def detect_stack(files: List[Path]) -> Dict[str, Any]:
+    score = {"fastapi": 0, "flask": 0, "starlette": 0}
+    py_files = [f for f in files if f.suffix == ".py"]
+    hits: Dict[str, List[str]] = {k: [] for k, _ in SERVER_HINTS}
+    for f in py_files:
+        t = read_text_safe(f)
+        for label, rx in SERVER_HINTS:
+            if re.search(rx, t):
+                score[label] += 1
+                hits[label].append(str(f.relative_to(ROOT)))
+    server_candidates = []
+    for f in py_files:
+        t = read_text_safe(f)
+        if re.search(r"\bapp\s*=\s*FastAPI\s*\(|\bapp\s*=\s*Flask\s*\(", t) or "uvicorn.run(" in t or "app.run(" in t:
+            server_candidates.append(f)
+    server_file = min(server_candidates, key=lambda p: len(str(p))) if server_candidates else (py_files[0] if py_files else None)
+
+    return {
+        "score": score,
+        "hits": hits,
+        "server_file": str(server_file.relative_to(ROOT)) if server_file else None,
+    }
+
+def find_first_match(files: List[Path], patterns: tuple[str, ...]) -> List[str]:
+    found: List[str] = []
+    for f in files:
+        t = read_text_safe(f)
+        for rx in patterns:
+            if re.search(rx, t):
+                found.append(str(f.relative_to(ROOT)))
+                break
+    return found
+
+def extract_first_value(text: str, patterns: tuple[str, ...]) -> Optional[str]:
+    for rx in patterns:
+        m = re.search(rx, text)
+        if m:
+            if m.groups():
+                return m.group(1)
+            return m.group(0)
+    return None
+
+def guess_template_static(files: List[Path], server_file: Optional[str]) -> Dict[str, str | None]:
+    templates = None
+    static = None
+    for f in files:
+        if f.suffix != ".py":
+            continue
+        t = read_text_safe(f)
+        if not templates:
+            m = re.search(TEMPLATE_HINTS[0], t) or re.search(TEMPLATE_HINTS[1], t)
+            if m:
+                templates = m.group(1)
+        if not static:
+            m = re.search(STATIC_HINTS[0], t) or re.search(STATIC_HINTS[1], t)
+            if m:
+                static = m.group(1)
+    if not templates:
+        if (ROOT / "templates").exists(): templates = "templates"
+    if not static:
+        if (ROOT / "static").exists(): static = "static"
+    return {"templates_dir": templates, "static_dir": static}
+
+def detect_port(server_path: Optional[str]) -> Optional[str]:
+    if not server_path: return None
+    t = read_text_safe(ROOT / server_path)
+    return extract_first_value(t, PORT_HINTS)
+
+def detect_sync_endpoints(files: List[Path]) -> Dict[str, Any]:
+    owners = []
+    for f in files:
+        t = read_text_safe(f)
+        for rx in SYNC_ROUTE_HINTS:
+            if re.search(rx, t):
+                owners.append(str(f.relative_to(ROOT)))
+                break
+    return {"has_sync_routes": bool(owners), "files": owners}
+
+def write_report(data: Dict[str, Any]) -> Dict[str, str]:
+    ts = datetime.datetime.now().isoformat(timespec="seconds")
+    jpath = DOCS / "PROJECT_DOCTOR_REPORT.json"
+    mpath = DOCS / "PROJECT_DOCTOR_REPORT.md"
+    data_out = dict(data)
+    data_out["timestamp"] = ts
+    jpath.write_text(json.dumps(data_out, indent=2), encoding="utf-8")
+
+    lines = []
+    lines.append(f"# Project Doctor Report\n")
+    lines.append(f"- Generated: `{ts}`")
+    lines.append(f"- Root: `{ROOT}`\n")
+    lines.append("## Stack detection")
+    lines.append("```json")
+    lines.append(json.dumps(data["stack"], indent=2))
+    lines.append("```\n")
+    lines.append("## Server")
+    lines.append(f"- server_file: `{data['server_file'] or 'not found'}`")
+    lines.append(f"- port_guess: `{data['port'] or 'unknown'}`\n")
+    lines.append("## Templates/Static")
+    lines.append(f"- templates_dir: `{data['templates']['templates_dir'] or 'not found'}`")
+    lines.append(f"- static_dir: `{data['templates']['static_dir'] or 'not found'}`\n")
+    lines.append("## Sync endpoints")
+    lines.append(f"- present: `{data['sync']['has_sync_routes']}`")
+    if data['sync']['files']:
+        for f in data['sync']['files']:
+            lines.append(f"  - {f}")
+    lines.append("\n## Recommendations")
+    for r in data["recommendations"]:
+        lines.append(f"- {r}")
+    mpath.write_text("\n".join(lines), encoding="utf-8")
+    return {"json": str(jpath), "md": str(mpath)}
+
+def backup_file(path: Path) -> Path:
+    target = path.with_suffix(path.suffix + f".bak.{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}")
+    shutil.copy2(path, target)
+    return target
+
+def ensure_panel(templates_dir: str) -> Path:
+    tdir = ROOT / templates_dir
+    tdir.mkdir(parents=True, exist_ok=True)
+    p = tdir / "panel.html"
+    if not p.exists():
+        p.write_text(PANEL_HTML, encoding="utf-8")
+    return p
+
+def apply_panel_route(server_file: str, is_fastapi: bool) -> Dict[str, str]:
+    sf = ROOT / server_file
+    assert sf.exists(), f"server file missing: {sf}"
+    backup = str(backup_file(sf))
+    text = read_text_safe(sf)
+    patch = FASTAPI_PATCH if is_fastapi else FLASK_PATCH
+    if "/panel" in text and "Supersonic Control Panel" in text:
+        status = "Already present; no changes"
+    else:
+        text = text.rstrip() + "\n\n" + patch + "\n"
+        sf.write_text(text, encoding="utf-8")
+        status = "Patched"
+    return {"server_file": server_file, "backup": backup, "status": status}
+
+def make_snapshot_zip() -> str:
+    name = f"Supersonic_FULL_SNAPSHOT_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    zpath = ROOT / name
+    with zipfile.ZipFile(zpath, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        for p in walk_files():
+            rel = p.relative_to(ROOT)
+            if any(part in SKIP_DIRS for part in rel.parts):
+                continue
+            z.write(p, rel)
+    return str(zpath)
+
+def main():
+    import argparse
+    ap = argparse.ArgumentParser(description="Supersonic Project Doctor")
+    ap.add_argument("--apply-panel", action="store_true", help="Install Control Panel template and /panel route (backup server file)")
+    ap.add_argument("--zip", action="store_true", help="Create a full snapshot zip of the current project")
+    args = ap.parse_args()
+
+    files = walk_files()
+    stack = detect_stack(files)
+    server_file = stack.get("server_file")
+    templates_info = guess_template_static(files, server_file)
+    port_guess = detect_port(server_file)
+    sync_info = detect_sync_endpoints(files)
+
+    likely = max(stack["score"], key=lambda k: stack["score"][k]) if stack["score"] else "unknown"
+    is_fastapi = likely == "fastapi" or ("fastapi" in stack["hits"] and stack["score"]["fastapi"] >= stack["score"].get("flask", 0))
+    is_flask = likely == "flask" or ("flask" in stack["hits"] and stack["score"]["flask"] >= stack["score"].get("fastapi", 0))
+
+    recs = []
+    if not server_file:
+        recs.append("Could not confidently detect a server file. Tell me which file runs your app (e.g., main.py).")
+    else:
+        recs.append(f"Server detected: {server_file} ({'FastAPI' if is_fastapi else 'Flask' if is_flask else 'Unknown'})")
+    if not templates_info["templates_dir"]:
+        recs.append("No templates dir found; will create `templates/` if you apply.")
+    if not templates_info["static_dir"]:
+        recs.append("No static dir found; optional but recommended: `static/`.")
+    if not sync_info["has_sync_routes"]:
+        recs.append("No /sync endpoints detected. Control Panel will still work for /health; add /sync/status and /sync/restart later.")
+    if not os.getenv("DOCTOR_KEY"):
+        recs.append("Set a secret DOCTOR_KEY in Replit → Secrets (optional but recommended).")
+
+    data = {
+        "stack": stack,
+        "server_file": server_file,
+        "templates": templates_info,
+        "port": port_guess,
+        "sync": sync_info,
+        "recommendations": recs,
+    }
+    paths = write_report(data)
+
+    print("✓ Scan complete.")
+    print("  Report:", paths["md"])
+    print("         ", paths["json"])
+
+    if args.apply_panel:
+        if not server_file:
+            print("! Cannot apply panel; server file not detected. Open docs/PROJECT_DOCTOR_REPORT.md and tell me your server file.")
+            sys.exit(2)
+        tdir = templates_info["templates_dir"] or "templates"
+        panel_path = ensure_panel(tdir)
+        result = apply_panel_route(server_file, is_fastapi=is_fastapi and not is_flask)
+        print(f"✓ Panel HTML: {panel_path}")
+        print(f"✓ Route patch: {result['status']} (backup: {result['backup']})")
+        envfile = ROOT / "ENV.example"
+        if not envfile.exists():
+            envfile.write_text("DOCTOR_KEY=change-me\n", encoding="utf-8")
+        print("i If you haven't yet, set DOCTOR_KEY in Replit → Secrets.")
+
+    if args.zip:
+        z = make_snapshot_zip()
+        print(f"✓ Snapshot created: {z}")
+
+if __name__ == "__main__":
+    main()

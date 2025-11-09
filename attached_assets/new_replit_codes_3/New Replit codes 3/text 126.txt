@@ -1,0 +1,12 @@
+window.SonicDiagramPicker = Object.assign({}, window.SonicDiagramPicker, {
+  async reloadCatalogNow() {
+    // Clear cache, re-run load, and repopulate dependent selects safely
+    clearCatalogCache();
+    await loadCatalog();
+    // Nudge downstream select chains if a make was chosen before
+    const makeSel = document.getElementById("dp-make");
+    if (makeSel && makeSel.value) {
+      makeSel.dispatchEvent(new Event("change"));
+    }
+  }
+});

@@ -1,0 +1,37 @@
+<script>
+async function runFullCheck(){
+  try{
+    const r = await fetch('/api/env/test');
+    const j = await r.json();
+    const ok = !!j.ok;
+
+    // Build a friendly readout for the modal
+    const head = `<p><b>Result:</b> ${ok ? '✅ OK' : '❌ Issues detected'}</p>`;
+    const list = (arr, title) => (arr && arr.length)
+      ? `<p><b>${title}</b><br><ul>` + arr.map(x=>`<li>${x}</li>`).join('') + `</ul></p>` : '';
+
+    const bench = j.bench || {};
+    const benchRow = `
+      <p><b>Bench</b><br>
+      required=${bench.required ? 'true':'false'} ·
+      have_bench=${bench.have_bench ? 'true':'false'} ·
+      bench_ok=${bench.bench_ok ? 'true':'false'} ·
+      fresh_sec=${bench.fresh_sec}${bench.bench_age_sec!=null ? ' · bench_age_sec='+bench.bench_age_sec : ''}</p>
+    `;
+
+    const body = `
+      ${head}
+      <p><b>Backend:</b> ${j.backend || 'unknown'}</p>
+      ${benchRow}
+      ${list(j.issues, 'Issues')}
+      ${list(j.suggestions, 'Suggestions')}
+      ${list(j.notes, 'Notes')}
+    `;
+    // Show with raw JSON for copyability
+    openModal('Full System Check', body, j);
+  }catch(e){
+    console.warn('runFullCheck error', e);
+    showToast('Full System Check failed');
+  }
+}
+</script>

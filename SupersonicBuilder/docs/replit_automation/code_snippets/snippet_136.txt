@@ -1,0 +1,3 @@
+window.SonicDiagramPicker = Object.assign({}, window.SonicDiagramPicker, {
+  getTTLms: () => CATALOG_TTL_MS
+});

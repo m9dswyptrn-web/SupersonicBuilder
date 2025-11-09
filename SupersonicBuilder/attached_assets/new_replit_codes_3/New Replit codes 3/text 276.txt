@@ -1,0 +1,4 @@
+# terminal 1
+python scripts/run_offline_llm.py
+# terminal 2
+npm run tauri:dev

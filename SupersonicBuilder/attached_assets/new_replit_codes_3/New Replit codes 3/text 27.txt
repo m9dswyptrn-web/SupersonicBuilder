@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+VER="4.6.82"  # known-stable
+DEST="static/vendor/pdfjs"
+mkdir -p "$DEST"
+curl -sSL "https://unpkg.com/pdfjs-dist@${VER}/build/pdf.min.js"           -o "$DEST/pdf.min.js"
+curl -sSL "https://unpkg.com/pdfjs-dist@${VER}/build/pdf.worker.min.js"    -o "$DEST/pdf.worker.min.js"
+# Optional viewer assets (icons/css) – we’ll do a lightweight custom UI instead, so not needed.
+echo "PDF.js ${VER} vendored into ${DEST}/"

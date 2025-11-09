@@ -1,0 +1,68 @@
+<script>
+// ---- persisted settings ----
+const LS_KEY = 'supersonic.settings.v1';
+let SETTINGS = {
+  sound: true,
+  voice: true,
+  autoSpeakOnReady: true,
+};
+
+function loadSettings(){
+  try{
+    const s = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    SETTINGS = { ...SETTINGS, ...s };
+  }catch(e){}
+}
+function saveSettings(){
+  localStorage.setItem(LS_KEY, JSON.stringify(SETTINGS));
+}
+function applySettingsToUI(){
+  const m = document.getElementById('settingsMenu');
+  if(!m) return;
+  const $ = (id)=> m.querySelector('#'+id);
+  $('#optSound').checked = !!SETTINGS.sound;
+  $('#optVoice').checked = !!SETTINGS.voice;
+  $('#optAutoSpeak').checked = !!SETTINGS.autoSpeakOnReady;
+}
+function applySettingsToRuntime(){
+  // Bridge these to your existing globals the beacon logic uses
+  window.SOUND_CUES = !!SETTINGS.sound;
+  window.VOICE_CUES = !!SETTINGS.voice;
+}
+
+// ---- dropdown plumbing ----
+function toggleSettings(){
+  const el = document.getElementById('settingsMenu');
+  if(!el) return;
+  el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
+}
+document.addEventListener('click', (e)=>{
+  const menu = document.getElementById('settingsMenu');
+  const btn  = document.getElementById('settingsBtn');
+  if(!menu || !btn) return;
+  if(menu.style.display !== 'block') return;
+  if(!menu.contains(e.target) && e.target !== btn){
+    menu.style.display = 'none';
+  }
+});
+
+// ---- wire checkboxes ----
+function initSettingsBindings(){
+  const m = document.getElementById('settingsMenu');
+  if(!m) return;
+  m.querySelector('#optSound').addEventListener('change', (e)=>{ SETTINGS.sound = e.target.checked; saveSettings(); applySettingsToRuntime(); showToast('Sound cues ' + (SETTINGS.sound?'on':'off')); });
+  m.querySelector('#optVoice').addEventListener('change', (e)=>{ SETTINGS.voice = e.target.checked; saveSettings(); applySettingsToRuntime(); showToast('Voice cues ' + (SETTINGS.voice?'on':'off')); });
+  m.querySelector('#optAutoSpeak').addEventListener('change', (e)=>{ SETTINGS.autoSpeakOnReady = e.target.checked; saveSettings(); showToast('Auto-speak ' + (SETTINGS.autoSpeakOnReady?'on':'off')); });
+}
+
+function testCues(){
+  if (SETTINGS.sound) fetch('/api/status/sound?ok=1', {method:'POST'});
+  if (SETTINGS.voice) fetch('/api/status/speak', {method:'POST'});
+}
+
+// Boot settings
+loadSettings();
+applySettingsToUI();
+applySettingsToRuntime();
+setTimeout(initSettingsBindings, 0);
+</script>

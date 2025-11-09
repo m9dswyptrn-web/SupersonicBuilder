@@ -1,0 +1,19 @@
+  const runHtml = {};
+  for (const a of keep) {
+    if (a.workflow_run && a.workflow_run.id) {
+      runHtml[a.workflow_run.id] = `https://github.com/${OWNER}/${REPO}/actions/runs/${a.workflow_run.id}`;
+    }
+  }
+
+  for (const a of keep) {
+    const size = fmtBytes(a.size_in_bytes);
+    const when = timeAgo(a.created_at);
+    const label = `${a.name} • ${size} • ${when}`;
+    const href = (a.workflow_run && runHtml[a.workflow_run.id]) || `https://github.com/${OWNER}/${REPO}/actions`;
+    const suffix = TOKEN ? "download" : "open run";
+    elArt.appendChild(card(href, "📦 " + a.name, label, suffix));
+  }
+} catch (e) {
+  elArt.innerHTML = "<div class='muted'>Failed to load artifacts.</div>";
+  console.error(e);
+}

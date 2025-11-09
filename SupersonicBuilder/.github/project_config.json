@@ -1,0 +1,16 @@
+{
+  "project_url": "https://github.com/orgs/<YOUR_ORG>/projects/<PROJECT_NUMBER>",
+  "status_field": "Status",
+  "label_to_status": {
+    "feature": "Backlog",
+    "bug": "Backlog",
+    "good first issue": "Backlog",
+    "build": "In Progress",
+    "chore": "In Progress",
+    "docs": "In Progress",
+    "ready for review": "Review",
+    "needs review": "Review",
+    "done": "Done"
+  },
+  "default_status": "Backlog"
+}

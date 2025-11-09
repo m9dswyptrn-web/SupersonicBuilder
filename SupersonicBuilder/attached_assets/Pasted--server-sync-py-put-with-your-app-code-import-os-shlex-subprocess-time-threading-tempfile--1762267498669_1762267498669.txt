@@ -1,0 +1,79 @@
+# server_sync.py  (put with your app code)
+import os, shlex, subprocess, time, threading, tempfile, json
+from pathlib import Path
+from fastapi import FastAPI, Request
+from pydantic import BaseModel
+
+app: FastAPI  # reuse your existing FastAPI instance
+
+SYNC_MIN_INTERVAL_SEC = int(os.environ.get("SYNC_MIN_INTERVAL_SEC", "120"))
+SYNC_CMD = "make sync-once"
+SYNC_WORKDIR = os.path.dirname(__file__)
+
+_lock = threading.Lock()
+_last_run_path = Path(tempfile.gettempdir()) / "sonic_sync_last_run.json"
+_running = False
+
+class SyncResp(BaseModel):
+    ok: bool
+    message: str
+    code: int | None = None
+    stdout: str | None = None
+    stderr: str | None = None
+    next_allowed_in_sec: int | None = None
+    running: bool | None = None
+
+def _load_last():
+    if _last_run_path.exists():
+        try:
+            return json.loads(_last_run_path.read_text())
+        except Exception:
+            return {}
+    return {}
+
+def _save_last(payload: dict):
+    try:
+        _last_run_path.write_text(json.dumps(payload))
+    except Exception:
+        pass
+
+def _seconds_since(ts: float) -> int:
+    return int(time.time() - ts)
+
+@app.post("/sync-trigger")  # <-- your button posts here (no API key exposed)
+def sync_trigger(_: Request) -> SyncResp:
+    global _running
+    with _lock:
+        last = _load_last()
+        last_ts = float(last.get("ts", 0))
+        since = _seconds_since(last_ts) if last_ts else SYNC_MIN_INTERVAL_SEC + 1
+        if _running:
+            # Already running – tell client to chill
+            return SyncResp(
+                ok=True, message="Sync already running",
+                running=True, next_allowed_in_sec=max(0, SYNC_MIN_INTERVAL_SEC - since)
+            )
+        if since < SYNC_MIN_INTERVAL_SEC:
+            return SyncResp(
+                ok=False, message="Rate limited",
+                next_allowed_in_sec=SYNC_MIN_INTERVAL_SEC - since
+            )
+        _running = True
+
+    # Run outside lock
+    try:
+        r = subprocess.run(
+            shlex.split(SYNC_CMD),
+            cwd=SYNC_WORKDIR, capture_output=True, text=True, timeout=900
+        )
+        ok = (r.returncode == 0)
+        tail = 4000
+        resp = SyncResp(
+            ok=ok, message=("Sync ok" if ok else "Sync failed"),
+            code=r.returncode, stdout=r.stdout[-tail:], stderr=r.stderr[-tail:]
+        )
+        return resp
+    finally:
+        with _lock:
+            _running = False
+            _save_last({"ts": time.time()})

@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+# Creates an offline-first + cloud-ready scaffold: agent (RAG+skills), local web UI (Flask),
+# optional cloud boost (FastAPI), and runner scripts. Idempotent – safe to re-run.
+
+from pathlib import Path
+import textwrap, os, stat
+
+ROOT = Path(__file__).resolve().parent
+
+def write(path: Path, content: str, executable=False, exist_ok=True):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and not exist_ok:
+        return
+    path.write_text(content.strip()+"\n", encoding="utf-8")
+    if executable:
+        mode = path.stat().st_mode
+        path.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    print(f"→ wrote {path}")
+
+# ---------- Common ----------
+ENV_SAMPLE = """
+# ====== App Mode ======
+APP_MODE=offline          # offline | online
+PORT=7860                 # local web UI port
+# ====== Agent ======
+AGENT_MODEL=gguf/llama-3.1-8b-q4_0.gguf   # path or friendly name
+EMBED_MODEL=bge-small                     # embedding model id or local path
+MEMORY_DIR=agent/memory
+SKILLS_DIR=agent/skills
+DOCS_DIR=docs
+# ====== Cloud Assist (optional) ======
+CLOUD_URL=http://127.0.0.1:8008
+CLOUD_API_KEY=changeme
+"""
+
+ROOT_README = """
+# Supersonic App Scaffold
+
+This repo contains:
+- **agent/**: Offline Tech Agent (RAG + SkillPacks + memory)
+- **desktop/webui/**: Local Flask UI (offline)
+- **cloud/fastapi_stub/**: Optional Online Assist API (heavy ops)
+- **scripts/**: One-liners to run local UI or cloud
+
+## Quickstart (offline)
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r agent/requirements.txt -r desktop/webui/requirements.txt
+cp .env.sample .env
+python scripts/run_offline.py
+# open http://127.0.0.1:7860

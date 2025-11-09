@@ -1,0 +1,31 @@
+<script>
+function _headerPills(){
+  // all action buttons in the header bar
+  return Array.from(document.querySelectorAll('.bar .pill'));
+}
+
+// disable/enable header actions; optionally leave one enabled (by element id)
+function setHeaderPillsDisabled(disabled, exceptId=null){
+  const pills = _headerPills();
+  for (const el of pills){
+    if (exceptId && el.id === exceptId) continue;
+    if (disabled){
+      el.setAttribute('disabled','disabled');
+      el.setAttribute('aria-busy','true');
+    }else{
+      el.removeAttribute('disabled');
+      el.setAttribute('aria-busy','false');
+    }
+  }
+}
+
+// Wrap an async action with header lock (keeps one button usable if desired)
+async function withHeaderLock(taskFn, exceptId=null){
+  setHeaderPillsDisabled(true, exceptId);
+  try{
+    return await taskFn();
+  } finally {
+    setHeaderPillsDisabled(false);
+  }
+}
+</script>

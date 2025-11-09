@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+# tools/field_cards.py
+import sys, math, textwrap, yaml
+from pathlib import Path
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import inch
+from reportlab.lib.colors import Color, black, white
+
+ROOT = Path(__file__).resolve().parents[1]
+
+def wrap_lines(txt, width):
+    lines = []
+    for para in (txt or "").split("\n"):
+        if not para.strip():
+            lines.append("")
+            continue
+        lines += textwrap.wrap(para, width=width)
+    return lines
+
+def draw_card(c, x, y, w, h, theme, heading, bullets, notes, warn, footer):
+    # Theme
+    if theme == "dark":
+        bg = Color(0.08,0.08,0.10)
+        fg = white
+        panel = Color(0.14,0.14,0.18)
+        accent = Color(0.55,0.75,1.0)
+        warn_fg = Color(1,0.85,0.30)
+    else:
+        bg = white; fg = black; panel = Color(0.93,0.93,0.96)
+        accent = Color(0.1,0.2,0.7)
+        warn_fg = Color(0.75,0.4,0.0)
+
+    # Card background
+    c.setFillColor(bg); c.setStrokeColor(bg); c.rect(x, y, w, h, fill=1, stroke=0)
+
+    pad = 0.35*inch
+    c.setFillColor(panel); c.roundRect(x+8, y+8, w-16, h-16, 12, fill=1, stroke=0)
+
+    # Heading bar
+    c.setFillColor(accent)
+    c.roundRect(x+8, y+h-36, w-16, 28, 10, fill=1, stroke=0)
+    c.setFillColor(bg if theme=="light" else black)
+    # subtle shadow
+    c.setFillColor(white if theme=="light" else bg)
+
+    # Heading text
+    c.setFillColor(white if theme=="dark" else white)
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(x+pad-0.1*inch, y+h-28, heading)
+
+    # Content
+    c.setFillColor(white if theme=="dark" else black)
+    text_x = x+pad-0.05*inch
+    line_y = y+h-56
+
+    c.setFont("Helvetica", 11)
+    for b in bullets or []:
+        c.circle(text_x-6, line_y+3, 1.5, stroke=0, fill=1)
+        for ln in wrap_lines(b, 44):
+            c.drawString(text_x, line_y, ln)
+            line_y -= 14
+        line_y -= 3
+
+    if notes:
+        line_y -= 6
+        c.setFont("Helvetica-Oblique", 10)
+        for ln in wrap_lines(f"Notes: {notes}", 52):
+            c.drawString(text_x, line_y, ln)
+            line_y -= 13
+
+    if warn:
+        line_y -= 6
+        c.setFillColor(warn_fg)
+        c.setFont("Helvetica-Bold", 10.5)
+        for ln in wrap_lines(f"⚠ {warn}", 50):
+            c.drawString(text_x, line_y, ln)
+            line_y -= 13
+        c.setFillColor(white if theme=="dark" else black)
+
+    # Footer
+    c.setFont("Helvetica", 8.5)
+    c.setFillColor(Color(0.75,0.75,0.78) if theme=="dark" else Color(0.35,0.35,0.38))
+    c.drawRightString(x+w-0.35*inch, y+0.25*inch, footer)
+
+def render(yaml_path: Path, out_pdf: Path, theme: str, tag: str):
+    cfg = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+    title = cfg.get("title","Field Cards")
+    cards = cfg.get("cards", [])
+    c = canvas.Canvas(str(out_pdf), pagesize=letter)
+    W, H = letter
+
+    # Two 5.5x8.5 areas per page (portrait)
+    card_w = (W - 0.9*inch) / 2
+    card_h = H - 1.0*inch
+    left_x  = 0.45*inch
+    right_x = left_x + card_w + 0.0*inch
+    base_y  = 0.5*inch
+
+    for i, card in enumerate(cards):
+        if i % 2 == 0:
+            # new page background
+            if theme == "dark":
+                c.setFillColor(Color(0.06,0.06,0.08)); c.rect(0,0,W,H,fill=1,stroke=0)
+            else:
+                c.setFillColor(white); c.rect(0,0,W,H,fill=1,stroke=0)
+
+            # header
+            c.setFillColor(white if theme=="dark" else black)
+            c.setFont("Helvetica-Bold", 16)
+            c.drawString(0.6*inch, H-0.6*inch, f"{title} — {tag}")
+
+        pos_x = left_x if (i % 2 == 0) else right_x
+        draw_card(
+            c, pos_x, base_y, card_w, card_h, theme,
+            card.get("heading","(Untitled)"),
+            card.get("bullets", []),
+            card.get("notes",""),
+            card.get("warn",""),
+            footer=f"{cfg.get('subtitle','')}   •   Card {i+1}/{len(cards)}"
+        )
+
+        if i % 2 == 1 or i == len(cards)-1:
+            # center cut guide
+            c.setDash(2,4)
+            c.setStrokeColor(Color(0.5,0.5,0.5, alpha=0.35))
+            c.line(W/2, 0.5*inch, W/2, H-0.5*inch)
+            c.setDash(1,0)
+            c.showPage()
+    c.save()
+
+def main():
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument("--theme", choices=["dark","light"], default="dark")
+    p.add_argument("--tag", required=True)
+    p.add_argument("--yaml", default=str(ROOT/"tools/cards.yaml"))
+    p.add_argument("--out",  default="")
+    a = p.parse_args()
+
+    ypath = Path(a.yaml)
+    if not ypath.exists():
+        sys.exit(f"Missing YAML: {ypath}")
+
+    out = Path(a.out) if a.out else ROOT/"dist"/f"Field_Cards_{a.theme}_{a.tag}.pdf"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    render(ypath, out, a.theme, a.tag)
+    print(f"✅ wrote {out}")
+
+if __name__ == "__main__":
+    main()

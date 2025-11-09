@@ -1,0 +1,20 @@
+<script>
+async function runBench(){
+  await withHeaderLock(async () => {
+    await fetch('/api/bench', {method:'POST'});
+    await loadBench();
+    await refreshReady();
+    showToast('Bench complete');
+  });
+}
+
+async function pingAll(){
+  await withHeaderLock(async () => {
+    const r = await fetch('/api/pingall', {method:'POST'});
+    const j = await r.json();
+    await loadBench();
+    await refreshReady();
+    showToast(j.ok ? 'Ping All OK' : ('Ping All: ' + (j.reason || 'error')));
+  });
+}
+</script>

@@ -1,0 +1,8 @@
+# default (runs scripts/run_offline_llm.py)
+python supervisor.py
+
+# or run any command:
+python supervisor.py -- python scripts/run_offline_llm.py --some-flag
+
+# or a module:
+python supervisor.py -m scripts.run_offline_llm

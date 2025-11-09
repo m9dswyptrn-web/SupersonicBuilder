@@ -1,0 +1,3 @@
+AGENT_MODEL=/absolute/path/to/your.gguf
+LLM_THREADS=6
+LLM_CTX=4096

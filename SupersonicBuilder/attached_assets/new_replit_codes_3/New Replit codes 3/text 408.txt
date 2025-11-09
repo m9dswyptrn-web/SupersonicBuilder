@@ -1,0 +1,31 @@
+<script>
+async function fixReady(){
+  // Use the latest values the UI already fetched
+  const rz = _lastReady || {};
+  const did = [];
+
+  try{
+    // 1) If a fresh bench is required and it's stale, run it now
+    if (rz.require_recent_bench && !rz.bench_ok) {
+      await fetch('/api/bench', { method: 'POST' });
+      did.push('ran benchmark');
+    }
+
+    // 2) If model isn't ready, open a .env template in a new tab
+    //    so you can save it as .env (safe, no silent writes).
+    if (!rz.model_ready) {
+      window.open('/api/env/template', '_blank');
+      did.push('opened .env template');
+    }
+
+    // 3) Refresh the UI
+    await loadBench();
+    await refreshReady();
+
+    showToast(did.length ? `Fixed: ${did.join(', ')}` : 'Nothing to fix right now');
+  } catch (e) {
+    console.warn('fixReady error', e);
+    showToast('Fix failed');
+  }
+}
+</script>

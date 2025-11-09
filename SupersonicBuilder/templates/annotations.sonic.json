@@ -1,0 +1,33 @@
+
+{
+  "annotations": [
+    { "type": "arrow",
+      "from_x": 0.18, "from_y": 0.62,
+      "to_x":   0.11, "to_y":   0.80,
+      "label": "GMLAN Low (Green)",
+      "arrow_size": 9, "label_dx": 8, "label_dy": 4
+    },
+    { "type": "box",
+      "x": 0.76, "y": 0.66, "w": 140, "h": 20,
+      "label": "Reverse Trigger"
+    },
+    { "type": "arrow",
+      "from_x": 0.62, "from_y": 0.72,
+      "to_x":   0.58, "to_y":   0.74,
+      "label": "Mic shield (silver/black)"
+    },
+    { "type": "label",
+      "x": 0.25, "y": 0.30,
+      "label": "RCA Front L/R from DSP"
+    },
+    { "type": "arrow",
+      "from_x": 0.74, "from_y": 0.22,
+      "to_x":   0.82, "to_y":   0.18,
+      "label": "+12V Camera (fused 1A)"
+    },
+    { "type": "box",
+      "x": 0.18, "y": 0.16, "w": 160, "h": 20,
+      "label": "Trigger/Ground Star Point"
+    }
+  ]
+}

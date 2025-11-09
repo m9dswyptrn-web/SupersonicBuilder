@@ -1,0 +1,3 @@
+[selMake, selModel, selYear, selDiag, selVar, selFmt].forEach(el => {
+  el?.addEventListener("change", () => { forgetState(); });
+});

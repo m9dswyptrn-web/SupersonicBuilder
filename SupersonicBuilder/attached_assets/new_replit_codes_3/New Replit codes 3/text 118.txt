@@ -1,0 +1,4 @@
+// Default
+persistLast: true,
+// settingsFromUI
+persistLast: !!el.persistLast.checked,

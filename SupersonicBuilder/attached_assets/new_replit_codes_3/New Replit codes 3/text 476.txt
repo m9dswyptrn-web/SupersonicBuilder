@@ -1,0 +1,21 @@
+async function snoozeUntil(){
+  const inp = document.getElementById('optSnoozeUntil');
+  if(!inp || !inp.value){ showToast('Pick a time first'); return; }
+  // Convert local datetime-local to ISO for server
+  const local = new Date(inp.value);
+  const iso = local.toISOString();
+  try{
+    await fetch('/api/mute', {
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({ until_iso: iso })
+    });
+    const sw = document.getElementById('optMuteSwitch');
+    if (sw) sw.checked = true;
+    SETTINGS.muteSwitch = true; saveSettings();
+    showToast('Muted until set time');
+    startSnoozeTicker();
+  }catch(e){
+    showToast('Mute failed');
+  }
+}

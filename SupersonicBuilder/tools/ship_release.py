@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+import argparse, os, shutil, subprocess, sys, textwrap
+
+def run(cmd, check=True):
+    print("$ " + " ".join(cmd))
+    return subprocess.run(cmd, check=check)
+
+def git(*args, check=True):
+    return run(["git", *args], check=check)
+
+def has(cmd):
+    return shutil.which(cmd) is not None
+
+def get_last_tag():
+    p = subprocess.run(["git", "describe", "--tags", "--abbrev=0"], capture_output=True, text=True)
+    return p.stdout.strip() if p.returncode == 0 else None
+
+def gen_release_notes(since_tag, version):
+    header = f"# Release {version}\n\n"
+    if since_tag:
+        log_range = f"{since_tag}..HEAD"
+    else:
+        log_range = "--since=1.year"
+    p = subprocess.run(["git", "log", "--pretty=format:* %s", log_range], capture_output=True, text=True)
+    body = p.stdout.strip() or "* Initial release"
+    notes = header + textwrap.dedent(f"""
+    ## Highlights
+    - Supersonic v4 Ultimate Edition
+    - Health scan system + CI + Pages
+
+    ## Changes
+    {body}
+    """).strip() + "\n"
+    with open("RELEASE_NOTES.md", "w", encoding="utf-8") as f:
+        f.write(notes)
+    return "RELEASE_NOTES.md"
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--version", required=True, help="e.g. v1.0.0")
+    ap.add_argument("--repo", default="https://github.com/ChristopherElgin/SonicBuilderSupersonic.git")
+    ap.add_argument("--skip_health_apply", action="store_true")
+    args = ap.parse_args()
+
+    # Optional tidy
+    if not args.skip_health_apply and shutil.which("make"):
+        run(["make", "health-apply"], check=False)
+
+    # Ensure repo/branch/remote
+    git("init", check=False)
+    git("branch", "-M", "main", check=False)
+    run(["git", "remote", "remove", "origin"], check=False)
+    git("remote", "add", "origin", args.repo, check=False)
+
+    # Commit pending changes
+    git("add", "-A")
+    git("commit", "-m", "build: prep release "+args.version, check=False)
+
+    # Push main
+    git("push", "-u", "origin", "main")
+
+    # Tag + push tag
+    git("tag", "-a", args.version, "-m", f"Release {args.version}")
+    git("push", "origin", args.version)
+
+    # Release notes
+    last = get_last_tag()
+    notes_file = gen_release_notes(last, args.version)
+
+    # If gh exists, create Release
+    if has("gh"):
+        run([
+            "gh","release","create", args.version,
+            "--title", f"Supersonic v4 Ultimate Edition – {args.version}",
+            "--notes-file", notes_file
+        ], check=True)
+        print("✅ GitHub Release created.")
+    else:
+        print("ℹ️ GitHub CLI not found; release created locally by tag only.")
+        print(f"   You can publish the release in the GitHub UI and paste notes from {notes_file}")
+
+    print("✅ Done. Check Actions and enable Pages (Settings → Pages → main /docs).")
+
+if __name__ == "__main__":
+    sys.exit(main())

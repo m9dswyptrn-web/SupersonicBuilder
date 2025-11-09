@@ -1,0 +1,124 @@
+<script>
+// ---------- Presets state ----------
+SETTINGS = Object.assign({
+  /* your existing keys ... */
+  presets: [5, 30, 60],   // default presets in minutes
+  lastPresetMin: null     // last used preset
+}, SETTINGS || {});
+
+function normPresets(arr){
+  // unique, sorted, 1..1440
+  const seen = new Set();
+  return arr
+    .map(v => parseInt(v,10))
+    .filter(v => Number.isFinite(v) && v >= 1 && v <= 1440 && !seen.has(v) && seen.add(v))
+    .sort((a,b)=>a-b);
+}
+
+// ---------- Render header buttons ----------
+function renderPresetButtons(){
+  const row = document.getElementById('mutePresetRow');
+  const host = document.getElementById('mutePresetBtns');
+  if(!row || !host) return;
+
+  // Show only when muted (follows banner visibility)
+  // pollMuteBanner() will toggle row display
+  host.innerHTML = '';
+  const presets = normPresets(SETTINGS.presets || []);
+  for (const min of presets){
+    const btn = document.createElement('button');
+    btn.className = 'pill';
+    btn.textContent = `${min}m`;
+    btn.onclick = ()=> quickMutePreset(min);
+    host.appendChild(btn);
+  }
+  // Enable/disable Repeat Last
+  const rbtn = document.getElementById('repeatLastBtn');
+  if (rbtn) rbtn.disabled = !(SETTINGS.lastPresetMin > 0);
+}
+
+// Wrap quick mute so we capture "last"
+async function quickMutePreset(min){
+  await quickMute(min);
+  SETTINGS.lastPresetMin = min;
+  saveSettings();
+  renderPresetButtons();
+}
+
+async function repeatLastPreset(){
+  if (!(SETTINGS.lastPresetMin > 0)) { showToast('No last preset yet'); return; }
+  await quickMute(SETTINGS.lastPresetMin);
+  showToast(`Repeated ${SETTINGS.lastPresetMin}m`);
+}
+
+// ---------- Settings editor UI ----------
+function renderPresetEditor(){
+  const box = document.getElementById('presetList');
+  if(!box) return;
+  box.innerHTML = '';
+  const presets = normPresets(SETTINGS.presets || []);
+  for (const min of presets){
+    const chip = document.createElement('div');
+    chip.style.display = 'flex';
+    chip.style.alignItems = 'center';
+    chip.style.gap = '6px';
+
+    const input = document.createElement('input');
+    input.type = 'number'; input.min = '1'; input.max = '1440';
+    input.value = String(min); input.style.width = '80px';
+    input.onchange = () => { // update in-memory
+      const cur = normPresets(
+        Array.from(box.querySelectorAll('input')).map(i => i.value)
+      );
+      SETTINGS.presets = cur; saveSettings();
+      renderPresetButtons();
+    };
+
+    const del = document.createElement('button');
+    del.className = 'pill';
+    del.textContent = '✕';
+    del.title = 'Remove';
+    del.onclick = () => {
+      const next = (SETTINGS.presets || []).filter(v => v !== min);
+      SETTINGS.presets = normPresets(next);
+      saveSettings();
+      renderPresetEditor();
+      renderPresetButtons();
+    };
+
+    chip.appendChild(input);
+    chip.appendChild(del);
+    box.appendChild(chip);
+  }
+}
+
+function addPreset(){
+  const inp = document.getElementById('presetNew');
+  if(!inp) return;
+  const v = parseInt(inp.value,10);
+  if(!Number.isFinite(v) || v < 1 || v > 1440){
+    showToast('Enter 1..1440 minutes'); return;
+  }
+  const next = normPresets([...(SETTINGS.presets||[]), v]);
+  SETTINGS.presets = next; saveSettings();
+  inp.value = '';
+  renderPresetEditor();
+  renderPresetButtons();
+}
+
+function resetPresets(){
+  SETTINGS.presets = [5, 30, 60];
+  SETTINGS.lastPresetMin = null;
+  saveSettings();
+  renderPresetEditor();
+  renderPresetButtons();
+  showToast('Presets reset');
+}
+
+function savePresets(){
+  // Already persisted on change; keep button for explicit UX
+  saveSettings();
+  renderPresetButtons();
+  showToast('Presets saved');
+}
+</script>

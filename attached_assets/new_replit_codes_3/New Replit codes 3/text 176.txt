@@ -1,0 +1,1 @@
+sed -i 's/OWNER/<your-username>/g; s/REPO/SonicBuilder/g' docs/index.html

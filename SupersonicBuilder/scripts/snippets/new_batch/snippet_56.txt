@@ -1,0 +1,413 @@
+#!/usr/bin/env python3
+import argparse, re, html, datetime
+from pathlib import Path
+
+CSS = r"""
+:root { --bg:#0b0d10; --panel:#12151a; --ink:#e7eaf1; --muted:#a9b2c0; --accent:#00d1d1; --accent2:#ffc857; --border:#1c222a; --code-bg:#0f1115; }
+:root[data-theme="light"] { --bg:#fafafa; --panel:#ffffff; --ink:#121212; --muted:#2e3440; --accent:#006d6d; --accent2:#b88000; --border:#e6e6e6; --code-bg:#f5f7fb; }
+*{box-sizing:border-box} html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.5}
+header{position:sticky;top:0;z-index:10;background:var(--panel);color:var(--ink);padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+header strong{letter-spacing:.3px}
+.badge{display:inline-block;margin-left:8px;background:rgba(0,209,209,.12);color:var(--accent);padding:2px 8px;border:1px solid rgba(0,209,209,.35);border-radius:12px;font-size:12px}
+:root[data-theme="light"] .badge{background:rgba(0,109,109,.08);border-color:rgba(0,109,109,.25)}
+.spacer{flex:1 1 auto}
+.action{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none;border:1px solid var(--border);padding:6px 10px;border-radius:16px}
+.action[aria-disabled="true"]{opacity:.6;cursor:not-allowed}
+main{max-width:980px;margin:24px auto;padding:0 16px}
+h1,h2,h3{color:var(--ink)} h1{border-left:4px solid var(--accent);padding-left:10px}
+h2{margin-top:24px;border-left:3px solid var(--accent2);padding-left:10px;display:flex;align-items:center;gap:8px}
+p{color:var(--muted)} ul{padding-left:22px} li{margin:4px 0}
+a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+code,pre{background:var(--code-bg);color:var(--ink);padding:.2em .4em;border-radius:4px;border:1px solid var(--border)} pre{padding:12px;overflow:auto}
+hr{border:0;border-top:1px solid var(--border);margin:24px 0}
+.footer{color:var(--muted);border-top:1px solid var(--border);margin-top:32px;padding-top:12px;font-size:12px}
+
+/* Heading tools + count badges */
+.h2-tools{margin-left:auto;display:inline-flex;gap:6px}
+.btn-ghost{font-size:11px;padding:4px 8px;border:1px solid var(--border);border-radius:12px;color:var(--muted);background:transparent;cursor:pointer}
+.btn-ghost:hover{color:var(--ink)}
+.count-badge{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:10px;font-size:12px;line-height:1;background:rgba(255,200,87,.15);color:var(--accent2);border:1px solid rgba(255,200,87,.35)}
+
+/* TOC + filters */
+.toc{border:1px solid var(--border);background:var(--panel);border-radius:8px;padding:12px 14px;margin:0 0 16px 0}
+.toc h3{margin:0 0 8px 0;font-size:14px;color:var(--ink)}
+.toc a{margin-right:12px}
+.toc .toc-count{opacity:.9;font-weight:600;margin-left:2px}
+.toc .filter-active{color:var(--accent2);font-weight:700}
+.toc .clear-filter{margin-left:6px;font-size:12px;opacity:.85}
+
+/* Page-break mode */
+body.page-breaks h2{break-before:page;page-break-before:always}
+body.page-breaks h2:first-of-type{break-before:auto;page-break-before:auto}
+
+/* Toast */
+.toast{position:fixed;bottom:16px;right:16px;background:var(--panel);color:var(--ink);border:1px solid var(--border);padding:8px 12px;border-radius:8px;font-size:12px;opacity:0;transform:translateY(6px);transition:opacity .18s ease,transform .18s ease;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+
+/* Print & PDF */
+@page{margin:12mm 12mm 16mm 12mm}
+@media print{
+  :root,:root[data-theme="light"]{--bg:#fff!important;--panel:#fff!important;--ink:#000!important;--muted:#000!important;--accent:#000!important;--accent2:#000!important;--border:#000!important;--code-bg:#f2f2f2!important}
+  body{background:#fff!important;color:#000!important}
+  header,.footer{display:none!important}
+  a{color:#000!important;text-decoration:underline!important}
+  code,pre{background:#f2f2f2!important;color:#000!important;border:1px solid #999!important}
+  h1{border-left:4px solid #000!important} h2{border-left:3px solid #000!important}
+  .print-footer{position:fixed;bottom:0;left:0;right:0;font-size:10px;color:#000;padding:6px 0 0 0;border-top:1px solid #999;text-align:center}
+  .print-footer::after{content:" • Page " counter(page) " of " counter(pages)}
+}
+"""
+
+SCRIPT = r"""
+(function(){
+  const root = document.documentElement;
+  const themeKey='sb-diff-theme', breaksKey='sb-diff-breaks', changelogKey='sb-changelog-url';
+  const MD_STEM = document.body.getAttribute('data-mdstem') || 'diff';
+  let activeFilter = null; // 'added'|'removed'|'changed'|null
+
+  function currentMode(){ return (root.getAttribute('data-theme')==='light')?'light':'dark'; }
+  function applyTheme(mode){
+    if(mode==='light'){ root.setAttribute('data-theme','light'); } else { root.removeAttribute('data-theme'); }
+    try{ localStorage.setItem(themeKey, mode); }catch(e){}
+    const lab=document.getElementById('sb-toggle-label'); if(lab) lab.textContent=(mode==='light')?'Light':'Dark';
+  }
+  function applyBreaks(enabled){
+    if(enabled) root.classList.add('page-breaks'); else root.classList.remove('page-breaks');
+    try{ localStorage.setItem(breaksKey, enabled?'1':'0'); }catch(e){}
+    const lab=document.getElementById('sb-breaks-label'); if(lab) lab.textContent=enabled?'On':'Off';
+  }
+  function toast(msg){
+    let t=document.getElementById('sb-toast');
+    if(!t){ t=document.createElement('div'); t.id='sb-toast'; t.className='toast'; document.body.appendChild(t); }
+    t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1600);
+  }
+
+  // Theme init
+  let mode='dark';
+  try{ const saved=localStorage.getItem(themeKey);
+       if(saved==='light'||saved==='dark') mode=saved;
+       else if(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) mode='light';
+  }catch(e){}
+  applyTheme(mode);
+
+  // Breaks init
+  let breaks=false; try{ breaks=(localStorage.getItem(breaksKey)==='1'); }catch(e){}
+  applyBreaks(breaks);
+
+  // Toggles
+  const tgl=document.getElementById('sb-toggle'); if(tgl) tgl.addEventListener('click', ()=>{ mode=(currentMode()==='light')?'dark':'light'; applyTheme(mode); });
+  const brk=document.getElementById('sb-breaks'); if(brk) brk.addEventListener('click', ()=>{ breaks=!breaks; applyBreaks(breaks); });
+
+  // Print / PDF
+  function printWithLight(){
+    const before=currentMode(); applyTheme('light');
+    const restore=()=>{ applyTheme(before); window.removeEventListener('afterprint', restore); };
+    window.addEventListener('afterprint', restore, {once:true});
+    setTimeout(()=>window.print(),20);
+  }
+  const prn=document.getElementById('sb-print'); if(prn) prn.addEventListener('click', printWithLight);
+  const pdf=document.getElementById('sb-export');
+  if(pdf) pdf.addEventListener('click', ()=>{
+    const before=currentMode(); applyTheme('light');
+    const pf=document.getElementById('sb-print-footer');
+    if(pf){
+      const now=new Date();
+      const iso=now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,'0')+"-"+String(now.getDate()).padStart(2,'0')+" "+String(now.getHours()).padStart(2,'0')+":"+String(now.getMinutes()).padStart(2,'0');
+      pf.setAttribute('data-ts', iso);
+      pf.textContent = pf.getAttribute('data-prefix')+" • "+pf.getAttribute('data-version')+" • "+iso;
+    }
+    const restore=()=>{ applyTheme(before); window.removeEventListener('afterprint', restore); };
+    window.addEventListener('afterprint', restore, {once:true});
+    setTimeout(()=>window.print(),20);
+  });
+
+  // --- Filtering ---
+  const filterKeys=['added','removed','changed'];
+  function setFilter(kind){
+    activeFilter = (activeFilter===kind)? null : kind;
+    for(const k of filterKeys){
+      const el=document.querySelector(`.toc a[data-kind="${k}"]`);
+      if(el) el.classList.toggle('filter-active', activeFilter===k);
+    }
+    const clear=document.querySelector('.toc a.clear-filter'); if(clear) clear.style.display = activeFilter? 'inline' : 'none';
+    const allH2=document.querySelectorAll('h2[id]');
+    allH2.forEach(h=>{
+      const id=h.id;
+      const show=!activeFilter || id===activeFilter;
+      let node=h.nextElementSibling;
+      h.style.display=show?'':'none';
+      while(node && node.tagName!=='H2'){ node.style.display=show?'':'none'; node=node.nextElementSibling; }
+    });
+    if(activeFilter){ const t=document.getElementById(activeFilter); if(t) t.scrollIntoView({behavior:'smooth',block:'start'}); }
+  }
+  filterKeys.forEach(k=>{ const link=document.querySelector(`.toc a[data-kind="${k}"]`); if(link) link.addEventListener('click',(e)=>{ e.preventDefault(); setFilter(k); }); });
+  const clear=document.querySelector('.toc a.clear-filter'); if(clear) clear.addEventListener('click',(e)=>{ e.preventDefault(); setFilter(null); });
+
+  // --- Copy helpers ---
+  function collectSectionMarkdown(h2){
+    const title=h2.querySelector('span')?.textContent?.trim() || h2.textContent.trim();
+    let md=`## ${title.replace(/\s+$begin:math:text$\\d+$end:math:text$$/, '')}\n`;
+    let node=h2.nextElementSibling, had=false;
+    while(node && node.tagName!=='H2'){
+      if(node.tagName==='UL'){
+        node.querySelectorAll(':scope > li').forEach(li=>{ md += `- ${li.textContent.trim()}\n`; had=true; });
+      }
+      node=node.nextElementSibling;
+    }
+    if(!had) md += '- (no items)\n';
+    return md;
+  }
+  function attachCopyButtons(){
+    document.querySelectorAll('h2[id]').forEach(h2=>{
+      let tools=h2.querySelector('.h2-tools'); if(!tools){ tools=document.createElement('span'); tools.className='h2-tools'; h2.appendChild(tools); }
+      let btn=h2.querySelector('.btn-copy-md');
+      if(!btn){
+        btn=document.createElement('button'); btn.className='btn-ghost btn-copy-md'; btn.type='button'; btn.textContent='Copy Markdown';
+        btn.addEventListener('click', async ()=>{ try{ await navigator.clipboard.writeText(collectSectionMarkdown(h2)); toast('Section copied as Markdown'); } catch(e){ toast('Copy failed'); } });
+        tools.appendChild(btn);
+      }
+    });
+  }
+  attachCopyButtons();
+
+  // Build combined MD (Added -> Removed -> Changed)
+  function combinedMD(){
+    const order=['added','removed','changed']; let out='';
+    for(const id of order){
+      const h2=document.getElementById(id); if(!h2) continue;
+      const md=collectSectionMarkdown(h2);
+      if(/- \(no items\)\s*$/.test(md)) continue; // skip empties
+      out += (out? '\n' : '') + md.trim() + '\n';
+    }
+    return out;
+  }
+
+  // Copy All (MD)
+  const copyAllBtn=document.getElementById('sb-copyall');
+  if(copyAllBtn){ copyAllBtn.addEventListener('click', async ()=>{ const out=combinedMD(); if(!out){ toast('No sections to copy'); return; }
+    try{ await navigator.clipboard.writeText(out); toast('All sections copied as Markdown'); }catch(e){ toast('Copy failed'); } }); }
+
+  // Download .md
+  const dlBtn=document.getElementById('sb-downloadmd');
+  if(dlBtn){ dlBtn.addEventListener('click', ()=>{
+    const out=combinedMD();
+    if(!out){ toast('No sections to download'); return; }
+    const now=new Date();
+    const d = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    const fileName = `${MD_STEM}_changes_${d}.md`;
+    const blob=new Blob([out], {type:'text/markdown;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=fileName; document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast(`Saved ${fileName}`);
+  }); }
+
+  // --- Changelog URL (remembered) ---
+  function getChangelog(){ try{ return localStorage.getItem(changelogKey) || ''; }catch(e){ return ''; } }
+  function setChangelog(){
+    const prior = getChangelog();
+    const ask = prompt('Paste Full Changelog URL (repo compare link)', prior || 'https://github.com/OWNER/REPO/compare/vX...vY');
+    if(ask===null) return;
+    const val = String(ask).trim();
+    if(val && !/^https?:\/\//i.test(val)){ toast('Must start with http(s)'); return; }
+    try{ if(val) localStorage.setItem(changelogKey, val); else localStorage.removeItem(changelogKey); }catch(e){}
+    applyChangelogButtonState();
+    toast(val ? 'Changelog URL saved' : 'Changelog URL cleared');
+  }
+  function openChangelog(){
+    let url = getChangelog();
+    if(!url){
+      const ask = prompt('No changelog URL saved yet. Paste repo compare link (http/https):', 'https://github.com/OWNER/REPO/compare/vX...vY');
+      if(ask===null) return;
+      const val = String(ask).trim();
+      if(val && !/^https?:\/\//i.test(val)){ toast('Must start with http(s)'); return; }
+      try{ if(val) localStorage.setItem(changelogKey, val); }catch(e){}
+      url = val || '';
+      applyChangelogButtonState();
+    }
+    if(!url){ toast('No changelog URL set'); return; }
+    try{ window.open(url, '_blank', 'noopener'); }catch(e){ toast('Could not open URL'); }
+  }
+  function applyChangelogButtonState(){
+    const has = !!getChangelog();
+    const openBtn = document.getElementById('sb-openchangelog');
+    if(openBtn){ openBtn.setAttribute('aria-disabled', has ? 'false' : 'true'); openBtn.title = has ? 'Open Full Changelog' : 'Set a URL first'; }
+  }
+  const setChangelogBtn = document.getElementById('sb-changelog');
+  if(setChangelogBtn){ setChangelogBtn.addEventListener('click', setChangelog); }
+  const openChangelogBtn = document.getElementById('sb-openchangelog');
+  if(openChangelogBtn){ openChangelogBtn.addEventListener('click', ()=>{ if(openChangelogBtn.getAttribute('aria-disabled')==='true'){ setChangelog(); } else { openChangelog(); } }); }
+  applyChangelogButtonState();
+
+  // --- Copy as GitHub Release Notes (with optional Full Changelog) ---
+  function getVersionAndDate(){
+    const pf=document.getElementById('sb-print-footer');
+    const version = pf?.getAttribute('data-version') || 'v0.0.0';
+    const now=new Date();
+    const d = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    return {version, d};
+  }
+  function asGitHubReleaseNotes(){
+    const {version, d} = getVersionAndDate();
+    const url = getChangelog();
+    let out = `# Release ${version} — ${d}\n\n`;
+    if(url) out += `Full Changelog: ${url}\n\n`;
+    const order=[['added','Added'], ['removed','Removed'], ['changed','Changed']];
+    let any=false;
+    for(const [id,label] of order){
+      const h2=document.getElementById(id); if(!h2) continue;
+      const md=collectSectionMarkdown(h2);
+      if(/- \(no items\)\s*$/.test(md)) continue;
+      any = true;
+      out += `## ${label}\n`;
+      const items = md.split('\n').filter(l => l.startsWith('- '));
+      out += items.join('\n') + '\n\n';
+    }
+    if(!any) out += '_No changes recorded._\n';
+    return out.trim() + '\n';
+  }
+  const ghBtn=document.getElementById('sb-ghnotes');
+  if(ghBtn){ ghBtn.addEventListener('click', async ()=>{
+    const txt = asGitHubReleaseNotes();
+    try{ await navigator.clipboard.writeText(txt); toast('GitHub Notes copied'); }catch(e){ toast('Copy failed'); }
+  }); }
+})();
+"""
+
+def parse_heads_and_counts(md: str):
+  """Parse headings and count list items under Added/Removed/Changed sections."""
+  heads, counts = [], {}
+  current = None
+  targets = {"added","removed","changed"}
+  for line in md.splitlines():
+    if line.startswith("# "):
+      title = line[2:].strip()
+      anchor = re.sub(r'[^a-z0-9\-]+', '-', title.lower())
+      heads.append((1,title,anchor)); current=None
+    elif line.startswith("## "):
+      title = line[3:].strip()
+      anchor = re.sub(r'[^a-z0-9\-]+', '-', title.lower())
+      heads.append((2,title,anchor))
+      current = anchor if title.lower() in targets else None
+      if current: counts.setdefault(current,0)
+    elif line.startswith("- "):
+      if current: counts[current] = counts.get(current,0) + 1
+  return heads, counts
+
+def build_toc(heads, counts):
+  """TOC with counts & filter targets; includes a ‘Show All’ UI hook."""
+  h2map = {t.lower(): a for lvl,t,a in heads if lvl==2}
+  items = []
+  for key in ("Added","Removed","Changed"):
+    k = key.lower()
+    if k in h2map:
+      a = h2map[k]; c = counts.get(a)
+      label = html.escape(key) + (f' <span class="toc-count">({c})</span>' if c is not None else '')
+      items.append(f'<a href="#{html.escape(a)}" data-kind="{k}">{label}</a>')
+  if not items:
+    first = [(t,a) for lvl,t,a in heads if lvl==2][:3]
+    if not first: return ""
+    links = " ".join(f'<a href="#{html.escape(a)}">{html.escape(t)}</a>' for t,a in first)
+    return f'<div class="toc"><h3>Contents</h3>{links}</div>'
+  links = " ".join(items) + ' <a href="#" class="clear-filter" style="display:none">Show All</a>'
+  return f'<div class="toc"><h3>Contents</h3>{links}</div>'
+
+def md_to_html_with_ids(md: str, counts):
+  lines = md.splitlines()
+  out, in_list = [], False
+  for ln in lines:
+    if ln.startswith("# "):
+      if in_list: out.append("</ul>"); in_list=False
+      title = ln[2:].strip()
+      out.append(f"<h1>{html.escape(title)}</h1>")
+    elif ln.startswith("## "):
+      if in_list: out.append("</ul>"); in_list=False
+      title = ln[3:].strip()
+      anchor = re.sub(r'[^a-z0-9\\-]+', '-', title.lower())
+      badge = f' <span class="count-badge">{counts[anchor]}</span>' if anchor in counts else ''
+      out.append(f'<h2 id="{anchor}"><span>{html.escape(title)}</span>{badge}</h2>')
+    elif ln.startswith("- "):
+      if not in_list: out.append("<ul>"); in_list=True
+      out.append(f"<li>{html.escape(ln[2:].strip())}</li>")
+    elif ln.startswith("> "):
+      if in_list: out.append("</ul>"); in_list=False
+      out.append(f'<blockquote>{html.escape(ln[2:].strip())}</blockquote>')
+    elif ln.strip()=="":
+      if in_list: out.append("</ul>"); in_list=False
+      out.append("<br/>")
+    else:
+      if in_list: out.append("</ul>"); in_list=False
+      out.append(f"<p>{html.escape(ln)}</p>")
+  if in_list: out.append("</ul>")
+  return "\n".join(out)
+
+def guess_version(md_stem: str) -> str:
+  m = re.search(r'v(\d+(?:\.\d+){0,3})', md_stem, re.I)
+  return m.group(0) if m else md_stem
+
+def main():
+  ap = argparse.ArgumentParser()
+  ap.add_argument("--md", required=True)
+  ap.add_argument("--out", default="")
+  args = ap.parse_args()
+
+  md_path = Path(args.md)
+  if not md_path.exists():
+    raise SystemExit(f"[x] Markdown file not found: {md_path}")
+  html_path = Path(args.out) if args.out else md_path.with_suffix(".html")
+
+  md = md_path.read_text(encoding="utf-8")
+  heads, counts = parse_heads_and_counts(md)
+  toc_html = build_toc(heads, counts)
+  body = md_to_html_with_ids(md, counts)
+
+  title = "Pre-publish Diff - " + md_path.stem
+  version = guess_version(md_path.stem)
+  today = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+  doc = f"""<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<style>{CSS}</style>
+<body data-mdstem="{html.escape(md_path.stem)}">
+<header>
+  <strong>Pre-publish Diff</strong>
+  <span class="badge">{html.escape(md_path.stem)}</span>
+  <span class="spacer"></span>
+  <span class="action" id="sb-toggle" title="Toggle light/dark">Theme: <b id="sb-toggle-label"></b></span>
+  <span class="action" id="sb-breaks" title="Toggle per-section page breaks">Page Breaks: <b id="sb-breaks-label"></b></span>
+  <span class="action" id="sb-copyall" title="Copy Added/Removed/Changed as Markdown">Copy All (MD)</span>
+  <span class="action" id="sb-downloadmd" title="Download combined Markdown">Download .md</span>
+  <span class="action" id="sb-ghnotes" title="Copy GitHub-formatted release notes">Copy GH Notes</span>
+  <span class="action" id="sb-changelog" title="Set or update Full Changelog URL">Set Changelog URL</span>
+  <span class="action" id="sb-openchangelog" aria-disabled="true" title="Set a URL first">Open Changelog</span>
+  <span class="action" id="sb-print" title="Print (ink-friendly)">Print</span>
+  <span class="action" id="sb-export" title="Export to PDF">Export PDF</span>
+</header>
+<main>
+{toc_html}
+{body}
+<div class="footer">Generated by SonicBuilder diff renderer</div>
+</main>
+
+<div class="print-footer" id="sb-print-footer"
+     data-prefix="SonicBuilder Diff"
+     data-version="{html.escape(version)}"
+     data-ts="{html.escape(today)}">
+  SonicBuilder Diff • {html.escape(version)} • {html.escape(today)}
+</div>
+
+<div id="sb-toast" class="toast" role="status" aria-live="polite"></div>
+
+<script>{SCRIPT}</script>
+</body></html>
+"""
+  html_path.write_text(doc, encoding="utf-8")
+  print(str(html_path))
+
+if __name__ == "__main__":
+  main()

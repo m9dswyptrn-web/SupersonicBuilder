@@ -1,0 +1,39 @@
+name: Docs Health Dashboard
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_run:
+    workflows:
+      - Docs Build
+      - Docs Release
+      - Pages Smoke
+      - Docs Coverage
+      - Post-Release Guard
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docs Health grid + composite badge
+        env:
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          python3 scripts/health/build_docs_health_grid.py
+      - name: Commit README + health badge JSON
+        run: |
+          if ! git diff --quiet -- README.md docs/badges/docs_health.json; then
+            git config user.name  "sonicbuilder-bot"
+            git config user.email "sonicbuilder@users.noreply.github.com"
+            git add README.md docs/badges/docs_health.json
+            git commit -m "docs(health): update docs health grid + composite badge"
+            git push
+          else
+            echo "No health changes."

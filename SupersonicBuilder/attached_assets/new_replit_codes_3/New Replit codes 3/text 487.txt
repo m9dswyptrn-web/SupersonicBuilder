@@ -1,0 +1,11 @@
+<div class="hr"></div>
+<div style="font-size:13px; color:#aaa; margin-bottom:6px;">Mute presets (minutes):</div>
+<div id="presetEditor">
+  <div id="presetList" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
+  <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+    <input id="presetNew" type="number" min="1" max="1440" placeholder="e.g. 90" style="width:90px;">
+    <button class="pill" onclick="addPreset()">Add</button>
+    <button class="pill" onclick="resetPresets()">Reset defaults</button>
+    <button class="pill" onclick="savePresets()">Save</button>
+  </div>
+</div>

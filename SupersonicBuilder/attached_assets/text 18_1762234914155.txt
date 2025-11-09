@@ -1,0 +1,8 @@
+<div class="hr"></div>
+<div style="font-size:13px; color:#aaa; margin-bottom:6px;">Profiles</div>
+<div id="profileRow" style="display:flex; gap:8px; flex-wrap:wrap;">
+  <button class="pill" onclick="applyProfile('quiet')">Quiet</button>
+  <button class="pill" onclick="applyProfile('balanced')">Balanced</button>
+  <button class="pill" onclick="applyProfile('performance')">Performance</button>
+  <span id="profileTag" class="muted" style="margin-left:8px;">Current: —</span>
+</div>

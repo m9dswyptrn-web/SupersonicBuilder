@@ -1,0 +1,4 @@
+# Use fewer/more CPU threads for the non-Metal parts:
+export LLM_THREADS=6
+# Context window (keep modest first)
+export LLM_CTX=4096

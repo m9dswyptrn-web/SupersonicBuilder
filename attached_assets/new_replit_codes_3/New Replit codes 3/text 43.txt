@@ -1,0 +1,15 @@
+  btnFitW?.addEventListener("click", async () => {
+    if (!pdfDoc) return;
+    const pdfPage = await pdfDoc.getPage(page);
+    const newScale = await computeFitScale(pdfPage, "width", rotation);
+    scale = newScale;            // exact width fit
+    await renderPage();
+  });
+
+  btnFitH?.addEventListener("click", async () => {
+    if (!pdfDoc) return;
+    const pdfPage = await pdfDoc.getPage(page);
+    const newScale = await computeFitScale(pdfPage, "height", rotation);
+    scale = newScale;            // exact height fit
+    await renderPage();
+  });

@@ -1,0 +1,11 @@
+.PHONY: serve serve-gunicorn health
+
+serve:
+	python app.py
+
+serve-gunicorn:
+	@python -m pip install --quiet gunicorn || true
+	gunicorn -w 2 -b 0.0.0.0:8080 app:app
+
+health:
+	python healthcheck.py --host 127.0.0.1 --port 8080 --retries 45 --sleep 1

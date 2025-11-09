@@ -1,0 +1,78 @@
+name: Health Guard (/health monitor)
+
+on:
+  schedule:
+    - cron: "0 6 * * *"      # 06:00 UTC ≈ 12:00 AM CST
+  workflow_dispatch:
+    inputs:
+      min_free_mb:
+        description: "Min free disk (MB)"
+        required: false
+        default: "500"
+      max_uptime_h:
+        description: "Max uptime (hours) before warn"
+        required: false
+        default: "168"   # 7 days
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+      DOCTOR_KEY:   ${{ secrets.DOCTOR_KEY }}
+      SLACK_WEBHOOK_URL:   ${{ secrets.SLACK_WEBHOOK_URL }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+    steps:
+      - name: Fetch /health
+        id: health
+        run: |
+          [ -n "${APP_BASE_URL}" ] || (echo "APP_BASE_URL secret missing" && exit 1)
+          curl -fsS -H "X-Doctor-Key: ${DOCTOR_KEY}" "${APP_BASE_URL}/health" > health.json
+          cat health.json
+
+      - name: Evaluate thresholds
+        id: eval
+        run: |
+          L_FREE_MB="${{ github.event.inputs.min_free_mb || '500' }}"
+          L_UP_H="${{ github.event.inputs.max_uptime_h || '168' }}"
+          python3 - <<'PY'
+import json, os, sys
+j = json.load(open("health.json"))
+status = j.get("status", "unknown")
+disk = j.get("disk", {})
+free = int(disk.get("free", 0))//(1024*1024)
+uptime = float(j.get("uptime_sec", 0))/3600.0
+checks = j.get("checks", {})
+issues = []
+if status != "ok": issues.append(f"status={status}")
+if free < int(os.environ.get("L_FREE_MB","500")): issues.append(f"low_disk={free}MB")
+if uptime > float(os.environ.get("L_UP_H","168")): issues.append(f"uptime_h={uptime:.1f}")
+if not checks.get("git_present", False): issues.append("git_missing")
+if not checks.get("make_present", False): issues.append("make_missing")
+open("issues.txt","w").write("\n".join(issues))
+print("Issues:", issues)
+sys.exit(0 if not issues else 2)
+PY
+        continue-on-error: true
+
+      - name: Upload snapshot (always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: health-json-${{ github.run_id }}
+          path: health.json
+
+      - name: Notify Slack (if issues)
+        if: ${{ steps.eval.outcome == 'failure' && env.SLACK_WEBHOOK_URL != '' }}
+        run: |
+          SNIP="$(cat issues.txt | sed 's/\\/\\\\/g; s/"/\\"/g')"
+          curl -fsS -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\":warning: *Health Degraded* — ${APP_BASE_URL}/health\n\`\`\`${SNIP}\`\`\`\"}" \
+            "$SLACK_WEBHOOK_URL"
+
+      - name: Notify Discord (if issues)
+        if: ${{ steps.eval.outcome == 'failure' && env.DISCORD_WEBHOOK_URL != '' }}
+        run: |
+          SNIP="$(cat issues.txt)"
+          curl -fsS -H "Content-Type: application/json" -X POST \
+            -d "$(jq -n --arg c \"⚠️ **Health Degraded** — ${APP_BASE_URL}/health\n\`\`\`\n$SNIP\n\`\`\`\" '{content:$c}')" \
+            "$DISCORD_WEBHOOK_URL"

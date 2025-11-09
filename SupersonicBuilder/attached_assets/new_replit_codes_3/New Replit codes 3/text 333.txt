@@ -1,0 +1,2 @@
+setx LLM_THREADS 8
+setx LLM_CTX 4096

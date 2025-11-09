@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""
+Supersonic Flask Control Panel Installer
+Tailored for: serve_pdfs.py (Flask)
+"""
+import os, shutil, datetime
+from pathlib import Path
+
+ROOT = Path(os.getcwd())
+SERVER_FILE = ROOT / "serve_pdfs.py"
+TEMPLATES_DIR = ROOT / "templates"
+TEMPLATES_DIR.mkdir(exist_ok=True)
+BACKUP_FILE = SERVER_FILE.with_suffix(f".bak.{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}")
+
+PANEL_HTML = """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Supersonic Control Panel</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="doctor-key" content="{{ doctor_key|default('') }}">
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; background:#0f1115; color:#eaeaea; padding:24px; }
+    .btn { appearance:none; border:0; border-radius:10px; padding:10px 14px; cursor:pointer; background:#1e90ff; color:white; font-weight:600; margin-right:10px; }
+    .toast { position:fixed; right:16px; bottom:16px; background:#111; color:#fff; padding:12px 14px; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.35); display:none; z-index:9999; }
+    .toast.show { display:block; }
+    pre { background:#0b0d11; border:1px solid #232734; padding:12px; border-radius:8px; overflow:auto; margin-top:16px; }
+  </style>
+</head>
+<body>
+  <h1>Supersonic Control Panel</h1>
+  <button id="btnStatus" class="btn" style="background:#5865f2;">📊 Status</button>
+  <button id="btnRestart" class="btn">⟳ Restart</button>
+  <button id="btnHealth" class="btn" style="background:#2ea043;">❤️ Health</button>
+  <pre id="out"></pre>
+  <div id="toast" class="toast"></div>
+<script>
+(function(){
+  const k = document.querySelector('meta[name="doctor-key"]').content;
+  const h = k ? {'X-Doctor-Key':k} : {};
+  const out=document.getElementById('out');const toast=document.getElementById('toast');
+  function show(t,m=4200){toast.textContent=t;toast.classList.add('show');setTimeout(()=>toast.classList.remove('show'),m);}
+  async function call(p,m='GET'){const r=await fetch(p,{method:m,headers:Object.assign({'Content-Type':'application/json'},h)});
+    let d;try{d=await r.json();}catch{d={error:'Non-JSON'}};out.textContent=JSON.stringify(d,null,2);
+    show(r.ok?'✅ '+p:'⚠️ '+p);}
+  document.getElementById('btnStatus').onclick=()=>call('/sync/status');
+  document.getElementById('btnRestart').onclick=()=>call('/sync/restart','POST');
+  document.getElementById('btnHealth').onclick=()=>call('/health');
+})();
+</script>
+</body></html>
+"""
+
+ROUTES = r"""
+# --- Supersonic Control Panel & Health Endpoints ---
+from flask import render_template, jsonify, request
+import os, sys, subprocess
+
+@app.route("/panel")
+def supersonic_panel():
+    return render_template("panel.html", doctor_key=os.getenv("DOCTOR_KEY", ""))
+
+@app.route("/health")
+def supersonic_health():
+    return jsonify({"ok": True, "pid": os.getpid(), "cwd": os.getcwd(), "python": sys.version})
+
+@app.route("/sync/status")
+def supersonic_status():
+    return jsonify({
+        "ok": True,
+        "cwd": os.getcwd(),
+        "time": datetime.datetime.now().isoformat(),
+        "files": len(list(Path('.').rglob('*.*'))),
+    })
+
+@app.route("/sync/restart", methods=["POST"])
+def supersonic_restart():
+    try:
+        if "REPLIT" in os.environ:
+            subprocess.Popen(["kill", "1"])  # Replit restarts on PID 1 kill
+        else:
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        return jsonify({"ok": True, "used": "os.execv / subprocess restart"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+# --- end Supersonic ---
+"""
+
+def main():
+    if not SERVER_FILE.exists():
+        print(f"❌ Error: {SERVER_FILE.name} not found.")
+        return
+    shutil.copy2(SERVER_FILE, BACKUP_FILE)
+    print(f"🧾 Backed up original to {BACKUP_FILE.name}")
+
+    content = SERVER_FILE.read_text(encoding="utf-8")
+    if "/panel" in content and "Supersonic Control Panel" in content:
+        print("✅ Panel routes already exist; skipping inject.")
+    else:
+        # Find a safe place after app = Flask(...)
+        if "app = Flask" in content:
+            idx = content.find("app = Flask")
+            insert_point = content.find("\n", idx)
+            patched = content[:insert_point] + "\n" + ROUTES + "\n" + content[insert_point:]
+        else:
+            patched = content + "\n" + ROUTES
+        SERVER_FILE.write_text(patched, encoding="utf-8")
+        print(f"✅ Patched /panel, /health, /sync/status, /sync/restart into {SERVER_FILE.name}")
+
+    panel_path = TEMPLATES_DIR / "panel.html"
+    if not panel_path.exists():
+        panel_path.write_text(PANEL_HTML, encoding="utf-8")
+        print(f"✅ Created {panel_path}")
+    else:
+        print("⚠️ panel.html already exists; skipped creation.")
+
+    print("\n🎉 Done! You can now open `/panel` in your Replit webview.")
+    print("   The buttons will hit /health, /sync/status, and /sync/restart directly.")
+    print("   Your DOCTOR_KEY is automatically injected from Replit secrets.")
+
+if __name__ == "__main__":
+    main()

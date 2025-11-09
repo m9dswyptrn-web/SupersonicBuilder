@@ -1,0 +1,10 @@
+# --- BEGIN: OPTIMIZER PATCH v2.1 (auto) ---
+optimize-images:
+	@echo "🧼 Optimizing images under ./assets ..."
+	@python3 tools/filename_sanitizer.py --root assets || true
+	@python3 tools/dpi_report.py --root assets || true
+	@python3 tools/optimize_images.py --root assets || true
+
+# Hook optimizer into the build pipeline if not already present
+release-all: optimize-images
+# --- END: OPTIMIZER PATCH v2.1 (auto) ---

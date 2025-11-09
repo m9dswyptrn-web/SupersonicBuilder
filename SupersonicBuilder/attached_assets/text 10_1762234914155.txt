@@ -1,0 +1,4 @@
+<!-- In the mini status bar -->
+<button class="ms-item" id="msBoost" title="Toggle performance mode">
+  🚀 <span class="ms-label">Boost</span>
+</button>

@@ -1,0 +1,58 @@
+# --- create and apply supersonic patch in one shot ---
+set -euo pipefail
+
+cat > supersonic_patch.diff <<'PATCH'
+*** BEGIN PATCH
+diff --git a/app.py b/app.py
+--- a/app.py
++++ b/app.py
+@@ -1,5 +1,38 @@
+-from flask import Flask
++from flask import Flask, jsonify
++import os, hashlib
++
++# --- DEV/PROD TTL heuristic -----------------------------------------------------
++def _is_dev():
++    return (os.getenv("FLASK_ENV", "").lower() == "development"
++            or os.getenv("DEBUG", "").lower() in ("1", "true", "yes"))
++
++# If CATALOG_TTL_HOURS is set, use it; else dev=0.17h (~10m), prod=24h
++CATALOG_TTL_HOURS = float(os.getenv("CATALOG_TTL_HOURS", "0.17" if _is_dev() else "24"))
++
++# Ensure DIAGRAM_INDEX resolves to your diagrams index path:
++# e.g., from pathlib import Path; DIAGRAM_INDEX = Path("data/diagrams_index.json")
++# (Assumed already present elsewhere in your file.)
++
++def _catalog_version():
++    try:
++        raw = DIAGRAM_INDEX.read_bytes()
++        return hashlib.sha1(raw).hexdigest()[:12]
++    except Exception:
++        return "unknown"
++
++@app.get("/api/diagrams/catalog-config")
++def diagrams_catalog_config():
++    return jsonify({
++        "version": _catalog_version(),
++        "ttl_ms": int(CATALOG_TTL_HOURS * 60 * 60 * 1000),
++    }), 200
++
++@app.get("/api/diagrams/catalog-version")
++def diagrams_catalog_version():
++    # kept for clients that only call /catalog-version
++    return jsonify({"version": _catalog_version()}), 200
++
++@app.context_processor
++def inject_catalog_config():
++    return dict(CATALOG_TTL_HOURS=CATALOG_TTL_HOURS, _catalog_version=_catalog_version)
+diff --git a/templates/base.html b/templates/base.html
+--- a/templates/base.html
++++ b/templates/base.html
+@@ -3,6 +3,11 @@
+   <head>
+     <meta charset="utf-8">
+     <meta name="viewport" content="width=device-width, initial-scale=1">
++    <!-- Catalog config for zero-request boot -->
++    <meta id="catalog-config"
++          data-version="{{ _catalog_version() }}"
++         

@@ -1,0 +1,1 @@
+$env:SB_REPO="myorg/sonicbuilder"; $env:SB_BRANCH="release-3.2"; python tools/diff_render_html.py --md CHANGELOG_v3.2.md

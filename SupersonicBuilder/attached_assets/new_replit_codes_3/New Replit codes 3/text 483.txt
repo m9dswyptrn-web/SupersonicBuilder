@@ -1,0 +1,8 @@
+<!-- Quick mute presets -->
+<div id="muteQuickRow" class="mute-row" style="display:none;">
+  <span class="muted">Presets:</span>
+  <button class="pill" onclick="quickMute(5)">5m</button>
+  <button class="pill" onclick="quickMute(30)">30m</button>
+  <button class="pill" onclick="quickMute(60)">1h</button>
+  <button class="pill" onclick="extendMuteToMidnight()">Extend → Midnight</button>
+</div>

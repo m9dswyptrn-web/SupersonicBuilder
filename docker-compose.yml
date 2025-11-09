@@ -1,0 +1,25 @@
+version: "3.9"
+services:
+  # Option 1: Build locally
+  commander:
+    build: .
+    ports:
+      - "5055:5055"
+    environment:
+      - PORT=5055
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./docs:/app/docs
+    restart: unless-stopped
+
+  # Option 2: Pull from GitHub Container Registry (after CI publishes)
+  # Uncomment to use pre-built image instead of local build
+  # commander-ghcr:
+  #   image: ghcr.io/christopherelgin/supersonic-commander:latest
+  #   ports:
+  #     - "5055:5055"
+  #   environment:
+  #     - PORT=5055
+  #     - FLASK_ENV=production
+  #   restart: unless-stopped

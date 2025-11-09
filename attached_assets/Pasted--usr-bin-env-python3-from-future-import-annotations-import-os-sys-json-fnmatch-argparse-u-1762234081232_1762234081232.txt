@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import os, sys, json, fnmatch, argparse, urllib.request
+from pathlib import Path
+from glob import glob
+
+def human(n:int)->str:
+    u=["B","KB","MB","GB","TB"]; i=0; f=float(n)
+    while f>=1024 and i<len(u)-1: f/=1024; i+=1
+    return f"{f:.2f} "+u[i]
+
+def expand_globs(lines:list[str])->list[Path]:
+    inc, exc = [], []
+    for s in (x.strip() for x in lines):
+        if not s: continue
+        (exc if s.startswith("!") else inc).append(s[1:] if s.startswith("!") else s)
+    files=set()
+    for p in inc:
+        for m in glob(p, recursive=True):
+            q=Path(m)
+            if q.is_file(): files.add(q.resolve())
+    ex=set()
+    for p in exc:
+        for m in glob(p, recursive=True):
+            q=Path(m)
+            if q.is_file(): ex.add(q.resolve())
+    return sorted([p for p in files if p not in ex])
+
+def gh_get(url:str, token:str):
+    req=urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {token}",
+        "Accept":"application/vnd.github+json"
+    })
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+def find_previous_release(owner_repo:str, token:str, current_tag:str)->dict|None:
+    rels = gh_get(f"https://api.github.com/repos/{owner_repo}/releases?per_page=100", token)
+    rels.sort(key=lambda r:r.get("created_at",""), reverse=True)
+    seen=False
+    for r in rels:
+        if r.get("tag_name")==current_tag:
+            seen=True; continue
+        if seen: return r
+    for r in rels:
+        if r.get("tag_name")!=current_tag: return r
+    return None
+
+def load_budgets(path:Path)->list[dict]:
+    if not path.exists(): return []
+    return json.loads(path.read_text(encoding="utf-8"))
+
+def match_budget(budgets:list[dict], name:str)->dict|None:
+    for b in budgets:
+        if fnmatch.fnmatch(name, b["pattern"]):
+            return b
+    return None
+
+def main():
+    ap=argparse.ArgumentParser(description="Check per-asset size budgets and emit markdown.")
+    ap.add_argument("--globs", required=True, help="newline-delimited include/exclude globs")
+    ap.add_argument("--budgets", required=True, help="path to .json budgets")
+    ap.add_argument("--tag", required=True, help="current tag (vX.Y.Z)")
+    ap.add_argument("--out", default="RELEASE_BUDGETS.md")
+    ap.add_argument("--enforce", action="store_true", help="exit nonzero on violations")
+    args=ap.parse_args()
+
+    owner_repo=os.getenv("GITHUB_REPOSITORY","").strip()
+    token=os.getenv("GITHUB_TOKEN","").strip() or os.getenv("GH_TOKEN","").strip()
+    if not owner_repo or not token:
+        print("Missing GITHUB_REPOSITORY or token", file=sys.stderr); sys.exit(1)
+
+    files = expand_globs(args.globs.splitlines())
+    current = { p.name: p.stat().st_size for p in files }
+
+    prev_rel = find_previous_release(owner_repo, token, args.tag)
+    prev_tag = prev_rel["tag_name"] if prev_rel else ""
+    prev_assets = { a["name"]: int(a.get("size",0)) for a in (prev_rel.get("assets",[]) if prev_rel else []) }
+
+    budgets = load_budgets(Path(args.budgets))
+
+    md=[]
+    md.append(f"## Per-asset Budgets — {args.tag}")
+    md.append("")
+    md.append(f"Compared against: **{prev_tag or '—'}**")
+    md.append("")
+    md.append("| File | Size | Δ vs prev | Budget | Δ Budget | Status |")
+    md.append("|------|-----:|----------:|-------:|---------:|:------:|")
+
+    violations = []
+    for name, size in sorted(current.items()):
+        prev = prev_assets.get(name, 0)
+        delta = size - prev
+        b = match_budget(budgets, name) or {}
+        max_mb = float(b.get("max_mb", float("inf")))
+        max_delta_mb = float(b.get("max_delta_mb", float("inf")))
+        ok_size = size <= max_mb*1024*1024
+        ok_delta = abs(delta) <= max_delta_mb*1024*1024
+        status = "🟢"
+        if not ok_size and not ok_delta: status = "🔴"; violations.append((name,"max_mb&delta"))
+        elif not ok_size: status = "🟠"; violations.append((name,"max_mb"))
+        elif not ok_delta: status = "🟡"; violations.append((name,"max_delta"))
+        md.append(f"| `{name}` | {human(size)} | {('+' if delta>=0 else '')}{human(abs(delta))} | "
+                  f"{'∞' if max_mb==float('inf') else str(int(max_mb))+' MB'} | "
+                  f"{'∞' if max_delta_mb==float('inf') else str(int(max_delta_mb))+' MB'} | {status} |")
+
+    Path(args.out).write_text("\n".join(md)+"\n", encoding="utf-8")
+    print(f"Wrote {args.out}")
+    if args.enforce and violations:
+        print("Budget violations:", violations, file=sys.stderr)
+        sys.exit(49)
+
+if __name__=="__main__":
+    main()

@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+# deploy_to_github.py
+# One-and-done GitHub deploy with optional fresh init, Git LFS, tag + release.
+# Usage example (public):
+#   python3 deploy_to_github.py --owner ChristopherElgin --repo SonicBuilderSupersonic \
+#       --version v1.0.0 --public --fresh
+#
+# Usage example (private):
+#   python3 deploy_to_github.py --owner ChristopherElgin --repo SonicBuilderSupersonic \
+#       --version v1.0.0 --private --fresh
+
+import argparse, os, sys, subprocess, shlex, textwrap
+
+def run(cmd, check=True, env=None):
+    print(f"\n$ {cmd}")
+    result = subprocess.run(cmd, shell=True, env=env)
+    if check and result.returncode != 0:
+        sys.exit(result.returncode)
+    return result.returncode
+
+def have(cmd):
+    return subprocess.call(f"command -v {shlex.quote(cmd)} >/dev/null 2>&1", shell=True) == 0
+
+def write_gitattributes():
+    ga = ".gitattributes"
+    lines = [
+        "# Managed by deploy_to_github.py – Git LFS large binary patterns",
+        "*.wav filter=lfs diff=lfs merge=lfs -text",
+        "*.mp3 filter=lfs diff=lfs merge=lfs -text",
+        "*.flac filter=lfs diff=lfs merge=lfs -text",
+        "*.png filter=lfs diff=lfs merge=lfs -text",
+        "*.gif filter=lfs diff=lfs merge=lfs -text",
+        "*.jpg filter=lfs diff=lfs merge=lfs -text",
+        "*.jpeg filter=lfs diff=lfs merge=lfs -text",
+        "*.pdf filter=lfs diff=lfs merge=lfs -text",
+        "*.zip filter=lfs diff=lfs merge=lfs -text",
+        "docs/assets/** filter=lfs diff=lfs merge=lfs -text",
+        "assets/audio/** filter=lfs diff=lfs merge=lfs -text",
+        "assets/images/** filter=lfs diff=lfs merge=lfs -text",
+    ]
+    if os.path.exists(ga):
+        with open(ga, "r", encoding="utf-8") as f:
+            existing = f.read()
+        if "Git LFS large binary patterns" in existing:
+            print("✔ .gitattributes already contains LFS patterns")
+            return
+    with open(ga, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    print("✔ Wrote .gitattributes with LFS patterns")
+
+def main():
+    p = argparse.ArgumentParser(description="Deploy the full Supersonic build to GitHub")
+    p.add_argument("--owner", required=True, help="GitHub owner/org (e.g., ChristopherElgin)")
+    p.add_argument("--repo", required=True, help="Repository name (e.g., SonicBuilderSupersonic)")
+    p.add_argument("--version", default="v1.0.0", help="Tag/version (e.g., v1.0.0)")
+    vis = p.add_mutually_exclusive_group()
+    vis.add_argument("--public", action="store_true", help="Create public repo")
+    vis.add_argument("--private", action="store_true", help="Create private repo")
+    p.add_argument("--fresh", action="store_true", help="Remove old .git and init fresh")
+    p.add_argument("--no-lfs", action="store_true", help="Skip Git LFS setup")
+    p.add_argument("--message", default="feat: Supersonic v4 Ultimate Edition – Initial Release",
+                   help="Commit message")
+    p.add_argument("--release-notes", default="See DEPLOYMENT_GUIDE.md for release notes",
+                   help="Release notes body")
+    args = p.parse_args()
+
+    owner = args.owner
+    repo = args.repo
+    remote_https = f"https://github.com/{owner}/{repo}.git"
+    visibility = "public" if args.public or not args.private else "private"
+
+    # 1) Fresh init (optional)
+    if args.fresh and os.path.isdir(".git"):
+        run("rm -rf .git")
+    if not os.path.isdir(".git"):
+        run("git init")
+        run("git branch -M main")
+
+    # 2) Git LFS (optional but recommended)
+    if not args.no_lfs:
+        if have("git-lfs"):
+            run("git lfs install")
+            write_gitattributes()
+            # Add .gitattributes early
+            run("git add .gitattributes", check=False)
+        else:
+            print("⚠ git-lfs not installed; continuing without LFS. Install with brew install git-lfs / choco / apt.")
+
+    # 3) Stage and commit the world
+    run("git add -A")
+    run(f'git commit -m "{args.message}"', check=False)  # no-op if nothing to commit
+
+    # 4) Ensure remote
+    remotes = subprocess.check_output("git remote", shell=True).decode().strip().splitlines()
+    if "origin" not in remotes:
+        run(f"git remote add origin {shlex.quote(remote_https)}")
+
+    # 5) If GitHub CLI is available, create repo if needed
+    repo_exists = False
+    if have("gh"):
+        # Check repo existence
+        code = subprocess.call(f"gh repo view {owner}/{repo} >/dev/null 2>&1", shell=True)
+        if code == 0:
+            repo_exists = True
+        else:
+            flags = "--public" if visibility == "public" else "--private"
+            run(f"gh repo create {owner}/{repo} {flags} --source=. --push")
+            repo_exists = True
+
+    # 6) Push main
+    run("git push -u origin main")
+
+    # 7) Tag and push the tag
+    run(f'git tag -a {args.version} -m "Release {args.version}"', check=False)
+    run(f"git push origin {args.version}", check=False)
+
+    # 8) Create GitHub Release (if gh available)
+    if have("gh"):
+        # If release exists, this will fail softly; that's fine.
+        rn = args.release_notes.replace('"', '\\"')
+        title = f"Supersonic v4 Ultimate Edition – {args.version}"
+        run(f'gh release create {args.version} --title "{title}" --notes "{rn}"', check=False)
+    else:
+        print(textwrap.dedent(f"""
+        ℹ 'gh' not found. Create the release manually if you like:
+           https://github.com/{owner}/{repo}/releases/new
+           Tag: {args.version}
+           Title: Supersonic v4 Ultimate Edition – {args.version}
+           Notes: {args.release_notes}
+        """).strip())
+
+    print("\n✅ Deployment complete!")
+    print(f"➡ Repo: {remote_https}")
+    print(f"➡ Tag : {args.version}")
+    print("\nNext:")
+    print("  1) Enable GitHub Pages (Settings → Pages → Branch: main / Folder: /docs).")
+    print("  2) Check Actions; ensure workflows are green.")
+    print("  3) (Optional) Generate remaining voice packs:\n"
+          "     make -f make/ControlCore.mk ai-voicepacks")
+    print("  4) Add status banner to README if not already.")
+    print("  5) Protect main branch (Settings → Branches).")
+
+if __name__ == "__main__":
+    main()

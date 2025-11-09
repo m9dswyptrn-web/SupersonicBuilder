@@ -1,0 +1,111 @@
+name: Health Escalation (3x consecutive failures -> Issue)
+
+on:
+  workflow_run:
+    workflows: ["Health Guard (/health monitor + auto-heal)"]
+    types: [completed]
+
+jobs:
+  escalate:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write        # create/update issues with GITHUB_TOKEN
+      actions: read
+    steps:
+      - name: Resolve workflow id for Health Guard
+        id: wf
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          NAME="Health Guard (/health monitor + auto-heal)"
+          ID=$(gh api repos/${{ github.repository }}/actions/workflows \
+            --jq '.workflows[] | select(.name=="'"$NAME"'") | .id')
+          if [ -z "$ID" ]; then
+            echo "Could not find workflow id for: $NAME" >&2
+            exit 1
+          fi
+          echo "id=$ID" >> $GITHUB_OUTPUT
+
+      - name: Fetch latest 6 runs of Health Guard (scheduled + manual)
+        id: runs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WF_ID: ${{ steps.wf.outputs.id }}
+        run: |
+          gh api repos/${{ github.repository }}/actions/workflows/${WF_ID}/runs \
+            -F per_page=6 \
+            --jq '.workflow_runs | map({id,html_url,conclusion,created_at})' > runs.json
+          cat runs.json
+
+      - name: Compute consecutive failures
+        id: streak
+        run: |
+          python3 - <<'PY'
+import json, sys
+with open("runs.json","r") as f:
+    runs = json.load(f)
+# Sort newest->oldest already; ensure
+runs.sort(key=lambda r: r["created_at"], reverse=True)
+streak = 0
+for r in runs:
+    if r.get("conclusion") == "failure":
+        streak += 1
+    else:
+        break
+print("streak", streak)
+open("streak.txt","w").write(str(streak))
+PY
+          echo "streak=$(cat streak.txt)" >> $GITHUB_OUTPUT
+
+      - name: Prepare issue body
+        id: prep
+        env:
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          REPO:    ${{ github.repository }}
+        run: |
+          echo "Run: ${RUN_URL}"
+          cat > body.md << 'MD'
+### 🚨 Health Guard escalation
+
+Health Guard has failed on **3 consecutive runs** (auto-heal did not confirm recovery).
+
+**Latest failing run:** $RUN_URL
+
+Artifacts on the failing run contain:
+- `health-baseline-<run_id>.zip`
+- `health-rechecks-<run_id>.zip`
+- (From companion jobs) `logs-tail-<run_id>.zip`
+
+**Suggested next steps**
+1. Open the failing run and download artifacts (baseline + rechecks + logs tail).
+2. Inspect `/health` payloads (disk, uptime, tool checks) and server logs.
+3. If safe, manually trigger auto-heal:
+   - Replit button in `/panel` → Restart
+   - Or `POST /sync/restart` with `X-Doctor-Key`
+4. If the issue is environmental (disk/quotas), remediate limits and re-run Health Guard.
+
+> This issue was created automatically by **Health Escalation**.
+MD
+
+      - name: Create or update escalation Issue
+        if: ${{ steps.streak.outputs.streak >= 3 }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          TITLE="🚨 Health Escalation: 3 consecutive Health Guard failures"
+          LABEL="auto-heal-escalation"
+          # Find existing open escalation issue (if any)
+          NUM=$(gh issue list --state open --label "$LABEL" --search "$TITLE" --limit 1 --json number --jq '.[0].number // empty')
+          if [ -z "$NUM" ]; then
+            gh issue create --title "$TITLE" --label "$LABEL" --body-file body.md
+          else
+            # Append a comment and keep the issue open
+            gh issue comment "$NUM" --body "Another failure detected: ${{ github.event.workflow_run.html_url }}"
+          fi
+
+      - name: No escalation (streak < 3)
+        if: ${{ steps.streak.outputs.streak < 3 }}
+        run: echo "Streak < 3, not escalating."

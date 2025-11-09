@@ -1,0 +1,2 @@
+python scripts\run_offline_llm.py
+python scripts\bench_llm.py

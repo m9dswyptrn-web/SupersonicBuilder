@@ -1,0 +1,6 @@
+# one-time owner/repo replace in docs/index.html
+sed -i 's/OWNER/YourUser/g; s/REPO/SonicBuilder/g' docs/index.html
+
+git add -A
+git commit -m "Docs: GitHub Pages site + workflow"
+git push origin main

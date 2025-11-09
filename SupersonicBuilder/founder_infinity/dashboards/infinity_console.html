@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🧠 SonicBuilder Infinity Console</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0d1117;
+      color: #e6edf3;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    h1 {
+      color: #58a6ff;
+      margin-bottom: 10px;
+      font-size: 2.5em;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .hero {
+      text-align: center;
+      margin: 40px 0;
+    }
+    .btn {
+      background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
+      color: white;
+      padding: 20px 40px;
+      font-size: 20px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 700;
+      transition: all 0.3s;
+      box-shadow: 0 4px 15px rgba(35, 134, 54, 0.4);
+    }
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(35, 134, 54, 0.6);
+    }
+    .btn:active {
+      transform: translateY(0);
+    }
+    .btn:disabled {
+      background: #30363d;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+    .log {
+      margin-top: 30px;
+      background: #161b22;
+      border: 2px solid #30363d;
+      padding: 20px;
+      max-height: 450px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      font-family: 'Consolas', 'Monaco', monospace;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .log::-webkit-scrollbar {
+      width: 10px;
+    }
+    .log::-webkit-scrollbar-track {
+      background: #0d1117;
+    }
+    .log::-webkit-scrollbar-thumb {
+      background: #30363d;
+      border-radius: 5px;
+    }
+    .footer {
+      margin-top: 40px;
+      text-align: center;
+      font-size: 12px;
+      color: #8b949e;
+      padding-top: 20px;
+      border-top: 1px solid #30363d;
+    }
+    .step-success { color: #2ea043; }
+    .step-error { color: #f85149; }
+    .step-running { color: #58a6ff; }
+    .description {
+      max-width: 600px;
+      margin: 0 auto 30px;
+      text-align: center;
+      color: #8b949e;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="hero">
+      <h1>🚀 SonicBuilder Infinity Console</h1>
+      <p class="description">
+        Execute the complete deployment pipeline with one click.<br>
+        Synchronizes logs, rebuilds documentation, and deploys to GitHub Pages.
+      </p>
+      <button class="btn" id="runBtn" onclick="runInfinity()">
+        ⚡ EXECUTE INFINITY PIPELINE
+      </button>
+    </div>
+
+    <div id="log" class="log"><em>Ready to execute pipeline...</em></div>
+
+    <div class="footer">
+      SonicBuilder v2.0.9 — Infinity Mode · Complete Autonomous Deployment
+    </div>
+  </div>
+
+  <script>
+    const key = "SonicBuilder-2025-AlphaKey-42X!";
+    const base = window.location.origin;
+
+    async function runInfinity() {
+      const logEl = document.getElementById('log');
+      const btnEl = document.getElementById('runBtn');
+      
+      // Disable button
+      btnEl.disabled = true;
+      btnEl.textContent = "⏳ PIPELINE RUNNING...";
+      
+      logEl.textContent = "🚀 Starting SonicBuilder Infinity Pipeline...\n";
+      logEl.textContent += "=" + "=".repeat(60) + "\n\n";
+
+      const steps = [
+        {
+          name: "Mirror Sync",
+          desc: "Backing up logs to GitHub branch 'founder_mirror'...",
+          endpoint: "/autodeploy/mirror",
+          icon: "🪞"
+        },
+        {
+          name: "Documentation Build",
+          desc: "Rebuilding PDF documentation bundle...",
+          endpoint: "/autodeploy/docs",
+          icon: "📚"
+        },
+        {
+          name: "GitHub Pages Deploy",
+          desc: "Deploying to GitHub Pages...",
+          endpoint: "/autodeploy/deploy",
+          icon: "🌐"
+        },
+        {
+          name: "Badge Refresh",
+          desc: "Updating status badges and dashboards...",
+          endpoint: "/autodeploy/refresh",
+          icon: "🎨"
+        }
+      ];
+
+      for (let i = 0; i < steps.length; i++) {
+        const step = steps[i];
+        logEl.textContent += `\n${step.icon} [${i + 1}/${steps.length}] ${step.name}\n`;
+        logEl.textContent += `   ${step.desc}\n`;
+        
+        try {
+          const res = await fetch(base + step.endpoint, {
+            method: "POST",
+            headers: {"X-API-KEY": key}
+          });
+          
+          const data = await res.json();
+          
+          if (data.status === "success" || data.status === "completed") {
+            logEl.textContent += `   ✅ SUCCESS\n`;
+            if (data.output) {
+              const preview = data.output.substring(0, 200);
+              logEl.textContent += `   ${preview}${data.output.length > 200 ? '...' : ''}\n`;
+            }
+          } else {
+            logEl.textContent += `   ⚠️ ${data.error || 'Unknown error'}\n`;
+          }
+        } catch (err) {
+          logEl.textContent += `   ❌ FAILED: ${err.message}\n`;
+        }
+        
+        // Scroll to bottom
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      logEl.textContent += "\n" + "=".repeat(62) + "\n";
+      logEl.textContent += "🎉 Infinity pipeline execution completed!\n";
+      logEl.textContent += `\nFinished at: ${new Date().toLocaleString()}\n`;
+      
+      // Re-enable button
+      btnEl.disabled = false;
+      btnEl.textContent = "⚡ EXECUTE INFINITY PIPELINE";
+      
+      // Scroll to bottom
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  </script>
+</body>
+</html>

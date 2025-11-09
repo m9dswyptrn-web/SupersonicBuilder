@@ -1,0 +1,5 @@
+<!-- Mute status line -->
+<div id="muteRow" class="mute-row" style="display:none;">
+  <span id="muteStatus" class="muted">🔕 Muted until —</span>
+  <button id="muteExtendBtn" class="pill" style="margin-left:8px;" onclick="extendMute10()">Extend +10m</button>
+</div>

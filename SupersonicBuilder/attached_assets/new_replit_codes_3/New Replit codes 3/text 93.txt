@@ -1,0 +1,9 @@
+// If theme change affects layout (fonts/spacing), re-render current PDF page after a short debounce.
+(function () {
+  let t = null;
+  window.addEventListener("themechange", () => {
+    if (!pdfDoc || canvas.hidden) return;  // nothing to re-render
+    clearTimeout(t);
+    t = setTimeout(() => { renderPage().catch(()=>{}); }, 150);
+  });
+})();

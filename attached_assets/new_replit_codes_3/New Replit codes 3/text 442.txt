@@ -1,0 +1,2 @@
+.pill[disabled] { opacity: .6; cursor: not-allowed; }
+.pill[aria-busy="true"] { opacity: .6; }

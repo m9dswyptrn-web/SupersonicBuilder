@@ -1,0 +1,88 @@
+# tools/doctor_endpoints.py
+from __future__ import annotations
+import os, time, json, hashlib, threading
+from dataclasses import dataclass
+from typing import Any, Dict
+
+START_TS = time.time()
+RELOAD_FLAG = ".reload"
+
+@dataclass
+class Health:
+    ok: bool = True
+    uptime_sec: float = 0.0
+    files: int = 0
+    sha: str = ""
+
+def _snapshot_sha(root: str=".") -> str:
+    h = hashlib.sha256()
+    for base, dirs, files in os.walk(root):
+        # skip git and cache noise
+        if any(skip in base for skip in [".git", "__pycache__", ".mypy_cache", ".pytest_cache"]):
+            continue
+        for f in files:
+            p = os.path.join(base, f)
+            try:
+                st = os.stat(p)
+                h.update(f"{p}:{st.st_mtime_ns}:{st.st_size}".encode())
+            except Exception:
+                pass
+    return h.hexdigest()[:16]
+
+def _count_files(root: str=".") -> int:
+    n = 0
+    for base, _, files in os.walk(root):
+        if ".git" in base or "__pycache__" in base:
+            continue
+        n += len(files)
+    return n
+
+def mount_on_flask(app, url_prefix: str = ""):
+    prefix = ("/" + url_prefix.strip("/")) if url_prefix else ""
+
+    @app.get(prefix + "/health")
+    def health():
+        data = Health(
+            ok=True,
+            uptime_sec=round(time.time() - START_TS, 2),
+            files=_count_files("."),
+            sha=_snapshot_sha("."),
+        )
+        return app.response_class(
+            response=json.dumps(data.__dict__), status=200, mimetype="application/json"
+        )
+
+    @app.get(prefix + "/sync/status")
+    def sync_status():
+        report_md = "docs/HEALTH_REPORT.md"
+        found = os.path.exists(report_md)
+        ts = os.path.getmtime(report_md) if found else None
+        payload: Dict[str, Any] = {
+            "report_found": found,
+            "report_mtime": ts,
+            "uptime_sec": round(time.time() - START_TS, 2),
+        }
+        return app.response_class(
+            response=json.dumps(payload), status=200, mimetype="application/json"
+        )
+
+    @app.post(prefix + "/sync/restart")
+    def sync_restart():
+        # touch a flag that your process manager / Replit can watch for
+        try:
+            with open(RELOAD_FLAG, "w") as f:
+                f.write(str(time.time()))
+        except Exception:
+            pass
+
+        # async exit to let the response flush cleanly
+        def _quit():
+            time.sleep(0.5)
+            os._exit(0)  # Replit restarts the process
+
+        threading.Thread(target=_quit, daemon=True).start()
+        return app.response_class(
+            response=json.dumps({"ok": True, "action": "restart"}),
+            status=202,
+            mimetype="application/json",
+        )

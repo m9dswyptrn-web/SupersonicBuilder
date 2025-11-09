@@ -1,0 +1,20 @@
+SuperSonic Manual System
+Version: 2.5.0
+Date: 2025-10-28
+
+Features:
+- Professional PDF manual generator (108 pages)
+- 93 camera installation photos
+- 69 wiring diagrams with QR codes
+- QR glyph indicators in index
+- Back-to-Index navigation links
+- Parts & Tools generator with QR sourcing
+- Automatic release notes generation
+- Dark & Light themes
+- YAML-based configuration
+- Schematics drop-in system
+
+Build Time: ~15 seconds
+Output Size: 65 MB (manual), 2.4 KB (parts list)
+Themes: Dark (screen) & Light (print)
+Release: dist/RELEASE_NOTES.md with SHA256 checksums

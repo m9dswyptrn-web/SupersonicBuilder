@@ -1,0 +1,28 @@
+// Turn the switch ON => snooze until the chosen time; OFF => unmute
+async function handleMuteSwitchChange(checked){
+  SETTINGS.muteSwitch = !!checked;
+  saveSettings();
+  const inp = document.getElementById('optSnoozeUntil');
+  if (SETTINGS.muteSwitch) {
+    // if no value, seed midnight
+    if (inp && !inp.value) defaultSnoozeMidnight();
+    await snoozeUntil();         // uses the datetime-local value
+  } else {
+    await unsnooze();
+  }
+}
+
+// Poll server mute status and keep the switch in sync
+async function syncMuteSwitchFromServer(){
+  try{
+    const r = await fetch('/api/mute');  // GET -> {muted, remaining_sec, until_ts, server_now}
+    const j = await r.json();
+    const muteNow = !!j.muted;
+    const el = document.getElementById('optMuteSwitch');
+    if (el) el.checked = muteNow;
+    // reflect into SETTINGS but don't auto-write to storage every tick
+    SETTINGS.muteSwitch = muteNow;
+    // Update “Muted: Xm Ys” line (you already have snoozeLeft/ticker)
+    // startSnoozeTicker() is already running from earlier code
+  }catch(e){}
+}

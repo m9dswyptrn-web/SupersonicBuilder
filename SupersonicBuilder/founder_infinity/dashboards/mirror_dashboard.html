@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🧠 SonicBuilder Mirror Dashboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0d1117;
+      color: #e6edf3;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    h1 {
+      color: #58a6ff;
+      margin-bottom: 10px;
+      font-size: 2em;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #161b22;
+      margin-top: 20px;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    th, td {
+      border: 1px solid #30363d;
+      padding: 12px;
+      text-align: left;
+    }
+    th {
+      background: #21262d;
+      color: #58a6ff;
+      font-weight: 600;
+    }
+    tr:hover {
+      background: #1f6feb33;
+    }
+    .footer {
+      margin-top: 40px;
+      font-size: 12px;
+      color: #8b949e;
+      text-align: center;
+      padding-top: 20px;
+      border-top: 1px solid #30363d;
+    }
+    button {
+      background: #238636;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 10px 20px;
+      font-size: 15px;
+      cursor: pointer;
+      margin: 10px 5px;
+      transition: all 0.2s;
+      font-weight: 600;
+    }
+    button:hover {
+      background: #2ea043;
+      transform: translateY(-1px);
+    }
+    a {
+      color: #58a6ff;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .status-badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .status-synced {
+      background: #238636;
+      color: white;
+    }
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #8b949e;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚀 SonicBuilder Founder Mirror Dashboard</h1>
+    <p>Browse hourly synchronizations and inspect mirrored artifacts from GitHub branch: <code>founder_mirror</code></p>
+
+    <div style="margin-top: 20px;">
+      <button onclick="refresh()">🔄 Refresh Mirror Log</button>
+      <button onclick="window.open(`https://github.com/${repo}/tree/founder_mirror`, '_blank')">
+        📂 View on GitHub
+      </button>
+    </div>
+
+    <table id="mirrorTable">
+      <thead>
+        <tr>
+          <th>Timestamp (UTC)</th>
+          <th>File</th>
+          <th>Message</th>
+          <th>GitHub Link</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="mirrorBody">
+        <tr>
+          <td colspan="5" class="loading">Loading mirror sync data from GitHub...</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="footer">
+      SonicBuilder v2.0.9 — Founder Mirror Audit Browser
+    </div>
+  </div>
+
+  <script>
+    const repo = "m9dswyptrn-web/SonicBuilder";
+    const apiBase = `https://api.github.com/repos/${repo}/commits?sha=founder_mirror&per_page=50`;
+
+    async function refresh() {
+      const tbody = document.getElementById("mirrorBody");
+      tbody.innerHTML = "<tr><td colspan='5' class='loading'>Fetching latest commits from GitHub...</td></tr>";
+
+      try {
+        const res = await fetch(apiBase);
+        
+        if (!res.ok) {
+          throw new Error(`GitHub API returned ${res.status}`);
+        }
+        
+        const commits = await res.json();
+        
+        if (commits.length === 0) {
+          tbody.innerHTML = "<tr><td colspan='5' class='loading'>No commits found in founder_mirror branch</td></tr>";
+          return;
+        }
+        
+        tbody.innerHTML = commits.map(commit => {
+          const msg = commit.commit.message;
+          const date = new Date(commit.commit.author.date);
+          const dateStr = date.toLocaleString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZoneName: 'short'
+          });
+          const shortSha = commit.sha.substring(0, 7);
+          
+          // Extract filename from commit message
+          const fileMatch = msg.match(/\[(.*?)\]\s+(\S+)/);
+          const file = fileMatch ? fileMatch[2] : "N/A";
+          
+          return `
+            <tr>
+              <td>${dateStr}</td>
+              <td><code>${file}</code></td>
+              <td>${msg}</td>
+              <td>
+                <a href="${commit.html_url}" target="_blank">🔗 ${shortSha}</a>
+              </td>
+              <td>
+                <span class="status-badge status-synced">✅ Synced</span>
+              </td>
+            </tr>
+          `;
+        }).join("");
+      } catch (err) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan='5' class='loading'>
+              ⚠️ Error loading commits: ${err.message}<br>
+              <small>Make sure the founder_mirror branch exists on GitHub</small>
+            </td>
+          </tr>
+        `;
+      }
+    }
+
+    // Initial load
+    refresh();
+    
+    // Auto-refresh every 5 minutes
+    setInterval(refresh, 300000);
+  </script>
+</body>
+</html>

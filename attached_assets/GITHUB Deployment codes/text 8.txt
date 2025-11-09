@@ -1,0 +1,7 @@
+      - name: 🔗 Pages alias to latest
+        run: |
+          set -e
+          LAST=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
+          test -n "$LAST"
+          mkdir -p docs/latest
+          rsync -a "docs/$LAST/" "docs/latest/"

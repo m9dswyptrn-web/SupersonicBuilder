@@ -1,0 +1,141 @@
+# ---- .env presence helper ----
+def _env_present() -> bool:
+    return Path(".env").exists()
+
+@app.route("/api/env/present", methods=["GET"])
+def api_env_present():
+    return jsonify({"ok": True, "present": _env_present()})
+
+# ---- safer reload endpoint (process will exit; your runner should restart it) ----
+@app.route("/api/reload", methods=["POST"])
+def api_reload():
+    try:
+        # optional: require a tiny token to avoid accidental hits
+        token_ok = True  # flip to your own check if desired
+        if not token_ok:
+            return jsonify({"ok": False, "error": "unauthorized"}), 403
+        # Flush any pending writes and exit
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)  # rely on your supervisor (Replit runner / systemd / docker) to restart
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+# ---- .env self-check ----
+@app.route("/api/env/test", methods=["GET"])
+def api_env_test():
+    """
+    Validates .env + runtime readiness:
+      - AGENT_MODEL path exists and is a file
+      - DOCS_DIR exists (or suggest creating)
+      - PORT, LLM_THREADS, LLM_CTX sane
+      - backend known; model 'ready' (status ok|cpu)
+      - optional bench freshness if REQUIRE_RECENT_BENCH=1
+    """
+    issues, suggestions, notes = [], [], []
+    envp = Path(".env")
+    if not envp.exists():
+        issues.append(".env is missing")
+        suggestions.append("Open /api/env/template and save it as .env (or use Fix it for me).")
+
+    # current env snapshot
+    model = read_env_var("AGENT_MODEL", "").strip()
+    docs  = read_env_var("DOCS_DIR", "docs").strip()
+    port  = read_env_var("PORT", str(PORT)).strip()
+    th    = read_env_var("LLM_THREADS", "4").strip()
+    ctx   = read_env_var("LLM_CTX", "4096").strip()
+
+    # AGENT_MODEL
+    if not model:
+        issues.append("AGENT_MODEL not set")
+        suggestions.append("Use autoscan template; it will fill the best local .gguf.")
+    else:
+        mp = Path(model).expanduser()
+        if not mp.exists() or not mp.is_file():
+            issues.append(f"AGENT_MODEL path not found: {mp}")
+            # propose best candidate
+            suggestions.append(f"Consider: {_suggest_model_path()}")
+
+    # DOCS_DIR
+    dp = Path(docs)
+    if not dp.exists():
+        notes.append(f"DOCS_DIR does not exist yet: {dp} (will be created on first ingest)")
+        # not a failure, but nudge creation:
+        suggestions.append(f"Create directory: {dp}")
+
+    # PORT
+    try:
+        pv = int(port)
+        if pv < 1024 or pv > 65535:
+            issues.append(f"PORT out of range: {pv}")
+            suggestions.append("Pick a port between 1024–65535 (e.g., 7860).")
+    except Exception:
+        issues.append(f"PORT not an integer: {port}")
+        suggestions.append("Set PORT to an integer (e.g., 7860).")
+
+    # LLM_THREADS
+    try:
+        tv = int(th)
+        if tv < 1:
+            issues.append(f"LLM_THREADS < 1: {tv}")
+            suggestions.append("Set LLM_THREADS to a positive integer.")
+    except Exception:
+        issues.append(f"LLM_THREADS not an integer: {th}")
+        suggestions.append("Set LLM_THREADS to a positive integer (e.g., 4 or number of cores).")
+
+    # LLM_CTX
+    try:
+        cv = int(ctx)
+        if cv < 1024:
+            notes.append(f"LLM_CTX is small ({cv}); consider 4096+ unless memory-constrained.")
+    except Exception:
+        notes.append(f"LLM_CTX not an integer: {ctx}; defaulting internally.")
+
+    # runtime readiness
+    stat = detect_status()
+    backend = stat.get("backend")
+    status  = stat.get("status")
+    if status not in ("ok", "cpu"):
+        issues.append(f"Runtime not ready: status={status}")
+        if status == "missing":
+            suggestions.append("Place the model file or set AGENT_MODEL via .env template.")
+        else:
+            suggestions.append("Check GPU drivers or continue in CPU mode; rerun gpu_detect.py.")
+
+    if backend not in ("cuda", "rocm", "metal", "cpu"):
+        notes.append(f"Backend unknown: {backend}. If expecting GPU, check drivers.")
+
+    # optional bench freshness
+    REQUIRE_RECENT_BENCH = os.getenv("REQUIRE_RECENT_BENCH", "0") in ("1","true","True","yes","y")
+    bench_info = read_bench_cache()
+    bench_ok = True
+    bench_age = None
+    BENCH_FRESH_SEC = int(os.getenv("BENCH_FRESH_SEC", "43200"))
+    if REQUIRE_RECENT_BENCH:
+        if bench_info and bench_info.get("ts"):
+            bench_age = int(time.time()) - int(bench_info["ts"])
+            bench_ok = bench_age <= BENCH_FRESH_SEC
+            if not bench_ok:
+                issues.append("Benchmark is stale for readiness policy.")
+                suggestions.append("Click Run Bench or use Fix it for me.")
+        else:
+            issues.append("No benchmark found but freshness required.")
+            suggestions.append("Click Run Bench or disable REQUIRE_RECENT_BENCH.")
+
+    return jsonify({
+        "ok": len(issues) == 0,
+        "env_present": envp.exists(),
+        "status": stat,
+        "backend": backend,
+        "issues": issues,
+        "suggestions": suggestions,
+        "notes": notes,
+        "bench": {
+            "required": REQUIRE_RECENT_BENCH,
+            "fresh_sec": BENCH_FRESH_SEC,
+            "have_bench": bool(bench_info),
+            "bench_ts": bench_info.get("ts") if isinstance(bench_info, dict) else None,
+            "bench_age_sec": bench_age,
+            "bench_ok": bench_ok
+        }
+    })

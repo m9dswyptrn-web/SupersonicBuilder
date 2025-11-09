@@ -1,0 +1,13 @@
+# ---- Quickstart helpers -----------------------------------------------------
+.PHONY: validate_setup quickstart
+
+# Validate presence of automation files and project config
+validate_setup:
+	$(PY) scripts/validate_github_setup.py || true
+
+# Print a tiny quickstart in the terminal
+quickstart:
+	@echo "1) make verify"
+	@echo "2) Open SETUP_PROJECTS_AUTOMATION.md or COMPLETE_GITHUB_SETUP.md"
+	@echo "3) make validate_setup"
+	@echo "4) git add -A && git commit -m \"chore: projects wired\" && git push"

@@ -1,0 +1,29 @@
+  async function preview() {
+    wrap.hidden = false;
+    showSpinner(true);
+    beginLongTask();
+    const fmt = selFmt.value;
+
+    try {
+      if (fmt === "png") {
+        pdfDoc = null;
+        image.hidden = false; canvas.hidden = true;
+        image.src = buildURL(true);
+        image.onload = () => { status(""); showSpinner(false); endLongTask(); };
+        image.onerror = () => { status("Preview failed."); showSpinner(false); endLongTask(); };
+        return;
+      }
+
+      image.hidden = true; canvas.hidden = false;
+      pdfURL = buildURL(true);
+      await loadPDF(pdfURL);
+      if (CANCEL.active) return;
+      await renderPage();
+      if (CANCEL.active) return;
+      status("");
+    } catch (_) {
+      if (!CANCEL.active) window.open(buildURL(), "_blank", "noopener");
+    } finally {
+      if (!CANCEL.active) endLongTask();
+    }
+  }

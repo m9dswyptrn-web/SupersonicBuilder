@@ -1,0 +1,4 @@
+description: Android DSP path export
+environment:
+  ANDROID_DST: '"/Volumes/Android/com.eoenkk.headunit/files/dsp"'
+source: text 23.txt

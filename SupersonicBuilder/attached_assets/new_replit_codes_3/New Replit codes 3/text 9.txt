@@ -1,0 +1,92 @@
+# --- Add near the top of app.py ---
+import json, pathlib
+from flask import send_file, abort, request
+
+BASE_DIR = pathlib.Path(__file__).resolve().parent
+DIAGRAM_INDEX = BASE_DIR / "data" / "diagrams_index.json"
+
+def _load_index():
+    try:
+        with open(DIAGRAM_INDEX, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+def _safe_path(p: pathlib.Path) -> pathlib.Path:
+    # prevent path traversal; must remain inside repo
+    p = (BASE_DIR / p).resolve()
+    if not str(p).startswith(str(BASE_DIR)):
+        raise ValueError("Unsafe path")
+    return p
+
+# -------- API: list diagrams by vehicle ----------
+@app.get("/api/diagrams/<make>/<model>/<year>")
+def list_diagrams(make, model, year):
+    idx = _load_index()
+    make = make.strip().title()
+    model = model.strip().title()
+    year = str(year).strip()
+    diagrams = idx.get(make, {}).get(model, {}).get(year, [])
+    return jsonify({
+        "make": make, "model": model, "year": year,
+        "count": len(diagrams), "diagrams": diagrams
+    }), 200
+
+# -------- API: fetch a specific diagram file ----------
+@app.get("/api/diagrams/<make>/<model>/<year>/<diagram_id>")
+def get_diagram(make, model, year, diagram_id):
+    fmt = request.args.get("format", "pdf").lower()
+    variant = request.args.get("variant", "dark").lower()
+    idx = _load_index()
+
+    record = None
+    for d in idx.get(make.title(), {}).get(model.title(), {}).get(str(year), []):
+        if d.get("id") == diagram_id:
+            record = d
+            break
+    if not record:
+        abort(404, description="Diagram not found")
+
+    path_rel = record.get("files", {}).get(fmt, {}).get(variant)
+    if not path_rel:
+        abort(404, description="Variant/format not available")
+
+    try:
+        path_abs = _safe_path(pathlib.Path(path_rel))
+    except ValueError:
+        abort(400, description="Invalid path")
+
+    if not path_abs.exists():
+        abort(404, description="File missing on disk")
+
+    # Cache a bit for speed; tweak as you like
+    resp = send_file(str(path_abs), as_attachment=False)
+    resp.headers["Cache-Control"] = "public, max-age=600"
+    return resp
+
+# -------- API: simple text search ----------
+@app.get("/api/diagrams/search")
+def search_diagrams():
+    q = (request.args.get("q") or "").strip().lower()
+    if not q:
+        return jsonify({"count": 0, "results": []}), 200
+
+    idx = _load_index()
+    results = []
+    for make, models in idx.items():
+        for model, years in models.items():
+            for year, items in years.items():
+                for d in items:
+                    hay = " ".join([
+                        make, model, year,
+                        d.get("id",""), d.get("name",""), d.get("category","")
+                    ]).lower()
+                    if q in hay:
+                        results.append({
+                            "make": make, "model": model, "year": year,
+                            "id": d.get("id"), "name": d.get("name"),
+                            "category": d.get("category"),
+                            "formats": d.get("formats", []),
+                            "variants": d.get("variants", [])
+                        })
+    return jsonify({"count": len(results), "results": results}), 200

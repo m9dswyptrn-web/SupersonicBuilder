@@ -1,0 +1,88 @@
+name: Docs • README Footer Stamp
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '.github/workflows/readme-stamp.yml'
+  release:
+    types: [published, edited]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  stamp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute stamp values
+        id: info
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="dev"
+          if [ -f VERSION ]; then VERSION="$(cat VERSION)"; fi
+          # For release events, prefer tag name if present
+          if [ "${{ github.event_name }}" = "release" ] && [ -n "${{ github.event.release.tag_name }}" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          fi
+          COMMIT="$(git rev-parse --short HEAD)"
+          BUILT="$(date -u '+%Y-%m-%d %H:%M UTC')"
+          OWNER="${{ github.repository_owner }}"
+          REPO="${{ github.event.repository.name }}"
+          PAGES_URL="https://${OWNER}.github.io/${REPO}/downloads/latest.pdf"
+
+          # Build the footer HTML
+          FOOTER="<!-- SB:FOOTER-START -->
+<p align=\"center\">
+  <sub>
+    Version: <b>${VERSION}</b> • Commit: <code>${COMMIT}</code> • Built: ${BUILT} •
+    <a href=\"${PAGES_URL}\">latest.pdf</a>
+  </sub>
+</p>
+<!-- SB:FOOTER-END -->"
+
+          # Export for next step
+          echo "footer<<EOF" >> $GITHUB_OUTPUT
+          echo "$FOOTER" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Insert or update footer in README.md
+        id: patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f README.md ]; then echo "# ${GITHUB_REPOSITORY##*/}" > README.md; fi
+
+          if grep -q '<!-- SB:FOOTER-START -->' README.md; then
+            # Replace between markers
+            awk '
+              BEGIN{inblk=0}
+              /<!-- SB:FOOTER-START -->/{print; inblk=1; next}
+              /<!-- SB:FOOTER-END -->/{print; inblk=0; next}
+              inblk==0{print}
+            ' README.md > README.tmp
+            mv README.tmp README.md
+            # Append fresh block at end (ensures single, latest block)
+            printf '\n%s\n' "${{ steps.info.outputs.footer }}" >> README.md
+          else
+            # Append markers/footer at end
+            printf '\n%s\n' "${{ steps.info.outputs.footer }}" >> README.md
+          fi
+
+          if git diff --quiet -- README.md; then
+            echo "nochange=true" >> $GITHUB_OUTPUT
+          else
+            echo "nochange=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit & push
+        if: steps.patch.outputs.nochange == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs(readme): update footer stamp [skip ci]"
+          git push

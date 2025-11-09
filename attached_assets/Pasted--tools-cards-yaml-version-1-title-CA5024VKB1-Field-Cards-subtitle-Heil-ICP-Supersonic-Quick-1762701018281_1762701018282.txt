@@ -1,0 +1,95 @@
+# tools/cards.yaml
+version: 1
+title: "CA5024VKB1 Field Cards"
+subtitle: "Heil/ICP • Supersonic Quick Reference"
+cards:
+  - id: safety
+    heading: "Power & Safety"
+    bullets:
+      - "Lockout/Tagout disconnect. Verify zero volts before touching conductors."
+      - "Breaker: 30 A typical. Disconnect within sight of condenser."
+      - "Grounding: Confirm earth bond lug tight; no paint under lug."
+      - "Strain reliefs on all whips; no exposed copper at lugs."
+    notes: "Meter: L1–L2 = 240±10 V; L1–G and L2–G ≈120±5 V."
+    warn: "If VAC sags >10% at start, check inrush, run cap, or service size."
+
+  - id: nameplate_cap
+    heading: "Nameplate & Capacitor"
+    bullets:
+      - "Model: Heil/ICP CA5024VKB1 (2-ton class)."
+      - "Dual run cap: **30 µF (HERM)** + **7.5 µF (FAN)**, ±6% (verify on label)."
+      - "Use 440 VAC rated run cap only; secure with strap; discharge before handling."
+      - "Label all leads before removal; replace push-ons if loose."
+    notes: "If cap tests >10% low on either section → replace."
+    warn: "Reverse-polarity not applicable, but wrong terminal = no-start/overheat."
+
+  - id: compressor_leads
+    heading: "Compressor Lead Map — Your Colors"
+    bullets:
+      - "**C (Common): BLACK** → Capacitor **C** (common bar)."
+      - "**R / T3 (Run): RED** → Contactor load (to run winding)."
+      - "**S (Start): BLUE** → Capacitor **HERM**."
+      - "Green (if present) is chassis ground only."
+    notes: "Match exactly: C=black, R/T3=red, S=blue."
+    warn: "Misplacing S/R will trip breaker or cook windings."
+
+  - id: fan_leads
+    heading: "Condenser Fan Motor — Your Colors"
+    bullets:
+      - "**RUN: RED** → Capacitor **FAN**."
+      - "**COMMON: BLACK** → Capacitor **C** (common)."
+      - "**START: BROWN** → Capacitor **FAN** (other lug)."
+      - "If a brown/white present, it is a dedicated **C** to the fan cap."
+    notes: "Typical motor 825–1100 RPM; verify rotation; replace if noisy or tight."
+    warn: "Never mix fan and HERM terminals."
+
+  - id: easystart_flex
+    heading: "Micro-Air EasyStart FLEX — Connections"
+    bullets:
+      - "FLEX Black → **C** (common bar on dual cap)."
+      - "FLEX Red   → **Contactor load** (same as compressor **R/T3**)."
+      - "FLEX Blue  → **HERM** (compressor start)."
+      - "Mount module firmly; keep harness clear of fan blade."
+    notes: "Use piggyback spades where needed; ensure tight crimps."
+    warn: "Wrong FLEX wiring may hard-lock rotor or blow cap."
+
+  - id: contactor_wiring
+    heading: "Contactor & Cap — Routing"
+    bullets:
+      - "Line side: L1/L2 from disconnect to contactor LINE."
+      - "Load side: T1/T2 from contactor LOAD to compressor **R** and fan feed."
+      - "Cap **C**: ties compressor **C (black)** + fan **C (black/brown-white)** + any other commons."
+      - "Cap **HERM**: compressor **S (blue)** + FLEX Blue."
+      - "Cap **FAN**: fan **RUN (red)** + fan **START (brown)** (opposite lugs)."
+    notes: "Dress wires; no chafe against sheet metal."
+    warn: "Do not place fan leads on HERM."
+
+  - id: startup_checks
+    heading: "Start-Up & Readings"
+    bullets:
+      - "Call for COOL → contactor pulls in cleanly."
+      - "Amps ≤ RLA/FLA on nameplate after 2–3 min."
+      - "Suction line cool; liquid line warm; fan exhaust hot."
+      - "Record to uptime_log.json (ambient, ΔT, amps)."
+    notes: "With Flex, starts smooth with lower inrush after 3–5 learn cycles."
+    warn: "If no start: verify 24 V coil, cap values, and FLEX leads."
+
+  - id: quick_diag
+    heading: "Quick Troubleshooting"
+    bullets:
+      - "Breaker trips instantly → shorted lead, grounded compressor, or miswired cap."
+      - "Hums, no start → weak run cap or start circuit; verify FLEX & HERM."
+      - "Runs hot or short cycles → airflow, condenser coil dirty, or high head."
+      - "Fan spins by stick only → bad fan cap or motor."
+    notes: "Always re-meter L1–L2 under load; check voltage drop."
+    warn: "Do not bypass safety devices for normal operation."
+
+  - id: log_block
+    heading: "Log Block (Fill In)"
+    bullets:
+      - "Ambient ____°F   Return ____°F   Supply ____°F   ΔT ____°F"
+      - "Comp Amps ____ A  Fan Amps ____ A  Line VAC ____ V"
+      - "Cap (HERM) ____ µF   Cap (FAN) ____ µF"
+      - "Notes: ___________________________________________"
+    notes: "Append each service to uptime_log.json for history."
+    warn: ""

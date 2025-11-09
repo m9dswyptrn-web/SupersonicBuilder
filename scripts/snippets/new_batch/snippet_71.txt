@@ -1,0 +1,11 @@
+.
+├─ builder.py
+├─ sonicbuilder.config.json
+├─ CHANGELOG_v3.2.1.md
+├─ SonicBuilder/
+│  ├─ tools/
+│  │  └─ diff_render_html.py   ← (the one we built together)
+│  ├─ dsp/                      ← your DSP presets/profiles
+│  ├─ docs/                     ← dark laminated PDFs, wiring maps
+│  └─ extras/                   ← optional scripts, icons, etc.
+└─ README.md

@@ -1,0 +1,8 @@
+:: Standard build
+install_sonicbuilder_dark.bat 5.0.0 . 
+
+:: GitHub release
+install_sonicbuilder_dark.bat 5.0.0 . github
+
+:: Full dual push (GitHub + S3)
+install_sonicbuilder_dark.bat 5.0.0 . both

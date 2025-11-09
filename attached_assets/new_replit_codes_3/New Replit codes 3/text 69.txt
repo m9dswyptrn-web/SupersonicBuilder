@@ -1,0 +1,1 @@
+showRestart(LAST.has);   // offer restart if we have prior state

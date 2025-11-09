@@ -1,0 +1,6 @@
+function applySettingsToUI(){
+  // ...existing code...
+  const m = document.getElementById('settingsMenu'); if(!m) return;
+  const muteSwitch = m.querySelector('#optMuteSwitch');
+  if (muteSwitch) muteSwitch.checked = !!SETTINGS.muteSwitch;
+}

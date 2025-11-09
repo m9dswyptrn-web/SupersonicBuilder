@@ -1,0 +1,12 @@
+(function showTTL() {
+  const out = document.getElementById("set-catalog-ttl");
+  if (!out) return;
+  const meta = document.getElementById("catalog-config");
+  let ttl = null;
+  if (meta) {
+    const v = meta.getAttribute("data-ttl-ms");
+    if (v) ttl = parseInt(v, 10);
+  }
+  if (!ttl && window.SonicDiagramPicker?.getTTLms) ttl = window.SonicDiagramPicker.getTTLms();
+  if (ttl) out.textContent = `${(ttl/3600000).toFixed(2)} h`;
+})();

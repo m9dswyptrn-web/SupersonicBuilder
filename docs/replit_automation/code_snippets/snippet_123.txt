@@ -1,0 +1,9 @@
+<hr>
+<div class="set-row">
+  <label>Catalog cache</label>
+  <div class="inline">
+    <button id="set-catalog-refresh" class="btn btn-mini">Refresh catalog</button>
+    <button id="set-catalog-clear"   class="btn btn-mini">Clear cache</button>
+  </div>
+  <small class="muted">Uses version+TTL; refresh pulls the latest from server now.</small>
+</div>

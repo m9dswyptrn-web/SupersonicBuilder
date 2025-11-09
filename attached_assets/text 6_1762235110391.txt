@@ -1,0 +1,2 @@
+<div class="hr"></div>
+<label><input type="checkbox" id="optPerfAuto"> Auto-apply performance tweaks on alerts</label>

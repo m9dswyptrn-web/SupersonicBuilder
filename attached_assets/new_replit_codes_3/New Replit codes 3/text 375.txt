@@ -1,0 +1,323 @@
+import os
+import json
+import subprocess
+from pathlib import Path
+from flask import Flask, request, render_template_string, jsonify
+from dotenv import load_dotenv
+load_dotenv()
+
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from desktop.webui.agent_loader import load_agent
+
+PORT = int(os.getenv("PORT", "7860"))
+agent = load_agent()
+
+CACHE_DIR = Path(".supersonic_cache")
+CACHE_DIR.mkdir(exist_ok=True)
+BENCH_JSON = CACHE_DIR / "bench.json"
+
+# ---------- tiny utils ----------
+def read_env_var(key, default=""):
+    val = os.getenv(key)
+    if val is not None:
+        return val
+    envp = Path(".env")
+    if envp.exists():
+        for line in envp.read_text(encoding="utf-8").splitlines():
+            if "=" in line and not line.strip().startswith("#"):
+                k, v = line.split("=", 1)
+                if k.strip() == key:
+                    return v.strip()
+    return default
+
+def detect_status():
+    """
+    Returns:
+      {"status":"ok|cpu|missing|error", "backend":"cuda|rocm|metal|cpu|unknown",
+       "model":"name", "details":"..."}
+    """
+    model_path = read_env_var("AGENT_MODEL", "gguf/llama-3.1-8b-q4_0.gguf")
+    model_exists = Path(model_path).exists()
+    backend = "unknown"
+    details = ""
+    try:
+        out = subprocess.check_output([sys.executable, "scripts/gpu_detect.py"], text=True, timeout=6)
+        for line in out.splitlines():
+            if line.startswith("Backend:"):
+                backend = line.split(":", 1)[1].strip()
+                break
+    except Exception as e:
+        details = f"gpu_detect error: {e}"
+
+    if not model_exists:
+        return {"status": "missing", "backend": backend, "model": Path(model_path).name, "details": "Model file not found"}
+
+    if backend in ("cuda", "rocm", "metal"):
+        return {"status": "ok", "backend": backend, "model": Path(model_path).name, "details": details or "accelerated"}
+    if backend in ("cpu", "unknown"):
+        return {"status": "cpu", "backend": backend, "model": Path(model_path).name, "details": details or "CPU mode"}
+    return {"status": "error", "backend": backend, "model": Path(model_path).name, "details": details or "unknown"}
+
+def play_ping(ok: bool, msg: str = ""):
+    """Delegates to post_tune_ping.py for WAV/TTS."""
+    script = Path("scripts/post_tune_ping.py")
+    if not script.exists():
+        return {"played": False, "reason": "post_tune_ping.py not found"}
+    try:
+        if ok:
+            subprocess.run([sys.executable, str(script)], check=False)
+        else:
+            subprocess.run([sys.executable, str(script), "--error", msg or "Triggered error ping"], check=False)
+        return {"played": True}
+    except Exception as e:
+        return {"played": False, "reason": str(e)}
+
+def speak_status_message():
+    """Compose a friendly TTS status line and speak it via post_tune_ping.py --say."""
+    stat = detect_status()
+    ctx = read_env_var("LLM_CTX", "n/a")
+    th  = read_env_var("LLM_THREADS", "n/a")
+    msg = (
+        f"Supersonic status {stat['status']}. "
+        f"Backend {stat['backend']}. "
+        f"Model {stat['model']}. "
+        f"Context {ctx}. Threads {th}."
+    )
+    script = Path("scripts/post_tune_ping.py")
+    if not script.exists():
+        return {"spoken": False, "reason": "post_tune_ping.py not found"}
+    try:
+        subprocess.run([sys.executable, str(script), "--say", msg], check=False)
+        return {"spoken": True, "message": msg}
+    except Exception as e:
+        return {"spoken": False, "reason": str(e)}
+
+def read_bench_cache():
+    if BENCH_JSON.exists():
+        try:
+            return json.loads(BENCH_JSON.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+def save_bench_cache(data: dict):
+    try:
+        BENCH_JSON.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+def run_bench():
+    """
+    Runs scripts/bench_llm.py and parses 'Run N:' lines + 'Avg:' summary.
+    Returns dict with runs and aggregate tokens/sec.
+    """
+    script = Path("scripts/bench_llm.py")
+    if not script.exists():
+        return {"ok": False, "error": "bench_llm.py not found"}
+    try:
+        out = subprocess.check_output([sys.executable, str(script)], text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "benchmark timeout"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+    # parse simple numbers
+    import re, time
+    runs = []
+    for line in out.splitlines():
+        m = re.search(r"Run\s+(\d+):\s*~(\d+)\s+tokens.*?→\s*([\d\.]+)\s+tok/s", line)
+        if m:
+            runs.append({"run": int(m.group(1)), "gen_tokens": int(m.group(2)), "toks_per_sec": float(m.group(3))})
+    avg = None
+    m2 = re.search(r"Avg:\s*~(\d+)\s+tokens.*?([\d\.]+)\s+tok/s", out)
+    if m2:
+        avg = {"avg_tokens_per_run": int(m2.group(1)), "avg_tok_per_sec": float(m2.group(2))}
+    res = {"ok": True, "runs": runs, "avg": avg, "raw": out, "ts": int(time.time())}
+    save_bench_cache(res)
+    return res
+
+# ---------- HTML ----------
+TPL = '''
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Supersonic Local</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin:20px; }
+    .bar { display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+    .led { width:12px; height:12px; border-radius:50%; box-shadow:0 0 6px rgba(0,0,0,.25); }
+    .led.ok { background:#10b981; }      /* green */
+    .led.cpu { background:#f59e0b; }     /* amber */
+    .led.missing, .led.error { background:#ef4444; } /* red */
+    .tag { padding:2px 8px; border-radius:999px; font-size:12px; background:#111; color:#fff; }
+    .muted { color:#666; font-size:12px; }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    input[name="q"] { width:70%; padding:8px; font-size:14px; }
+    button { padding:8px 12px; font-size:14px; }
+    pre { background:#0b0b0b; color:#e5e7eb; padding:12px; border-radius:8px; white-space:pre-wrap; }
+    .pill { border:1px solid #333; background:#171717; color:#e5e7eb; border-radius:8px; }
+    .card { border:1px solid #2a2a2a; background:#0f0f10; color:#eee; border-radius:10px; padding:12px; margin-top:14px; }
+    .card h3 { margin:0 0 8px 0; font-size:16px; }
+    .kv { display:flex; gap:12px; flex-wrap:wrap; font-size:13px; color:#bbb; }
+    .kv span { background:#151515; padding:2px 8px; border-radius:6px; }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <div id="led" class="led cpu" title="status"></div>
+    <div id="statusText" class="muted">Status: checking…</div>
+    <span id="backend" class="tag">backend: …</span>
+    <span id="model" class="tag">model: …</span>
+    <button class="pill" onclick="pingSound(true)"  title="Play success chime">Test ✅</button>
+    <button class="pill" onclick="pingSound(false)" title="Play error chime">Test ❌</button>
+    <button class="pill" onclick="speakStatus()" title="Speak current status">Speak 🗣️</button>
+  </div>
+
+  <div class="row">
+    <form method="post" action="/ask">
+      <input name="q" placeholder="Ask the agent…"/>
+      <button>Ask</button>
+    </form>
+    <form action="/api/ingest" method="post" style="margin-left:4px;">
+      <button title="Ingest docs from DOCS_DIR">Ingest Docs</button>
+    </form>
+  </div>
+
+  <div class="card" id="benchCard">
+    <h3>Performance</h3>
+    <div class="kv">
+      <span id="benchAvg">avg: … tok/s</span>
+      <span id="benchTokens">tokens/run: …</span>
+      <span id="benchWhen">updated: …</span>
+    </div>
+    <div style="margin-top:8px;">
+      <button class="pill" onclick="runBench()">Run Bench</button>
+    </div>
+  </div>
+
+  <pre id="resp">{{ resp }}</pre>
+
+<script>
+function tsToLocal(ts){
+  if(!ts) return 'n/a';
+  try{ return new Date(ts*1000).toLocaleString(); }catch(e){ return ''+ts; }
+}
+
+async function refreshStatus(){
+  try{
+    const r = await fetch('/api/status');
+    const j = await r.json();
+    const led = document.getElementById('led');
+    const st  = document.getElementById('statusText');
+    const be  = document.getElementById('backend');
+    const md  = document.getElementById('model');
+
+    led.className = 'led ' + j.status;
+    st.textContent = `Status: ${j.status}${j.details ? ' — ' + j.details : ''}`;
+    be.textContent = `backend: ${j.backend}`;
+    md.textContent = `model: ${j.model || 'n/a'}`;
+  }catch(e){
+    const led = document.getElementById('led');
+    const st  = document.getElementById('statusText');
+    led.className = 'led error';
+    st.textContent = 'Status: error — cannot reach /api/status';
+  }
+}
+
+async function loadBench(){
+  try{
+    const r = await fetch('/api/bench', {method:'GET'});
+    const j = await r.json();
+    const a = document.getElementById('benchAvg');
+    const t = document.getElementById('benchTokens');
+    const w = document.getElementById('benchWhen');
+
+    if(j.ok && j.avg){
+      a.textContent = `avg: ${j.avg.avg_tok_per_sec.toFixed(1)} tok/s`;
+      t.textContent = `tokens/run: ${j.avg.avg_tokens_per_run}`;
+      w.textContent = `updated: ${tsToLocal(j.ts)}`;
+    }else if(j.ok){
+      a.textContent = `avg: n/a`;
+      t.textContent = `tokens/run: n/a`;
+      w.textContent = `updated: ${tsToLocal(j.ts)}`;
+    }else{
+      a.textContent = `avg: n/a`;
+      t.textContent = `tokens/run: n/a`;
+      w.textContent = `updated: error`;
+    }
+  }catch(e){
+    console.warn('bench load error', e);
+  }
+}
+
+async function runBench(){
+  try{
+    const r = await fetch('/api/bench', {method:'POST'});
+    const j = await r.json();
+    await loadBench();
+  }catch(e){
+    console.warn('bench error', e);
+  }
+}
+
+refreshStatus();
+setInterval(refreshStatus, 3000);
+loadBench();
+</script>
+</body>
+</html>
+'''
+
+app = Flask(__name__)
+
+@app.route("/", methods=["GET"])
+def index():
+    return render_template_string(TPL, resp="")
+
+@app.route("/ask", methods=["POST"])
+def ask():
+    q = request.form.get("q","").strip()
+    out = agent.query(q)
+    return render_template_string(TPL, resp=out)
+
+@app.route("/api/ingest", methods=["POST"])
+def ingest():
+    status = "ingested"
+    try:
+        d = Path(os.getenv("DOCS_DIR","docs"))
+        status = agent.ingest_dir(d)
+    except Exception as e:
+        status = f"error: {e}"
+    return jsonify({"status": status})
+
+@app.route("/api/status", methods=["GET"])
+def api_status():
+    return jsonify(detect_status())
+
+@app.route("/api/status/sound", methods=["POST"])
+def api_status_sound():
+    ok = request.args.get("ok", "1") in ("1","true","True","yes","y")
+    msg = request.args.get("msg", "")
+    res = play_ping(ok, msg)
+    return jsonify(res)
+
+@app.route("/api/status/speak", methods=["POST"])
+def api_status_speak():
+    res = speak_status_message()
+    return jsonify(res)
+
+@app.route("/api/bench", methods=["GET","POST"])
+def api_bench():
+    if request.method == "GET":
+        cache = read_bench_cache()
+        if cache:
+            return jsonify(cache | {"ok": True})
+        return jsonify({"ok": True, "avg": None, "ts": None})
+    # POST: run a new bench
+    res = run_bench()
+    return jsonify(res)
+
+if __name__ == "__main__":
+    app.run(host="127.0.0.1", port=PORT, debug=False)

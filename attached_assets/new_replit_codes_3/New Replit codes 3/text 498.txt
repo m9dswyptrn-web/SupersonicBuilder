@@ -1,0 +1,6 @@
+document.getElementById('msMute')?.addEventListener('click', ()=>{
+  const sw = document.getElementById('optMuteSwitch');
+  if (!sw) return;
+  sw.checked = !sw.checked;
+  handleMuteSwitchChange(sw.checked);
+});

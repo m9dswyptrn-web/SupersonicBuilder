@@ -1,0 +1,5 @@
+# Success chime
+curl -X POST "http://127.0.0.1:7860/api/status/sound?ok=1"
+
+# Error chime (with message)
+curl -X POST "http://127.0.0.1:7860/api/status/sound?ok=0&msg=Model%20missing"

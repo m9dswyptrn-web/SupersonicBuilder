@@ -1,0 +1,170 @@
+name: SonicBuilder CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-setup:
+    name: Validate project setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run validator
+        run: python scripts/validate_github_setup.py
+
+  verify-dark:
+    name: Fast verify (dark)
+    needs: [validate-setup]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          pip install -r requirements.txt || true
+          pip install -r requirements.extras.txt || true
+          pip install reportlab pypdf pdfrw pillow cairosvg watchdog requests
+      - name: make verify (dark)
+        env:
+          THEME: dark
+        run: make verify
+
+  verify-light:
+    name: Fast verify (light)
+    needs: [validate-setup]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          pip install -r requirements.txt || true
+          pip install -r requirements.extras.txt || true
+          pip install reportlab pypdf pdfrw pillow cairosvg watchdog requests
+      - name: make verify (light)
+        env:
+          THEME: light
+        run: make verify
+
+  demos:
+    name: Demo build & bundle
+    needs: [verify-dark, verify-light]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          pip install -r requirements.txt || true
+          pip install -r requirements.extras.txt || true
+          pip install reportlab pypdf pdfrw pillow cairosvg watchdog requests
+      - name: Run demos
+        run: make demos
+      - name: Generate SHA256 for demos outputs
+        run: |
+          mkdir -p dist
+          cd output || exit 0
+          rm -f ../dist/DEMO_SHA256SUMS.txt
+          for f in *.pdf 2>/dev/null; do
+            sha256sum "$f" | tee -a ../dist/DEMO_SHA256SUMS.txt
+          done
+          cd ../dist || exit 0
+          for f in *.zip 2>/dev/null; do
+            sha256sum "$f" | tee -a DEMO_SHA256SUMS.txt
+          done
+      - name: Verify demo PDF metadata (best effort)
+        if: always()
+        run: |
+          python - <<'PY'
+          try:
+            from pypdf import PdfReader
+            import glob
+            for path in glob.glob("output/*.pdf"):
+              r = PdfReader(path)
+              print(path, (r.metadata or {}).get('/Title'))
+          except Exception as e:
+            print("skip metadata check:", e)
+          PY
+      - name: Upload artifacts (output/ + dist/ + checksums)
+        uses: actions/upload-artifact@v4
+        with:
+          name: demos-artifacts
+          path: |
+            output/**
+            dist/**
+          if-no-files-found: warn
+
+  verify-demos-checksums:
+    name: Verify demo artifact checksums
+    needs: [demos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: demos-artifacts
+          path: verify_artifacts
+      - name: Show files
+        run: ls -l verify_artifacts || true
+      - name: Verify DEMO_SHA256SUMS.txt
+        run: |
+          cd verify_artifacts/dist || exit 0
+          if [ -f DEMO_SHA256SUMS.txt ]; then
+            sha256sum -c DEMO_SHA256SUMS.txt
+          else
+            echo "No DEMO_SHA256SUMS.txt present; skipping."
+          fi
+
+  notify-ci:
+    name: Notify CI (Slack/Discord)
+    needs: [validate-setup, verify-dark, verify-light, demos, verify-demos-checksums]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Compose message
+        run: |
+          STATUS="SUCCESS"
+          for j in "${{ needs.validate-setup.result }}" "${{ needs.verify-dark.result }}" "${{ needs.verify-light.result }}" "${{ needs.demos.result }}" "${{ needs.verify-demos-checksums.result }}"; do
+            [ "$j" = "success" ] || STATUS="FAILURE"
+          done
+          BRANCH="${GITHUB_REF_NAME}"
+          REPO="${GITHUB_REPOSITORY}"
+          RUN_URL="https://github.com/${REPO}/actions/runs/${GITHUB_RUN_ID}"
+          cat > slack.json <<'SLACK'
+          { "text": "CI ${STATUS}: ${REPO}@${BRANCH} — ${RUN_URL}" }
+          SLACK
+          sed -i "s|\${STATUS}|$STATUS|g; s|\${REPO}|$REPO|g; s|\${BRANCH}|$BRANCH|g; s|\${RUN_URL}|$RUN_URL|g" slack.json
+          cat > discord.json <<'DISCORD'
+          { "content": "CI ${STATUS}: ${REPO}@${BRANCH}\n${RUN_URL}" }
+          DISCORD
+          sed -i "s|\${STATUS}|$STATUS|g; s|\${REPO}|$REPO|g; s|\${BRANCH}|$BRANCH|g; s|\${RUN_URL}|$RUN_URL|g" discord.json
+      - name: Slack notify
+        if: always() && secrets.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -s -X POST -H 'Content-type: application/json' --data @slack.json "$SLACK_WEBHOOK_URL"
+      - name: Discord notify
+        if: always() && secrets.DISCORD_WEBHOOK_URL != ''
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          curl -s -H "Content-Type: application/json" -d @discord.json "$DISCORD_WEBHOOK_URL"

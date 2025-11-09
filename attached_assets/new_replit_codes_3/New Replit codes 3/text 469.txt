@@ -1,0 +1,4 @@
+<label style="display:flex; align-items:center; gap:8px;">
+  <input type="checkbox" id="optMuteSwitch">
+  <span>Mute (uses “Until” time below)</span>
+</label>

@@ -1,0 +1,35 @@
+{
+  "package": {
+    "productName": "Supersonic",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "shell": {
+        "all": true
+      },
+      "open": true
+    },
+    "windows": [
+      {
+        "title": "Supersonic",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false,
+        "url": "http://127.0.0.1:7860"
+      }
+    ],
+    "bundle": {
+      "active": true,
+      "identifier": "com.yourname.supersonic",
+      "targets": "all"
+    }
+  },
+  "build": {
+    "beforeBuildCommand": "",
+    "beforeDevCommand": "",
+    "devPath": "http://127.0.0.1:7860",
+    "distDir": "http://127.0.0.1:7860"
+  }
+}

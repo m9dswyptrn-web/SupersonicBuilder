@@ -1,0 +1,11 @@
+def ingest_dir(self, root: Path):
+    for p in root.rglob("*.md"):
+        text = p.read_text("utf-8", errors="ignore")
+        self.rag.add_doc(str(p), text, {"path": str(p)})
+    return "ingested"
+
+def query(self, q: str):
+    ctx = self.rag.search(q, k=5)
+    # Placeholder response: echo query + top hits (wire LLM later)
+    summary = "\\n".join(f"- {h['meta'].get('path','')}" for h in ctx)
+    return {"answer": f"(stub) Results for: {q}", "context_paths": summary, "skills": self.skills.list()}

@@ -1,0 +1,28 @@
+cards:
+  - title: "RR2 + GM2 Gateway Install"
+    vehicle: "2014 Chevy Sonic LTZ (VIN last 8: E4232827)"
+    est_time: "45–75 min"
+    tools: ["Trim tools", "T20", "10mm", "DMM", "zip ties"]
+    steps:
+      - { text: "Disconnect battery neg; wait 2–3 min (SRS)", type: safety }
+      - { text: "Remove MyLink bezel + screen; retain clips", type: panel }
+      - { text: "Insert GM2 T-harness; seat fully; latch", type: harness }
+      - { text: "Mount RR2; connect data; secure with ties", type: module }
+      - { text: "Power on; flash GM2 profile; verify chimes", type: program }
+      - { text: "Test SWC, dimmer, reverse cam, fader", type: test }
+    notes:
+      - "Ground star point: scuff to bare metal; torque 7–10 Nm"
+      - "Keep CAN runs 2–4 inches from high-current wires"
+    qr: "https://your.link/rr2-gm2-install"
+  - title: "G-RZ-GM59 Overlay (Listen-Only)"
+    vehicle: "2014 Chevy Sonic LTZ"
+    est_time: "20–40 min"
+    tools: ["DMM", "heatshrink", "solder/IDC"]
+    steps:
+      - { text: "Locate LS GMLAN SW (green) branch", type: can }
+      - { text: "Splice listen-only: no injection", type: can }
+      - { text: "Secure away from blower + 12V feeds", type: cable }
+      - { text: "Verify HVAC overlay on-screen", type: test }
+    notes:
+      - "Twist ratio ~1 turn per 1–2 inches; keep separation from power"
+    qr: "https://your.link/grz-overlay"

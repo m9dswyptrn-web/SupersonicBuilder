@@ -1,0 +1,21 @@
+/* Theme-adaptive glow for Restart & label */
+#dp-restart.fade-visible,
+#dp-restart-label.fade-visible {
+  animation: fadeInUp 0.25s ease-out;
+  opacity: 1;
+  transition: box-shadow 0.3s ease-in-out, opacity 0.3s ease-in-out;
+}
+
+/* --- Dark mode styling --- */
+body.dark #dp-restart.fade-visible,
+body.dark #dp-restart-label.fade-visible {
+  box-shadow: 0 0 8px rgba(0, 255, 255, 0.35);
+  color: #8efcff;
+}
+
+/* --- Light mode styling --- */
+body.light #dp-restart.fade-visible,
+body.light #dp-restart-label.fade-visible {
+  box-shadow: 0 0 8px rgba(80, 80, 80, 0.25);
+  color: #222;
+}

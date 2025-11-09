@@ -1,0 +1,6 @@
+# Option A: create annotated tag
+git tag -a v0.1.0 -m "Supersonic initial public build"
+git push origin v0.1.0
+
+# Option B: use the console we shipped
+python3 scripts/ai_console.py  # choose "3) Trigger Build & Release"

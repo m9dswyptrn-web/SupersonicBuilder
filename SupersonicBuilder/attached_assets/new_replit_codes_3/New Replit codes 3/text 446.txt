@@ -1,0 +1,5 @@
+<!-- Animated Status Beacon -->
+<div class="beacon-wrap" title="Live system beacon">
+  <div id="beacon" class="beacon beacon-yellow"></div>
+  <span id="beaconText" class="muted">status: warming up…</span>
+</div>

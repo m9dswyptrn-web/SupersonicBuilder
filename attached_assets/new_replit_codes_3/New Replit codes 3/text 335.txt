@@ -1,0 +1,3 @@
+sudo apt-get update
+sudo apt-get install -y build-essential cmake
+# Ensure the NVIDIA driver + CUDA toolkit installed and nvcc is on PATH

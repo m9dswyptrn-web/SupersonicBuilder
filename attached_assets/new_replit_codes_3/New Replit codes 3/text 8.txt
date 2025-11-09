@@ -1,0 +1,42 @@
+{
+  "Chevrolet": {
+    "Sonic": {
+      "2014": [
+        {
+          "id": "sonic_2014_main_harness",
+          "name": "Main Harness Overview",
+          "category": "harness",
+          "variants": ["dark", "light"],
+          "formats": ["pdf", "png"],
+          "files": {
+            "pdf": {
+              "dark": "docs/diagrams/chevrolet/sonic/2014/sonic_2014_main_harness.dark.pdf",
+              "light": "docs/diagrams/chevrolet/sonic/2014/sonic_2014_main_harness.light.pdf"
+            },
+            "png": {
+              "dark": "docs/diagrams/chevrolet/sonic/2014/sonic_2014_main_harness.dark.png",
+              "light": "docs/diagrams/chevrolet/sonic/2014/sonic_2014_main_harness.light.png"
+            }
+          }
+        },
+        {
+          "id": "sonic_2014_audio_headunit",
+          "name": "Audio Head Unit + 44-pin",
+          "category": "audio",
+          "variants": ["dark", "light"],
+          "formats": ["pdf", "png"],
+          "files": {
+            "pdf": {
+              "dark": "docs/diagrams/chevrolet/sonic/2014/sonic_2014_audio_headunit.dark.pdf",
+              "light": "docs/diagrams/chevrolet/sonic/2014/sonic_2014_audio_headunit.light.pdf"
+            },
+            "png": {
+              "dark": "docs/diagrams/chevrolet/sonic/2014/sonic_2014_audio_headunit.dark.png",
+              "light": "docs/diagrams/chevrolet/sonic/2014/sonic_2014_audio_headunit.light.png"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

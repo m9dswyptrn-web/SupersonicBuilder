@@ -1,0 +1,2 @@
+<button class="pill" onclick="runFullCheck()">Run Full System Check</button>
+<a class="pill" href="/api/env/scan" target="_blank">Scan models</a>

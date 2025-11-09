@@ -1,0 +1,15 @@
+function showRestart(show = true) {
+  const elements = [btnRestart, lblRestart];
+  for (const el of elements) {
+    if (!el) continue;
+    if (show) {
+      el.classList.add("fade-visible");
+      el.hidden = false;
+      el.title = lastTooltipText();
+    } else {
+      el.classList.remove("fade-visible");
+      el.hidden = true;
+    }
+  }
+  if (lblRestart && show) lblRestart.textContent = lastLabelText();
+}

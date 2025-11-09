@@ -1,0 +1,54 @@
+name: Release Support Bundle
+on:
+  workflow_run:
+    workflows: ["Docs Release (Commit-Stamped)"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  build-support:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install minimal deps
+        run: |
+          python -m pip install --upgrade pip
+          sudo apt-get update && sudo apt-get install -y jq zip || true
+      - name: Download all artifacts from triggering run
+        uses: actions/download-artifact@v4
+        with:
+          path: _artifacts
+          run-id: ${{ github.event.workflow_run.id }}
+        continue-on-error: true
+      - name: Stage outputs for bundling
+        run: |
+          mkdir -p output dist diag
+          find _artifacts -type f -name "*.pdf" -exec cp -f {} output/ \; 2>/dev/null || true
+          find _artifacts -type f -name "*.sha256" -exec cp -f {} output/ \; 2>/dev/null || true
+          find _artifacts -type f -name "diag_bundle.zip" -exec cp -f {} diag/ \; 2>/dev/null || true
+      - name: Build support bundle
+        run: make support-bundle-full || make support-bundle || python tools/diag/collect_env.py
+      - name: Upload support bundle
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: support_bundle_g${{ github.event.workflow_run.head_sha }}
+          path: support/support_bundle_*.zip
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Notify (Slack/Discord)
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          REL_URL="https://github.com/${{ github.repository }}/releases"
+          MSG="Support bundle created for successful release workflow.\nRepo: ${{ github.repository }}\nTriggered Run: ${RUN_URL}\nReleases: ${REL_URL}"
+          ./scripts/notify_webhook.sh "Support Bundle Ready" "$MSG" "$REL_URL" "#2eb886" || true

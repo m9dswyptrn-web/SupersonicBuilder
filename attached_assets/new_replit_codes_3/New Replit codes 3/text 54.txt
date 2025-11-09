@@ -1,0 +1,6 @@
+  const btnCancel = document.getElementById("dp-cancel");
+
+  // Cancellation control/state
+  let CANCEL = { active: false };
+  let pdfLoadingTask = null;      // pdfjsLib.getDocument(...) task
+  let currentRenderTask = null;   // pdfPage.render(...) task

@@ -1,0 +1,50 @@
+name: ♻️ Refresh Feed Health Badge
+
+on:
+  schedule:
+    # Every 12 hours
+    - cron: "0 */12 * * *"
+  workflow_dispatch:  # Manual trigger support
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📦 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 🔍 Regenerate Feed Health Badge
+        run: |
+          python3 scripts/gen_feed_badge.py
+
+      - name: 🚀 Commit & Push if Badge Changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add badges/feed_health.json
+          
+          if git diff --cached --quiet; then
+            echo "✅ No badge changes, skipping push"
+          else
+            git commit -m "chore(badge): refresh feed health badge [$(date -u '+%Y-%m-%d %H:%M:%S UTC')]"
+            git push
+            echo "✅ Feed health badge updated and pushed"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📊 Summary
+        if: always()
+        run: |
+          echo "╔════════════════════════════════════════════════════════════════╗"
+          echo "║   ♻️  Feed Health Badge Refresh Complete                      ║"
+          echo "╚════════════════════════════════════════════════════════════════╝"
+          echo ""
+          echo "Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "Status: ${{ job.status }}"

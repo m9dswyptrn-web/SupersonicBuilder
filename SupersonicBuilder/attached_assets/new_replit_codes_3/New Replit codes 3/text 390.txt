@@ -1,0 +1,3 @@
+python scripts/run_offline_llm.py
+# UI → Performance card → Download Bench JSON ⬇️
+# The file includes meta + benchmark payload.

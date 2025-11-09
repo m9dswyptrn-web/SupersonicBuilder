@@ -1,0 +1,5 @@
+  function updateActionStates() {
+    const ok = canAct();
+    [btnPrev, btnOpen, btnCopy, btnDlPNG, btnDlPDF, btnPrint, btnFitW, btnFitH, btnZip]
+      .forEach(b => { if (b) b.disabled = !ok; });
+  }

@@ -1,0 +1,84 @@
+# ---- Snooze state (mute all cues) ----
+MUTE_UNTIL_TS = 0  # epoch seconds; 0 = not muted
+
+def _now() -> int:
+    return int(time.time())
+
+def is_muted_now() -> bool:
+    until = int(os.environ.get("MUTE_UNTIL_TS", MUTE_UNTIL_TS) or 0)
+    return _now() < until
+
+def set_mute_until(epoch_ts: int):
+    global MUTE_UNTIL_TS
+    epoch_ts = max(0, int(epoch_ts))
+    MUTE_UNTIL_TS = epoch_ts
+    os.environ["MUTE_UNTIL_TS"] = str(MUTE_UNTIL_TS)
+
+def set_mute_for_minutes(minutes: int):
+    set_mute_until(_now() + max(0, int(minutes)) * 60)
+
+def clear_mute():
+    set_mute_until(0)
+
+def get_req_volume(default: float = 1.0) -> float:
+    v = request.headers.get("X-Volume")
+    if v is None:
+        try:
+            v = float(os.getenv("DEFAULT_VOLUME", default))
+        except Exception:
+            v = default
+    else:
+        try:
+            v = float(v)
+        except Exception:
+            v = default
+    return max(0.0, min(1.0, v))
+
+@app.route("/api/mute", methods=["GET", "POST"])
+def api_mute():
+    """
+    GET  -> {muted, remaining_sec, until_ts, server_now}
+    POST -> set mute:
+       - minutes=<int>
+       - until_ts=<epoch seconds>
+       - until_iso=<RFC3339/ISO8601> (e.g. 2025-11-03T19:30:00Z)
+    """
+    if request.method == "GET":
+        now = _now()
+        until = int(os.environ.get("MUTE_UNTIL_TS", MUTE_UNTIL_TS) or 0)
+        remaining = max(0, until - now)
+        return jsonify({"muted": remaining > 0, "remaining_sec": remaining, "until_ts": until, "server_now": now})
+
+    # POST
+    mins = request.args.get("minutes") or request.form.get("minutes")
+    until_ts = request.args.get("until_ts") or request.form.get("until_ts")
+    until_iso = request.args.get("until_iso") or request.form.get("until_iso")
+    try:
+        if until_ts:
+            set_mute_until(int(float(until_ts)))
+        elif until_iso:
+            # best-effort ISO parser (no external deps): accept "YYYY-MM-DDTHH:MM" (local) or ...Z
+            s = until_iso.strip()
+            if s.endswith("Z"):
+                # treat as UTC
+                dt = datetime.fromisoformat(s.replace("Z","+00:00"))
+                set_mute_until(int(dt.timestamp()))
+            else:
+                # naive -> local; convert to epoch
+                dt = datetime.fromisoformat(s)
+                set_mute_until(int(dt.timestamp()))
+        elif mins:
+            set_mute_for_minutes(int(mins))
+        else:
+            set_mute_for_minutes(10)
+    except Exception:
+        set_mute_for_minutes(10)
+
+    now = _now()
+    until = int(os.environ.get("MUTE_UNTIL_TS", MUTE_UNTIL_TS) or 0)
+    return jsonify({"ok": True, "muted": until > now, "remaining_sec": max(0, until - now), "until_ts": until})
+
+@app.route("/api/unmute", methods=["POST"])
+def api_unmute():
+    clear_mute()
+    return jsonify({"ok": True, "muted": False})

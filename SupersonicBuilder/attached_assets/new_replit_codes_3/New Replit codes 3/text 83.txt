@@ -1,0 +1,16 @@
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+#dp-restart,
+#dp-restart-label {
+  opacity: 0;
+  transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+}
+
+#dp-restart.fade-visible,
+#dp-restart-label.fade-visible {
+  animation: fadeInUp 0.25s ease-out;
+  opacity: 1;
+}

@@ -1,0 +1,125 @@
+name: Enrich Release Notes
+
+on:
+  workflow_run:
+    workflows: ["Release Appendix C"]
+    types: [completed]
+  release:
+    types: [published, edited]
+
+permissions:
+  contents: write
+
+jobs:
+  enrich-notes:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'release' }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Get release info
+        id: release
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            # Get latest release
+            RELEASE_DATA=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/latest")
+          else
+            # Use current release
+            RELEASE_DATA=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "${{ github.event.release.url }}")
+          fi
+          
+          RELEASE_ID=$(echo "$RELEASE_DATA" | jq -r '.id')
+          RELEASE_TAG=$(echo "$RELEASE_DATA" | jq -r '.tag_name')
+          RELEASE_BODY=$(echo "$RELEASE_DATA" | jq -r '.body // ""')
+          
+          echo "release_id=$RELEASE_ID" >> $GITHUB_OUTPUT
+          echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+          echo "release_body<<EOF" >> $GITHUB_OUTPUT
+          echo "$RELEASE_BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Generate assets manifest
+        id: manifest
+        run: |
+          python scripts/gen_assets_manifest.py \
+            --release-tag "${{ steps.release.outputs.release_tag }}" \
+            --repo "${{ github.repository }}" \
+            --token "${{ secrets.GITHUB_TOKEN }}" \
+            --output manifest.md
+
+      - name: Enrich release notes (idempotent)
+        run: |
+          CURRENT_BODY="${{ steps.release.outputs.release_body }}"
+          MANIFEST=$(cat manifest.md)
+          
+          # Check if markers exist
+          if echo "$CURRENT_BODY" | grep -q "<!-- SB_ASSETS_TABLE_BEGIN -->"; then
+            echo "Updating existing assets table..."
+            # Replace content between markers using Python
+            python3 << 'PYEOF'
+import re
+import json
+import os
+
+body = """$CURRENT_BODY"""
+manifest = open('manifest.md').read()
+
+# Replace content between markers
+pattern = r'<!-- SB_ASSETS_TABLE_BEGIN -->.*?<!-- SB_ASSETS_TABLE_END -->'
+replacement = f"<!-- SB_ASSETS_TABLE_BEGIN -->\n{manifest}\n<!-- SB_ASSETS_TABLE_END -->"
+new_body = re.sub(pattern, replacement, body, flags=re.DOTALL)
+
+# Write to file for curl
+with open('new_body.txt', 'w') as f:
+    f.write(new_body)
+print("✅ Updated existing table")
+PYEOF
+          else
+            echo "Adding new assets table..."
+            # Append new table with markers
+            cat > new_body.txt << 'EOF'
+${CURRENT_BODY}
+
+---
+
+<!-- SB_ASSETS_TABLE_BEGIN -->
+${MANIFEST}
+<!-- SB_ASSETS_TABLE_END -->
+EOF
+            echo "✅ Added new table"
+          fi
+          
+          # Update release
+          NEW_BODY=$(cat new_body.txt)
+          curl -X PATCH \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/${{ steps.release.outputs.release_id }}" \
+            -d "$(jq -n --arg body "$NEW_BODY" '{body: $body}')"
+          
+          echo "✅ Release notes enriched (idempotent)"
+
+      - name: Create summary
+        run: |
+          echo "## Release Notes Enriched 📝" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Release:** ${{ steps.release.outputs.release_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** Enriched successfully (idempotent)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Assets table is now wrapped in HTML comment markers:" >> $GITHUB_STEP_SUMMARY
+          echo '```html' >> $GITHUB_STEP_SUMMARY
+          echo "<!-- SB_ASSETS_TABLE_BEGIN -->" >> $GITHUB_STEP_SUMMARY
+          echo "... assets table ..." >> $GITHUB_STEP_SUMMARY
+          echo "<!-- SB_ASSETS_TABLE_END -->" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "View release: https://github.com/${{ github.repository }}/releases/tag/${{ steps.release.outputs.release_tag }}" >> $GITHUB_STEP_SUMMARY

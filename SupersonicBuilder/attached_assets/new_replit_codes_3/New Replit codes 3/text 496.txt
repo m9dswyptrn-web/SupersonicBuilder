@@ -1,0 +1,87 @@
+<script>
+// ——— helpers ———
+function setMsHealth(up, ready){
+  const dot = document.getElementById('msHealthDot');
+  const txt = document.getElementById('msHealthTxt');
+  if (!dot || !txt) return;
+  dot.className = 'dot ' + (!up ? 'red' : (ready ? 'green' : 'yellow'));
+  txt.textContent = !up ? 'offline' : (ready ? 'ready' : 'starting…');
+}
+function setMsMute(mutated){
+  const ic = document.getElementById('msMuteIcon');
+  const tx = document.getElementById('msMuteTxt');
+  if (!ic || !tx) return;
+  if (!mutated || !mutated.muted){
+    ic.textContent = '🔔'; tx.textContent = 'sound on';
+    return;
+  }
+  const now = (mutated.server_now || (Date.now()/1000|0));
+  const left = Math.max(0, (mutated.until_ts||0) - now);
+  const m = Math.floor(left/60), s = left%60;
+  ic.textContent = '🔕'; tx.textContent = `${m}m ${s}s`;
+}
+function setMsTheme(){
+  const tx = document.getElementById('msThemeTxt');
+  if (!tx) return;
+  const t = (SETTINGS && SETTINGS.theme) || document.body.dataset.theme || 'dark';
+  tx.textContent = t;
+}
+function setMsCloudStatus(state){
+  // state: 'ok' | 'stale' | 'syncing' | 'off'
+  const ic = document.getElementById('msCloudIcon');
+  const tx = document.getElementById('msCloudTxt');
+  if (!ic || !tx) return;
+  if (state === 'syncing'){
+    ic.innerHTML = '<span class="ms-sync"></span>'; tx.textContent = 'syncing…'; return;
+  }
+  if (state === 'ok'){ ic.textContent = '☁️'; tx.textContent = 'synced'; return; }
+  if (state === 'stale'){ ic.textContent = '☁️'; tx.textContent = 'out-of-sync'; return; }
+  ic.textContent = '☁️'; tx.textContent = 'off';
+}
+
+// ——— integrate with existing loops ———
+// Hook into your beacon polling results
+let _msPrev = { up:null, ready:null };
+async function msPoll(){
+  try {
+    const hz = await fetch('/api/healthz', {cache:'no-store'});
+    const up = hz.ok;
+    let ready = { ok:false };
+    try { ready = await (await fetch('/api/readyz', {cache:'no-store'})).json(); } catch(e){}
+    setMsHealth(up, !!ready.ok);
+    _msPrev = { up, ready: !!ready.ok };
+  } catch(e){
+    setMsHealth(false, false);
+  }
+}
+setInterval(msPoll, 1500); msPoll();
+
+// Hook mute banner poller you already have
+async function msPollMute(){
+  try{ const j = await (await fetch('/api/mute')).json(); setMsMute(j); }
+  catch(e){ setMsMute({muted:false}); }
+}
+setInterval(msPollMute, 1000); msPollMute();
+
+// Theme reflects immediately when changed
+const _origApplyTheme = window.applyTheme;
+window.applyTheme = function(name){
+  if (typeof _origApplyTheme === 'function') _origApplyTheme(name);
+  setMsTheme();
+};
+setMsTheme();
+
+// ——— cloud sync indication (optional) ———
+// Call these around your cloud ops:
+window.msCloudSyncing = () => setMsCloudStatus('syncing');
+window.msCloudOK      = () => setMsCloudStatus('ok');
+window.msCloudStale   = () => setMsCloudStatus('stale');
+window.msCloudOff     = () => setMsCloudStatus('off');
+
+// Example: if you wired powerups cloud sync:
+if (window.env && env.REPLIT_DB_URL){
+  setMsCloudStatus('stale'); // assume not synced yet
+} else {
+  setMsCloudStatus('off');
+}
+</script>

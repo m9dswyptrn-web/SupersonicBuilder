@@ -1,0 +1,19 @@
+SECURITY REMINDER: Token Management
+====================================
+
+The release scripts (builder.py, scripts/release.py, tools/release_now.sh) 
+use tokens for GitHub authentication. Best practices:
+
+✅ GOOD:
+- Use environment variable: GITHUB_TOKEN or GH_PAT
+- Scripts clean up the token from remote URL after push
+- Never commit tokens to the repository
+- Use $GITHUB_TOKEN in commands (shell expands it securely)
+
+⚠️ AVOID:
+- Hardcoding tokens in scripts or commands
+- Sharing tokens in messages or logs
+- Leaving tokens in git remote URLs permanently
+
+The scripts already handle cleanup, but always verify your token 
+is stored in environment variables, not in code or shell history.

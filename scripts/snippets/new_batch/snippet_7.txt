@@ -1,0 +1,3 @@
+tools/logging_utils.sh
+tools/changelog_gen.py
+tools/adb_profiles.py

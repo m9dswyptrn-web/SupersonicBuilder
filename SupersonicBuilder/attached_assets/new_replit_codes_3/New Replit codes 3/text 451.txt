@@ -1,0 +1,11 @@
+.dropdown{
+  position:absolute; top:38px; right:0;
+  background:#0f0f10; border:1px solid #2a2a2a; border-radius:10px;
+  padding:10px 12px; min-width:220px; z-index:999;
+  box-shadow:0 8px 24px rgba(0,0,0,.45);
+}
+.dropdown label{
+  display:flex; gap:8px; align-items:center; font-size:14px; color:#ddd;
+  padding:6px 0;
+}
+.dropdown .hr{ height:1px; background:#222; margin:8px 0; }

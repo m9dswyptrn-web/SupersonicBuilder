@@ -1,0 +1,17 @@
+---
+
+### Run order I recommend
+
+```bash
+# set your owner/repo once so the docs & links are stamped correctly
+export GITHUB_OWNER="YourGitHubUserOrOrg"
+export GITHUB_REPO="SonicBuilder"
+
+python3 supersonic_super_bootstrap.py
+chmod +x replit_to_github.sh tools/get_pdfjs.sh tools/get_jszip.sh
+
+# (optional) authenticate once if you use gh:
+gh auth login
+
+# vendor libs + create repo + push everything
+./replit_to_github.sh

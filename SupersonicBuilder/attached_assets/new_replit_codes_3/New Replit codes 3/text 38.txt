@@ -1,0 +1,2 @@
+<script src="/static/vendor/pdfjs/pdf.min.js"></script>
+<script src="/static/vendor/jszip/jszip.min.js"></script>

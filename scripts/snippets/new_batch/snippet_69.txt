@@ -1,0 +1,415 @@
+#!/usr/bin/env python3
+"""
+SonicBuilder: full-chain packager
+- clean:        remove build/ and dist/
+- prepare:      stage assets into build/
+- notes:        generate RELEASE_NOTES.md from CHANGELOG (optional)
+- diffhtml:     render pretty diff HTML from CHANGELOG (optional)
+- manifest:     emit MANIFEST.json with file list, sizes, sha256, metadata
+- sums:         create SHA256SUMS.txt for all staged files
+- pack:         zip everything into a versioned, profile-tagged archive
+- verify:       verify a built zip against its SHA256SUMS.txt
+- adb-demo:     (opt-in) demo ADB command – only runs when called explicitly
+
+By default we stay QUIET re: ADB (per your “keep silent unless select adb is used” rule).
+"""
+
+import argparse, hashlib, json, os, re, shutil, sys, textwrap, time, zipfile, datetime, subprocess
+from pathlib import Path
+
+# -------- Project defaults (you can override in sonicbuilder.config.json) -------
+DEFAULTS = {
+    "project_name": "SonicBuilder",
+    "vehicle": "Chevy Sonic LTZ (T300)",
+    "version": "v3.0.0",
+    "profile": "dark",                       # 'dark' or 'light'
+    "changelog_md": "CHANGELOG.md",          # optional
+    "diff_renderer": "SonicBuilder/tools/diff_render_html.py",  # optional
+    "notes_header": "# Release Notes\n",
+    "src": {
+        "dsp": "src/dsp",                    # DSP configs
+        "docs": "docs",                      # PDFs, guides
+        "extras": "extras"                   # any extra files to include
+    },
+    "stage_globs": [                         # extra glob patterns to stage
+        "LICENSE*", "README*"
+    ],
+    "dist_name_pattern": "{project}_BuildOfBuilds_ProPack_ENHANCED_{version}_{profile}.zip",
+    "adb_path": "adb",                        # if you later use adb-demo
+    "adb_demo_cmd": ["shell", "echo", "SonicBuilder ADB demo OK"],
+    "metadata": {
+        "author": "Christopher Elgin",
+        "theme": "dark-shop-manual",
+        "pdf_style": "laminated",
+        "repo_hint_env": ["SB_REPO", "SB_BRANCH", "SB_SHA"]
+    }
+}
+
+ROOT = Path(__file__).resolve().parent
+BUILD = ROOT / "build"
+DIST = ROOT / "dist"
+
+# ------------------- Helpers -------------------
+
+def load_config():
+    cfg_file = ROOT / "sonicbuilder.config.json"
+    if cfg_file.exists():
+        try:
+            data = json.loads(cfg_file.read_text(encoding="utf-8"))
+            return deep_merge(DEFAULTS, data)
+        except Exception as e:
+            print(f"[warn] Failed to parse {cfg_file}: {e}; using defaults")
+    return DEFAULTS
+
+def deep_merge(a, b):
+    out = dict(a)
+    for k, v in b.items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+def sha256_file(p: Path) -> str:
+    h = hashlib.sha256()
+    with p.open("rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+def copy_tree(src: Path, dst: Path):
+    if not src.exists():
+        return
+    for root, dirs, files in os.walk(src):
+        r = Path(root)
+        rel = r.relative_to(src)
+        (dst / rel).mkdir(parents=True, exist_ok=True)
+        for fn in files:
+            sp = r / fn
+            dp = dst / rel / fn
+            dp.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(sp, dp)
+
+def stage_globs(patterns, dst: Path):
+    for pat in patterns:
+        for p in ROOT.glob(pat):
+            if p.is_file():
+                (dst / p.name).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(p, dst / p.name)
+
+def detect_repo_context():
+    """Return a compact context string like owner/repo@branch#sha if available."""
+    env_repo = os.getenv("SB_REPO", "").strip()
+    env_branch = os.getenv("SB_BRANCH", "").strip()
+    env_sha = os.getenv("SB_SHA", "").strip()
+
+    repo, branch, sha = env_repo, env_branch, env_sha
+
+    def run_git(args):
+        try:
+            return subprocess.check_output(["git"] + args, stderr=subprocess.DEVNULL, timeout=1.5).decode().strip()
+        except Exception:
+            return ""
+
+    def parse_repo(url: str) -> str:
+        if not url:
+            return ""
+        m = re.match(r"^[\w\-.]+@[^:]+:(.+)$", url)  # SSH
+        if m:
+            path = m.group(1)
+        else:
+            m = re.match(r"^https?://[^/]+/(.+)$", url)  # HTTPS
+            path = m.group(1) if m else ""
+        if path.endswith(".git"):
+            path = path[:-4]
+        parts = [p for p in path.split("/") if p]
+        if len(parts) >= 2:
+            return f"{parts[-2]}/{parts[-1]}"
+        return parts[-1] if parts else ""
+
+    if not repo:
+        repo = parse_repo(run_git(["remote", "get-url", "origin"]))
+    if not branch:
+        b = run_git(["rev-parse", "--abbrev-ref", "HEAD"])
+        branch = "" if b == "HEAD" else b
+    if not sha:
+        sha = run_git(["rev-parse", "--short", "HEAD"])
+
+    bits = []
+    if repo: bits.append(repo)
+    if branch: bits[-1] = bits[-1] + f"@{branch}" if bits else f"@{branch}"
+    if sha: bits.append(f"#{sha}")
+    return "".join(bits)
+
+def write_text(path: Path, content: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+# ------------------- Steps -------------------
+
+def step_clean():
+    shutil.rmtree(BUILD, ignore_errors=True)
+    shutil.rmtree(DIST, ignore_errors=True)
+    print("[ok] clean")
+
+def step_prepare(cfg):
+    BUILD.mkdir(parents=True, exist_ok=True)
+    # Stage folders
+    copy_tree(ROOT / cfg["src"]["dsp"], BUILD / "dsp")
+    copy_tree(ROOT / cfg["src"]["docs"], BUILD / "docs")
+    copy_tree(ROOT / cfg["src"]["extras"], BUILD / "extras")
+    # Stage globs (README, LICENSE, etc.)
+    stage_globs(cfg.get("stage_globs", []), BUILD)
+    # Add START HERE
+    start = textwrap.dedent(f"""\
+    # START HERE
+
+    Thanks for using {cfg['project_name']}!
+
+    • Vehicle: {cfg.get('vehicle')}
+    • Version: {cfg.get('version')}
+    • Profile: {cfg.get('profile')}
+
+    Contents:
+      - dsp/    → DSP configs / presets
+      - docs/   → Wiring PDFs, install guides (dark laminated style)
+      - extras/ → Optional tools or add-ons
+
+    Tips:
+      - Release notes live in RELEASE_NOTES.md (if present)
+      - Verify integrity with SHA256SUMS.txt
+      - All filenames include profile & version for easy tracking
+    """)
+    write_text(BUILD / "INSTALL_START_HERE.md", start)
+    print("[ok] prepare (staged assets)")
+
+def step_notes(cfg):
+    changelog = ROOT / cfg["changelog_md"]
+    if not changelog.exists():
+        print("[skip] notes: changelog not found")
+        return
+    md = changelog.read_text(encoding="utf-8")
+    # Simple extractor: grab topmost "## Added/Removed/Changed" block set
+    blocks = {}
+    current = None
+    lines = []
+    for ln in md.splitlines():
+        if ln.startswith("## "):
+            if current and lines:
+                blocks[current] = "\n".join(lines).strip()
+            current = ln[3:].strip().lower()
+            lines = []
+        else:
+            if current:
+                lines.append(ln)
+    if current and lines:
+        blocks[current] = "\n".join(lines).strip()
+
+    wanted = []
+    for k in ("added", "removed", "changed"):
+        for key in blocks.keys():
+            if key.startswith(k):
+                wanted.append((k.capitalize(), blocks[key]))
+                break
+
+    out = [cfg.get("notes_header", "# Release Notes").rstrip(), ""]
+    out.append(f"**Version:** {cfg['version']}  \n**Profile:** {cfg['profile']}")
+    out.append("")
+    if wanted:
+        for title, body in wanted:
+            out.append(f"## {title}")
+            out.append(body.strip() or "_No items_")
+            out.append("")
+    else:
+        out.append("_No categorized sections found in CHANGELOG_")
+
+    write_text(BUILD / "RELEASE_NOTES.md", "\n".join(out))
+    print("[ok] notes (RELEASE_NOTES.md)")
+
+def step_diffhtml(cfg):
+    script = ROOT / cfg["diff_renderer"]
+    md = ROOT / cfg["changelog_md"]
+    if not script.exists() or not md.exists():
+        print("[skip] diffhtml: renderer or changelog missing")
+        return
+    # Render diff HTML next to staged notes
+    out_html = BUILD / "docs" / (md.stem + ".html")
+    out_html.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        subprocess.check_call([sys.executable, str(script), "--md", str(md), "--out", str(out_html)])
+        print(f"[ok] diffhtml → {out_html.relative_to(ROOT)}")
+    except subprocess.CalledProcessError as e:
+        print(f"[warn] diffhtml failed: {e}")
+
+def _file_listing_under(path: Path):
+    files = []
+    for p in sorted(path.rglob("*")):
+        if p.is_file():
+            files.append(p)
+    return files
+
+def step_manifest(cfg):
+    repo_ctx = detect_repo_context()
+    files = _file_listing_under(BUILD)
+    items = []
+    total_bytes = 0
+    for f in files:
+        rel = f.relative_to(BUILD).as_posix()
+        sz = f.stat().st_size
+        total_bytes += sz
+        items.append({
+            "path": rel,
+            "size": sz,
+            "sha256": sha256_file(f)
+        })
+
+    manifest = {
+        "project": cfg["project_name"],
+        "vehicle": cfg.get("vehicle"),
+        "version": cfg["version"],
+        "profile": cfg["profile"],
+        "created_utc": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "repo_context": repo_ctx,
+        "file_count": len(items),
+        "total_bytes": total_bytes,
+        "metadata": cfg.get("metadata", {}),
+        "files": items
+    }
+    write_text(BUILD / "MANIFEST.json", json.dumps(manifest, indent=2))
+    print("[ok] manifest (MANIFEST.json)")
+
+def step_sums():
+    files = _file_listing_under(BUILD)
+    lines = []
+    for f in files:
+        rel = f.relative_to(BUILD).as_posix()
+        lines.append(f"{sha256_file(f)}  {rel}")
+    write_text(BUILD / "SHA256SUMS.txt", "\n".join(lines) + "\n")
+    print("[ok] sums (SHA256SUMS.txt)")
+
+def step_pack(cfg):
+    DIST.mkdir(parents=True, exist_ok=True)
+    name = cfg["dist_name_pattern"].format(
+        project=cfg["project_name"].replace(" ", ""),
+        version=cfg["version"],
+        profile=cfg["profile"]
+    )
+    zpath = DIST / name
+    with zipfile.ZipFile(zpath, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        for f in _file_listing_under(BUILD):
+            z.write(f, f.relative_to(BUILD).as_posix())
+    print(f"[ok] pack → {zpath.relative_to(ROOT)}")
+
+def step_verify(zip_path: Path):
+    tmp = ROOT / ".verify_tmp"
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True, exist_ok=True)
+    try:
+        with zipfile.ZipFile(zip_path, "r") as z:
+            z.extractall(tmp)
+        sums = (tmp / "SHA256SUMS.txt")
+        if not sums.exists():
+            print("[fail] SHA256SUMS.txt not found in archive")
+            return 2
+        # Build dict of expected
+        expected = {}
+        for ln in sums.read_text(encoding="utf-8").splitlines():
+            ln = ln.strip()
+            if not ln:
+                continue
+            h, rel = ln.split(None, 1)
+            rel = rel.strip()
+            if rel.startswith("*") or rel.startswith(" "):
+                rel = rel.lstrip("* ").strip()
+            expected[rel] = h
+
+        # Recompute
+        for rel, exp in expected.items():
+            p = tmp / rel
+            if not p.exists():
+                print(f"[fail] missing: {rel}")
+                return 2
+            real = sha256_file(p)
+            if real != exp:
+                print(f"[fail] hash mismatch: {rel}")
+                print(f"       expected {exp}")
+                print(f"       actual   {real}")
+                return 2
+        print("[ok] verify: all hashes match")
+        return 0
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+def step_adb_demo(cfg):
+    # Runs ONLY when the user requests it explicitly.
+    cmd = [cfg.get("adb_path", "adb")] + cfg.get("adb_demo_cmd", [])
+    print(f"[info] ADB demo (explicit only): {' '.join(cmd)}")
+    try:
+        subprocess.check_call(cmd)
+        print("[ok] adb demo complete")
+    except Exception as e:
+        print(f"[warn] adb not available or failed: {e}")
+
+# ------------------- CLI -------------------
+
+def main():
+    cfg = load_config()
+
+    ap = argparse.ArgumentParser(prog="builder.py", description="SonicBuilder full-chain packager")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    sub.add_parser("clean")
+    sub.add_parser("prepare")
+    sub.add_parser("notes")
+    sub.add_parser("diffhtml")
+    sub.add_parser("manifest")
+    sub.add_parser("sums")
+    sub.add_parser("pack")
+
+    vr = sub.add_parser("verify")
+    vr.add_argument("zipfile", type=str, help="Path to a packaged zip")
+
+    # Explicit-only ADB demo (keeps silent otherwise)
+    sub.add_parser("adb-demo")
+
+    args = ap.parse_args()
+
+    if args.cmd == "clean":
+        step_clean()
+        return
+
+    if args.cmd == "prepare":
+        step_prepare(cfg); return
+
+    if args.cmd == "notes":
+        step_notes(cfg); return
+
+    if args.cmd == "diffhtml":
+        step_diffhtml(cfg); return
+
+    if args.cmd == "manifest":
+        step_manifest(cfg); return
+
+    if args.cmd == "sums":
+        step_sums(); return
+
+    if args.cmd == "pack":
+        # Full chain
+        step_clean()
+        step_prepare(cfg)
+        step_notes(cfg)
+        step_diffhtml(cfg)
+        step_manifest(cfg)
+        step_sums()
+        step_pack(cfg)
+        return
+
+    if args.cmd == "verify":
+        rc = step_verify(Path(args.zipfile))
+        sys.exit(rc)
+
+    if args.cmd == "adb-demo":
+        step_adb_demo(cfg); return
+
+if __name__ == "__main__":
+    main()

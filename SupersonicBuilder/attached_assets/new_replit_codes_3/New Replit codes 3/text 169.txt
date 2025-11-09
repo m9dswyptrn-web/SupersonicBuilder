@@ -1,0 +1,4 @@
+export GITHUB_OWNER="YOUR_USERNAME"
+export GITHUB_REPO="SonicBuilder"
+export GIT_AUTHOR_NAME="Christopher Elgin"
+export GIT_AUTHOR_EMAIL="you@example.com"

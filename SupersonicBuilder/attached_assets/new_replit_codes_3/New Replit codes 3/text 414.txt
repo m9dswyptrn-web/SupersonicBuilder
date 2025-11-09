@@ -1,0 +1,9 @@
+# Run your app
+python scripts/run_offline_llm.py
+
+# Try the scan (optional)
+curl http://127.0.0.1:7860/api/env/scan | jq
+
+# Open the template in your browser (Fix it for me does this automatically)
+open http://127.0.0.1:7860/api/env/template     # (macOS)
+# or just click the button in the modal

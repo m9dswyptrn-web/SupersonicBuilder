@@ -1,0 +1,5 @@
+# --- Post-tune ping (optional) ---
+try:
+    subprocess.run([sys.executable, "scripts/post_tune_ping.py"], check=False)
+except Exception:
+    pass

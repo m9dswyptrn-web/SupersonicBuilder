@@ -1,0 +1,44 @@
+:root {
+  /* defaults (used before theme is known) */
+  --bg: #0b0f14;
+  --fg: #e5e7eb;
+  --muted: #9aa3af;
+  --border: #2b2f36;
+  --accent-color: #00ffff;
+  --accent-glow: rgba(0,255,255,0.35);
+}
+
+/* Dark */
+body.dark {
+  --bg: #0b0f14;
+  --fg: #e5e7eb;
+  --muted: #9aa3af;
+  --border: #2b2f36;
+  --accent-color: #8efcff;
+  --accent-glow: rgba(0,255,255,0.35);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* Light */
+body.light {
+  --bg: #ffffff;
+  --fg: #111827;
+  --muted: #4b5563;
+  --border: #e5e7eb;
+  --accent-color: #222;
+  --accent-glow: rgba(0,0,0,0.25);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* Use variables throughout your UI (examples) */
+.card { background: rgba(255,255,255,0.02); border:1px solid var(--border); }
+.muted { color: var(--muted); }
+
+/* Your adaptive glow from earlier */
+#dp-restart.fade-visible,
+#dp-restart-label.fade-visible {
+  box-shadow: 0 0 8px var(--accent-glow);
+  color: var(--accent-color);
+}

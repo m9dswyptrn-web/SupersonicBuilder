@@ -1,0 +1,388 @@
+import json, os, time, hashlib, pathlib, threading
+import urllib.request, urllib.error
+from datetime import datetime, timezone
+from flask import Flask, send_from_directory, Response, request, render_template_string, redirect, url_for
+
+APP_PORT = int(os.getenv("PORT", "5000"))
+ROOT = pathlib.Path(__file__).parent.resolve()
+DL_DIR = ROOT / "downloads"
+INDEX_JSON = DL_DIR / "index.json"
+STATS_JSON = DL_DIR / "stats.json"
+
+app = Flask(__name__)
+
+# Thread-safe stats lock
+_stats_lock = threading.Lock()
+
+# ------------- Utilities -------------
+def _ensure_dirs():
+    DL_DIR.mkdir(parents=True, exist_ok=True)
+    if not INDEX_JSON.exists():
+        INDEX_JSON.write_text(json.dumps({"generated": time.time(), "items": []}, indent=2), "utf-8")
+    if not STATS_JSON.exists():
+        STATS_JSON.write_text(json.dumps({"updated": time.time(), "counts": {}, "last_download": {}}, indent=2), "utf-8")
+
+def _load_json(path, default):
+    try:
+        return json.loads(path.read_text("utf-8"))
+    except Exception:
+        return default
+
+def _save_json(path, data):
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2), "utf-8")
+    tmp.replace(path)
+
+def _human_mb(b):
+    return f"{b/1024/1024:.1f} MB"
+
+def _ts_utc(ts):
+    return time.strftime('%Y-%m-%d %H:%M', time.gmtime(ts))
+
+def _totals(stats):
+    counts = stats.get("counts", {})
+    return sum(int(v) for v in counts.values())
+
+def _fmt_human(ts):
+    """Format timestamp as human-readable relative time."""
+    if not ts:
+        return "never"
+    dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+    now = datetime.now(tz=timezone.utc)
+    delta = now - dt
+    mins = int(delta.total_seconds() // 60)
+    if mins < 1:
+        return "just now"
+    if mins < 60:
+        return f"{mins}m ago"
+    hrs = mins // 60
+    if hrs < 24:
+        return f"{hrs}h ago"
+    days = hrs // 24
+    return f"{days}d ago"
+
+# ------------- Data sources -------------
+def get_index():
+    _ensure_dirs()
+    data = _load_json(INDEX_JSON, {"generated": time.time(), "items": []})
+    items = sorted(data.get("items", []), key=lambda i: i.get("mtime", 0), reverse=True)
+    data["items"] = items
+    return data
+
+def get_stats():
+    _ensure_dirs()
+    return _load_json(STATS_JSON, {"updated": time.time(), "counts": {}, "last_download": {}})
+
+def bump_stat(filename):
+    """Thread-safe increment of download counter."""
+    with _stats_lock:
+        s = get_stats()
+        s["counts"][filename] = int(s["counts"].get(filename, 0)) + 1
+        s["last_download"][filename] = time.time()
+        s["updated"] = time.time()
+        _save_json(STATS_JSON, s)
+
+# ------------- Web UI -------------
+PAGE_HTML = r"""
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SonicBuilder Documentation</title>
+<style>
+:root{
+  --bg:#0b0f14; --fg:#cfd7e3; --muted:#8fa1b3; --card:#121821; --border:#233043; --link:#7aa2f7;
+  --ok:#2ecc71; --warn:#f39c12;
+}
+:root.light{
+  --bg:#f7f9fc; --fg:#1d2733; --muted:#4b5a6a; --card:#ffffff; --border:#dfe7f1; --link:#0a67d8;
+  --ok:#1e944f; --warn:#b66a00;
+}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,sans-serif;background:var(--bg);color:var(--fg);}
+.container{max-width:1000px;margin:0 auto;padding:32px}
+.header{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.badges{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-top:16px}
+table{width:100%;border-collapse:collapse}
+th,td{padding:10px 8px;border-bottom:1px solid var(--border);text-align:left}
+th{color:var(--muted);font-weight:600}
+a{color:var(--link);text-decoration:none}
+a:hover{text-decoration:underline}
+.small{color:var(--muted);font-size:12px}
+button.toggle{
+  border:1px solid var(--border); background:transparent; color:var(--fg);
+  padding:8px 10px; border-radius:8px; cursor:pointer;
+}
+kbd{background:var(--border);padding:2px 6px;border-radius:6px;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+#totalBox{border:1px solid var(--border);padding:6px 12px;border-radius:8px;display:inline-block}
+</style>
+
+<body>
+<div class="container">
+  <div class="header">
+    <div>
+      <h1 style="margin:0 0 6px 0">SonicBuilder Documentation Downloads</h1>
+      <div class="small">Live mirror with auto-refresh, analytics, and theme toggle.</div>
+    </div>
+    <div class="badges">
+      <a id="latestLink" href="#">
+        <img alt="Latest Download" id="latestBadge"
+          src="https://img.shields.io/badge/latest-download-blue?logo=adobeacrobatreader&logoColor=white">
+      </a>
+      <button class="toggle" id="themeBtn" title="Toggle theme">🌓 Theme</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2 style="margin:0">Last 5 PDFs</h2>
+      <span id="totalBox" class="small">
+        ⬇️ total downloads: <strong id="totalCnt">0</strong>
+      </span>
+    </div>
+    <table id="tbl">
+      <thead><tr><th>File</th><th>Size</th><th>Updated (UTC)</th><th>MD5</th><th>Downloads</th><th></th></tr></thead>
+      <tbody><tr><td colspan="6" class="small">Loading…</td></tr></tbody>
+    </table>
+    <div class="small" id="foot"></div>
+    <p class="small" id="exactTime" style="margin-top:8px;font-style:italic"></p>
+  </div>
+
+  <div class="card">
+    <strong>Tips</strong>
+    <ul class="small">
+      <li>Page auto-refreshes every 60s (<kbd>Cmd/Ctrl</kbd> + <kbd>R</kbd> for manual refresh).</li>
+      <li>Download counts increment when files are served (no client tracking).</li>
+      <li>Badge endpoints: <code>/badge/latest.json</code>, <code>/badge/downloads.json</code>, <code>/badge/updated.json</code>, <code>/badge/size.json</code>, <code>/badge/pdf-health.json</code></li>
+    </ul>
+  </div>
+</div>
+
+<script>
+(function(){
+  // --- theme: system default + manual toggle
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const saved = localStorage.getItem('sb_theme');
+  function applyTheme(t){ document.documentElement.classList.toggle('light', t==='light'); localStorage.setItem('sb_theme', t); }
+  applyTheme(saved ? saved : (prefersDark ? 'dark' : 'light'));
+  document.getElementById('themeBtn').onclick = function(){
+    const now = document.documentElement.classList.contains('light') ? 'dark' : 'light';
+    applyTheme(now);
+  };
+
+  async function fetchJSON(url){
+    const res = await fetch(url, {cache:'no-store'});
+    if(!res.ok) throw new Error('Fetch failed '+url);
+    return res.json();
+  }
+
+  function h(bytes){ return (bytes/1024/1024).toFixed(1)+' MB'; }
+  function md5s(s){ return s ? s.substring(0,8) : ''; }
+
+  async function load(){
+    try{
+      const [idx, stats] = await Promise.all([
+        fetchJSON('/api/index.json'),
+        fetchJSON('/api/stats.json')
+      ]);
+      const items = (idx.items||[]).slice(0,5);
+      const tbody = document.querySelector('#tbl tbody');
+      tbody.innerHTML = '';
+      items.forEach(it=>{
+        const tr = document.createElement('tr');
+        const cnt = (stats.counts||{})[it.name] || 0;
+        tr.innerHTML =
+          `<td><a href="/downloads/${it.name}">${it.name}</a></td>`+
+          `<td>${h(it.bytes||0)}</td>`+
+          `<td>${new Date((it.mtime||0)*1000).toISOString().slice(0,16).replace('T',' ')}</td>`+
+          `<td><code>${md5s(it.md5)}</code></td>`+
+          `<td>${cnt}</td>`+
+          `<td><a href="/downloads/${it.name}" download>⬇️</a></td>`;
+        tbody.appendChild(tr);
+      });
+      
+      // Update total downloads
+      const total = Object.values(stats.counts||{}).reduce((a,b)=>a+Number(b||0),0);
+      document.getElementById('totalCnt').textContent = total;
+      
+      // latest link
+      document.getElementById('latestLink').href = '/downloads/latest.pdf';
+      document.getElementById('foot').textContent =
+        'Index generated '+new Date((idx.generated||0)*1000).toISOString()+
+        ' • Stats updated '+new Date((stats.updated||0)*1000).toISOString();
+      
+      // Exact build time display
+      const summary = await fetchJSON('/api/summary.json');
+      const ts = summary.latest_mtime ? new Date(summary.latest_mtime*1000) : null;
+      document.getElementById('exactTime').textContent =
+        ts ? `Exact build time (UTC): ${ts.toISOString()}` : 'No builds yet';
+    }catch(e){
+      document.querySelector('#tbl tbody').innerHTML =
+        `<tr><td colspan="6" class="small">Error: ${e.message}</td></tr>`;
+    }
+  }
+
+  load();
+  setInterval(load, 60000); // auto refresh 60s
+})();
+</script>
+</body>
+</html>
+"""
+
+# ------------- Routes -------------
+
+@app.route("/")
+def home():
+    return render_template_string(PAGE_HTML)
+
+@app.route("/api/index.json")
+def api_index():
+    return Response(json.dumps(get_index()), mimetype="application/json")
+
+@app.route("/api/stats.json")
+def api_stats():
+    return Response(json.dumps(get_stats()), mimetype="application/json")
+
+@app.route("/api/summary.json")
+def api_summary():
+    idx, st = get_index(), get_stats()
+    latest = idx.get("items", [{}])[0] if idx.get("items") else {}
+    data = {
+        "generated": int(time.time()),
+        "latest_name": latest.get("name"),
+        "latest_bytes": latest.get("bytes", 0),
+        "latest_mtime": latest.get("mtime", 0),
+        "total_downloads": _totals(st),
+        "counts": st.get("counts", {})
+    }
+    return Response(json.dumps(data), mimetype="application/json")
+
+# ------------- Shields.io badge endpoints -------------
+
+@app.route("/badge/latest.json")
+def badge_latest():
+    idx = get_index()
+    latest = idx.get("items", [{}])[0] if idx.get("items") else {}
+    label = "latest"
+    message = latest.get("name") or "no file"
+    color = "blue" if latest else "lightgrey"
+    payload = {"schemaVersion": 1, "label": label, "message": message, "color": color}
+    return Response(json.dumps(payload), mimetype="application/json")
+
+@app.route("/badge/downloads.json")
+def badge_downloads():
+    st = get_stats()
+    total = _totals(st)
+    payload = {
+        "schemaVersion": 1,
+        "label": "downloads",
+        "message": str(total),
+        "color": "success" if total > 0 else "lightgrey"
+    }
+    return Response(json.dumps(payload), mimetype="application/json")
+
+@app.route("/badge/updated.json")
+def badge_updated():
+    idx = get_index()
+    latest = (idx.get("items") or [{}])[0]
+    mtime = latest.get("mtime", 0)
+    human = _fmt_human(mtime)
+    # Color by recency
+    color = "brightgreen"
+    if human.endswith("h ago") or human.endswith("d ago"):
+        color = "yellow" if ("h" in human and not human.startswith("24")) else "orange"
+    if human == "never":
+        color = "lightgrey"
+    payload = {
+        "schemaVersion": 1,
+        "label": "last updated",
+        "message": human,
+        "color": color
+    }
+    return Response(json.dumps(payload), mimetype="application/json")
+
+@app.route("/badge/size.json")
+def badge_size():
+    idx = get_index()
+    latest = (idx.get("items") or [{}])[0]
+    mb = latest.get("mb", 0.0)
+    msg = f"{mb:.1f} MB" if mb else "n/a"
+    color = "blue" if mb else "lightgrey"
+    payload = {
+        "schemaVersion": 1,
+        "label": "latest size",
+        "message": msg,
+        "color": color
+    }
+    return Response(json.dumps(payload), mimetype="application/json")
+
+@app.route("/badge/pdf-health.json")
+def badge_pdf_health():
+    """Probes GitHub Pages to verify it's live and serving PDFs."""
+    owner = "m9dswyptrn-web"
+    repo = "SonicBuilder"
+    url = f"https://{owner}.github.io/{repo}/downloads/latest.pdf"
+    
+    ok = False
+    code = 0
+    try:
+        req = urllib.request.Request(url, method="HEAD")
+        with urllib.request.urlopen(req, timeout=8) as r:
+            code = r.getcode() or 0
+            ok = (200 <= code < 300)
+    except urllib.error.HTTPError as e:
+        code = e.code
+        ok = False
+    except Exception:
+        ok = False
+    
+    payload = {
+        "schemaVersion": 1,
+        "label": "pdf health",
+        "message": "OK" if ok else f"ERR {code or 'down'}",
+        "color": "brightgreen" if ok else "red"
+    }
+    return Response(json.dumps(payload), mimetype="application/json")
+
+# ------------- File serving -------------
+
+@app.route("/downloads/<path:filename>")
+def serve_download(filename):
+    """
+    Serves files from downloads/ and increments analytics counters automatically.
+    Also supports 'latest.pdf' symlink/redirect convenience.
+    """
+    _ensure_dirs()
+    if filename == "latest.pdf":
+        latest_path = DL_DIR / "latest.pdf"
+        if latest_path.exists():
+            bump_stat("latest.pdf")
+            return send_from_directory(str(DL_DIR), "latest.pdf")
+        idx = get_index()
+        if idx.get("items"):
+            target = idx["items"][0]["name"]
+            return redirect(url_for("serve_download", filename=target), code=302)
+        return Response("No PDFs available", status=404)
+
+    target = DL_DIR / filename
+    if not target.exists():
+        return Response("File not found", status=404)
+    try:
+        bump_stat(filename)
+    except Exception:
+        pass
+    return send_from_directory(str(DL_DIR), filename, as_attachment=False)
+
+@app.route("/health")
+def health():
+    return "OK", 200
+
+# ------------- Main -------------
+
+if __name__ == "__main__":
+    _ensure_dirs()
+    print(f"[SonicBuilder] Serving downloads from {DL_DIR}")
+    print(f"[SonicBuilder] Badge endpoints: /badge/latest.json, /badge/downloads.json, /badge/updated.json, /badge/size.json, /badge/pdf-health.json")
+    app.run(host="0.0.0.0", port=APP_PORT)

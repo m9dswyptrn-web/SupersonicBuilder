@@ -1,0 +1,4 @@
+<!-- In your mini status bar -->
+<button class="ms-item" id="msProfile" title="Cycle profile">
+  🧩 <span class="ms-label" id="msProfileTxt">balanced</span>
+</button>

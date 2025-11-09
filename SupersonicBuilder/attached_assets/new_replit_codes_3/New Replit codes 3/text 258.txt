@@ -1,0 +1,15 @@
+def embed(self, texts: List[str]):
+    return self.model.encode(texts, normalize_embeddings=True).tolist()
+
+def add_doc(self, doc_id: str, text: str, meta: Dict[str,Any]=None):
+    self.collection.upsert(ids=[doc_id], documents=[text], metadatas=[meta or {}],
+                           embeddings=self.embed([text]))
+
+def search(self, query: str, k: int=5):
+    res = self.collection.query(query_embeddings=self.embed([query]), n_results=k)
+    hits = []
+    for i, did in enumerate(res.get("ids",[[]])[0]):
+        hits.append({"id": did,
+                     "text": res["documents"][0][i],
+                     "meta": res["metadatas"][0][i]})
+    return hits

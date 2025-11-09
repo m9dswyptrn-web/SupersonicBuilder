@@ -1,0 +1,4 @@
+python3 security_bootstrap.py
+git add -A
+git commit -m "Security: CodeQL, dependency audits, secrets scan, Dependabot"
+git push origin main

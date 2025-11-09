@@ -1,0 +1,5 @@
+cd SonicBuilder
+# Default PUSH=github
+make verify-deep-publish VERSION=5.0.0 OUT=/mnt/data
+# Or specify mirror
+make verify-deep-publish VERSION=5.0.0 OUT=/mnt/data PUSH=both

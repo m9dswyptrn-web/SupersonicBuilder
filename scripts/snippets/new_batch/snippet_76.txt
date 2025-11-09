@@ -1,0 +1,17 @@
+# One-shot, current profile from config (e.g., dark)
+python builder.py pack
+
+# Build both dark + light
+python builder.py pack --profiles=all
+
+# Verify a package
+python builder.py verify dist/SonicBuilder_BuildOfBuilds_ProPack_ENHANCED_v3.2.1_dark.zip
+
+# Bump version in config
+python builder.py bump --kind=patch   # or minor|major
+
+# Optional extras on demand
+python builder.py qrstamp
+python builder.py stamp-pdf-meta
+python builder.py sbom
+python builder.py gh-draft

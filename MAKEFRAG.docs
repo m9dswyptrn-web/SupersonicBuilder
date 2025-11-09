@@ -1,0 +1,40 @@
+# ===== Documentation build helpers =====
+PY ?= python
+
+# Main docs build: manual + stamping (assumes your existing manual builder outputs to dist/manual.pdf)
+docs: manual stamp_docs appendix_qr appendix_index
+	@echo "Docs built for $(VERSION)"
+
+# If you have a separate rule that makes dist/manual.pdf, alias it here:
+manual:
+	@echo ">> Build manual (override this to your actual builder)"
+	@mkdir -p dist
+	@test -f dist/manual.pdf || $(PY) scripts/gen_placeholder_manual.py || echo "No manual builder configured"
+
+# Stamp metadata into manual.pdf
+stamp_docs:
+	@test -f dist/manual.pdf && $(PY) scripts/pdf_meta_stamp.py --in dist/manual.pdf --out dist/manual.pdf --version $(VERSION) || echo "No manual to stamp"
+
+# Appendix C assets (index+QR+2up) — targets call existing scripts from earlier patches
+appendix_qr:
+	@$(PY) scripts/i2s_qr.py || true
+
+appendix_index:
+	@$(PY) scripts/i2s_index.py --root Appendix/C_I2S_Integration || true
+	@$(PY) scripts/appendix_c_index_pdf.py --csv Appendix/C_I2S_Integration/03_Photo_Index.csv --out Appendix/C_I2S_Integration/Appendix_C_I2S_Index.pdf --version $(VERSION) || true
+	@$(PY) scripts/i2s_qr_2up.py || true
+
+# CI convenience: build docs and prep release_assets folder
+docs_ci:
+	@$(MAKE) docs
+	@rm -rf release_assets && mkdir -p release_assets
+	@cp -R Appendix/C_I2S_Integration release_assets/Appendix_C_I2S_Integration || true
+	@cp -R dist release_assets/dist || true
+	@[ -f Appendix/C_I2S_Integration/03_Photo_Index.csv ] && cp Appendix/C_I2S_Integration/03_Photo_Index.csv release_assets/ || true
+	@[ -f Appendix/C_I2S_Integration/metadata.json ] && cp Appendix/C_I2S_Integration/metadata.json release_assets/ || true
+	@echo "Docs CI assets staged."
+
+# Zip the docs output if you want a portable artifact
+package_export:
+	@zip -r "SonicBuilder_Docs_$(VERSION).zip" dist Appendix/C_I2S_Integration >/dev/null || true
+	@echo "Wrote SonicBuilder_Docs_$(VERSION).zip"

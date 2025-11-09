@@ -1,0 +1,56 @@
+btnRestart?.addEventListener("click", async () => {
+  if (!LAST.has) return;
+  // Restore selects to the remembered values so the UI matches
+  selMake.value  = LAST.make;
+  selModel.value = LAST.model;
+  selYear.value  = LAST.year;
+  selDiag.value  = LAST.id;
+  selVar.value   = LAST.variant;
+  selFmt.value   = LAST.fmt;
+
+  // Show preview area
+  wrap.hidden = false;
+  showSpinner(true);
+  beginLongTask();
+
+  try {
+    if (LAST.fmt === "png") {
+      // PNG path — just show the image
+      image.hidden = false; canvas.hidden = true;
+      image.src = LAST.url + "&t=" + Date.now();   // bust cache
+      image.onload = () => { status(""); showSpinner(false); endLongTask(); };
+      image.onerror = () => { status("Preview failed."); showSpinner(false); endLongTask(); };
+      return;
+    }
+
+    // PDF path — reload if URL changed; else reuse current doc
+    const desiredURL = LAST.url;
+    image.hidden = true; canvas.hidden = false;
+
+    if (!pdfDoc || pdfURL !== desiredURL) {
+      pdfURL = desiredURL;
+      await loadPDF(pdfURL);
+      if (CANCEL.active) return;
+    }
+
+    // Restore view state
+    page     = Math.min(Math.max(1, LAST.page || 1), pdfDoc.numPages);
+    scale    = LAST.scale || 1.25;
+    rotation = (LAST.rotation || 0) % 360;
+
+    await renderPage();
+    if (CANCEL.active) return;
+
+    // Update the remembered page/zoom in case user restarts twice
+    rememberState();
+    status("");
+  } catch (e) {
+    if (!CANCEL.active) {
+      console.error(e);
+      status("Restart failed; opening in new tab.");
+      window.open(LAST.url, "_blank", "noopener");
+    }
+  } finally {
+    if (!CANCEL.active) endLongTask();
+  }
+});

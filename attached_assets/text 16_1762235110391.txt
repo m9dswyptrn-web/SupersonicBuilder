@@ -1,0 +1,13 @@
+<script>
+function perfSave(){
+  saveSettings();
+  showToast('Performance settings saved');
+}
+
+function perfResetDefaults(){
+  SETTINGS.perf = { fpsMin:25, fpsRelease:40, fpsDurationMs:2000, rttMaxMs:500, rttDurationMs:3000, cooldownMs:15000 };
+  saveSettings();
+  applySettingsToUI();
+  showToast('Performance settings reset');
+}
+</script>

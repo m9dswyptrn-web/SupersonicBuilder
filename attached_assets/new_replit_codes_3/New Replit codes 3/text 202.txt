@@ -1,0 +1,2 @@
+<div class="cards" id="sb-releases"></div>
+<div class="cards" id="sb-artifacts"></div>

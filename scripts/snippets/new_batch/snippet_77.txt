@@ -1,0 +1,2 @@
+# e.g., GitHub compare URL for this release
+export SB_CHANGELOG_URL="https://github.com/OWNER/REPO/compare/v3.2.0...v3.2.1"

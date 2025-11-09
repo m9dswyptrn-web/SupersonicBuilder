@@ -1,0 +1,10 @@
+// Ready false -> true (first time system fully ready)
+if (wasReady === false && nowReady === true) {
+  playChime(true, 'system ready');
+  if (window.VOICE_CUES && SETTINGS.autoSpeakOnReady) {
+    // speak a fresh status line (uses your backend status voice)
+    fetch('/api/status/speak', {method:'POST'});
+  } else {
+    showToast('Ready ✅');
+  }
+}

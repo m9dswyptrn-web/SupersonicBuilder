@@ -1,0 +1,107 @@
+// ---- Catalog caching + readiness -------------------------------------------------
+let catalog = {};
+let catalogReadyResolve;
+const catalogReady = new Promise(res => (catalogReadyResolve = res));
+
+const CATALOG_CACHE_KEY = "supersonic-catalog-cache-v1";
+const CATALOG_META_KEY  = "supersonic-catalog-meta-v1";
+const CATALOG_TTL_MS    = 6 * 60 * 60 * 1000; // 6 hours
+
+function readCache() {
+  try {
+    const data = JSON.parse(localStorage.getItem(CATALOG_CACHE_KEY) || "null");
+    const meta = JSON.parse(localStorage.getItem(CATALOG_META_KEY)  || "null");
+    return { data, meta };
+  } catch { return { data: null, meta: null }; }
+}
+function writeCache(data, meta) {
+  try {
+    localStorage.setItem(CATALOG_CACHE_KEY, JSON.stringify(data));
+    localStorage.setItem(CATALOG_META_KEY,  JSON.stringify(meta));
+  } catch {}
+}
+function clearCatalogCache() {
+  try {
+    localStorage.removeItem(CATALOG_CACHE_KEY);
+    localStorage.removeItem(CATALOG_META_KEY);
+  } catch {}
+}
+
+// Try to fetch version; if offline, return null
+async function fetchCatalogVersion() {
+  try {
+    const r = await fetch("/api/diagrams/catalog-version", { cache: "no-store" });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j?.version || null;
+  } catch { return null; }
+}
+
+async function fetchCatalogFresh() {
+  const r = await fetch("/api/diagrams/catalog", { cache: "no-store" });
+  if (!r.ok) throw new Error("catalog http " + r.status);
+  return await r.json();
+}
+
+// MAIN loader with version + TTL + offline fallback
+async function loadCatalog() {
+  status("Loading catalog…");
+  const now = Date.now();
+  const { data: cached, meta } = readCache();
+
+  // Get server version (if possible)
+  const serverVersion = await fetchCatalogVersion();
+
+  // Use cache if: present AND (version matches OR TTL not expired)
+  const cacheValidByVersion = !!(cached && meta && serverVersion && meta.version === serverVersion);
+  const cacheValidByTTL = !!(cached && meta && (now - (meta.ts || 0) < CATALOG_TTL_MS));
+
+  if (cacheValidByVersion || cacheValidByTTL) {
+    catalog = cached;
+    status(cacheValidByVersion ? "Catalog ready (matched version)." : "Catalog ready (TTL cache).");
+    // Try background refresh if TTL path and we have serverVersion mismatch
+    try {
+      if (serverVersion && (!meta || meta.version !== serverVersion)) {
+        const fresh = await fetchCatalogFresh();
+        catalog = fresh;
+        writeCache(fresh, { version: serverVersion || "unknown", ts: Date.now() });
+        status("Catalog updated (background).");
+      }
+    } catch {/* ignore background refresh errors */}
+    // populate UI
+    populateMakeSelect();
+    catalogReadyResolve && catalogReadyResolve();
+    return;
+  }
+
+  // Otherwise fetch fresh (online) or fall back (offline)
+  try {
+    const fresh = await fetchCatalogFresh();
+    catalog = fresh;
+    writeCache(fresh, { version: serverVersion || "unknown", ts: Date.now() });
+    status("Catalog ready.");
+  } catch (e) {
+    if (cached) {
+      catalog = cached;
+      status("Offline: using cached catalog.");
+    } else {
+      status("Failed to load catalog (no cache).");
+      catalog = {};
+    }
+  }
+
+  populateMakeSelect();
+  catalogReadyResolve && catalogReadyResolve();
+}
+
+// small helper to fill the Make select (split from loadCatalog for clarity)
+function populateMakeSelect() {
+  const selMake = document.getElementById("dp-make");
+  if (!selMake) return;
+  selMake.innerHTML = `<option value="">— select —</option>`;
+  Object.keys(catalog).sort().forEach(mk => {
+    const opt = document.createElement("option");
+    opt.value = mk; opt.textContent = mk;
+    selMake.appendChild(opt);
+  });
+}

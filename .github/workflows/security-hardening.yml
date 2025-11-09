@@ -1,0 +1,50 @@
+name: security-hardening
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    name: Subprocess hardening (check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run hardening check
+        run: |
+          python3 tools/hardening/patch_subprocess.py --check | tee hardening-report.txt
+          if grep -q "WOULD PATCH" hardening-report.txt; then
+            echo "::error::Subprocess hardening needed. Run 'make harden' locally or use the 'autofix' job."
+            exit 1
+          fi
+
+  autofix:
+    if: ${{ always() && github.event_name == 'workflow_dispatch' }}
+    needs: [check]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Apply hardening patch
+        run: |
+          python3 tools/hardening/patch_subprocess.py --apply
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name  "sonicbuilder-bot"
+            git config user.email "sonicbuilder-bot@users.noreply.github.com"
+            git add -A
+            git commit -m "security(hardening): sanitize subprocess usage via patcher"
+            git push
+          else
+            echo "No changes to commit."
+          fi

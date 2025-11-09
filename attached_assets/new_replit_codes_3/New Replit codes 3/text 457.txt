@@ -1,0 +1,11 @@
+<div class="hr"></div>
+<label>
+  Volume:&nbsp;<span id="volPct">100%</span>
+  <input type="range" id="optVolume" min="0" max="100" step="1" style="width:120px;">
+</label>
+<label>
+  <button class="pill" onclick="snooze(10)">Mute all for 10 min</button>
+  <button class="pill" onclick="snooze(30)">30 min</button>
+  <button class="pill" onclick="unsnooze()">Unmute</button>
+</label>
+<div id="snoozeLeft" class="muted" style="font-size:12px; padding-top:4px;">Muted: —</div>

@@ -1,0 +1,536 @@
+diff --git a/app.py b/app.py
+--- a/app.py
++++ b/app.py
+@@ -1,5 +1,38 @@
+-from flask import Flask
++from flask import Flask, jsonify
++import os, hashlib
++
++# --- DEV/PROD TTL heuristic -----------------------------------------------------
++def _is_dev():
++    return (os.getenv("FLASK_ENV", "").lower() == "development"
++            or os.getenv("DEBUG", "").lower() in ("1", "true", "yes"))
++
++# If CATALOG_TTL_HOURS is set, use it; else dev=0.17h (~10m), prod=24h
++CATALOG_TTL_HOURS = float(os.getenv("CATALOG_TTL_HOURS", "0.17" if _is_dev() else "24"))
++
++# Ensure DIAGRAM_INDEX resolves to your diagrams index path:
++# e.g., from pathlib import Path; DIAGRAM_INDEX = Path("data/diagrams_index.json")
++# (Assumed already present elsewhere in your file.)
++
++def _catalog_version():
++    try:
++        raw = DIAGRAM_INDEX.read_bytes()
++        return hashlib.sha1(raw).hexdigest()[:12]
++    except Exception:
++        return "unknown"
++
++@app.get("/api/diagrams/catalog-config")
++def diagrams_catalog_config():
++    return jsonify({
++        "version": _catalog_version(),
++        "ttl_ms": int(CATALOG_TTL_HOURS * 60 * 60 * 1000),
++    }), 200
++
++@app.get("/api/diagrams/catalog-version")
++def diagrams_catalog_version():
++    # kept for clients that only call /catalog-version
++    return jsonify({"version": _catalog_version()}), 200
++
++@app.context_processor
++def inject_catalog_config():
++    return dict(CATALOG_TTL_HOURS=CATALOG_TTL_HOURS, _catalog_version=_catalog_version)
+
+diff --git a/templates/base.html b/templates/base.html
+--- a/templates/base.html
++++ b/templates/base.html
+@@ -3,6 +3,11 @@
+   <head>
+     <meta charset="utf-8">
+     <meta name="viewport" content="width=device-width, initial-scale=1">
++    <!-- Catalog config for zero-request boot -->
++    <meta id="catalog-config"
++          data-version="{{ _catalog_version() }}"
++          data-ttl-ms="{{ (CATALOG_TTL_HOURS * 60 * 60 * 1000) | int }}">
++
+     <title>Supersonic Commander</title>
+     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+     <link rel="stylesheet" href="{{ url_for('static', filename='css/diagram_picker.css') }}">
+@@ -12,6 +17,8 @@
+   <body class="dark">
+     <header id="toolbar">
+       <button id="theme-toggle" class="btn btn-mini" aria-haspopup="true" aria-expanded="false" aria-label="Toggle theme (Dark / Light / System)" title="Toggle theme"><span id="theme-icon">🌙</span><span id="theme-label" class="muted" style="margin-left:.25rem;">Dark</span></button>
++      <button id="settings-cog" class="btn btn-mini" aria-haspopup="dialog" aria-controls="settings-modal" aria-label="Open settings" title="Settings">⚙️</button>
++      <div id="theme-menu" class="menu" hidden role="menu" aria-labelledby="theme-toggle"><button class="menu-item" role="menuitem" data-theme="dark">🌙 Dark</button><button class="menu-item" role="menuitem" data-theme="light">☀️ Light</button><button class="menu-item" role="menuitem" data-theme="system">🖥 System</button></div>
+     </header>
+
+     <!-- Diagram Picker surface (snippet) -->
+@@ -21,6 +28,12 @@
+         <div class="dp-preview-tools">
+           <button id="dp-first"   class="btn btn-mini">⏮</button>
+           <button id="dp-prev"    class="btn btn-mini">◀</button>
++          <button id="dp-restart" class="btn btn-mini" title="Restart last preview" hidden>↺ Restart</button>
++          <span id="dp-restart-label" class="muted" hidden>Last: —</span>
+           <span id="dp-page-info" class="muted" style="min-width:90px;display:inline-block;text-align:center">– / –</span>
+           <button id="dp-next"    class="btn btn-mini">▶</button>
+           <button id="dp-last"    class="btn btn-mini">⏭</button>
+           <span class="sep">|</span>
+           <button id="dp-zoomout" class="btn btn-mini">−</button>
+           <button id="dp-zoomfit" class="btn btn-mini">⤧</button>
+           <button id="dp-zoomin"  class="btn btn-mini">+</button>
+           <span class="sep">|</span>
+           <button id="dp-rotate"  class="btn btn-mini">⟳</button>
+           <button id="dp-fitw"    class="btn btn-mini" title="Fit to width">Fit W</button>
+           <button id="dp-fith"    class="btn btn-mini" title="Fit to height">Fit H</button>
+           <span class="sep">|</span>
+           <label class="dp-inline" for="dp-quality" title="Export quality / scale">Quality</label>
+           <input id="dp-quality" type="range" min="0.6" max="2.0" step="0.05" value="1.25" style="width:140px"><span id="dp-quality-val" class="muted">1.25×</span>
+           <span class="sep">|</span>
+           <div id="dp-progress" class="dp-progress"><div id="dp-progress-bar" class="dp-progress-bar" style="width:0%"></div></div>
+           <span id="dp-progress-text" class="dp-progress-text muted">0%</span>
+           <span class="sep">|</span>
+           <button id="dp-download-png" class="btn btn-mini" title="Download current page as PNG">⬇️ PNG</button>
+           <button id="dp-download-pdf" class="btn btn-mini" title="Download original PDF">⬇️ PDF</button>
+           <button id="dp-download-zip" class="btn btn-mini" title="Download all pages as PNG (ZIP)">⬇️ ZIP</button>
+           <button id="dp-print"       class="btn btn-mini" title="Print">🖨</button>
+           <button id="dp-refresh"     class="btn btn-mini" title="Refresh">↻</button>
++          <button id="dp-cancel"      class="btn btn-mini" title="Cancel current export/render">✖ Cancel</button>
+           <button id="dp-close"       class="btn btn-mini" title="Close">✕</button>
+         </div>
+       </div>
+@@ -31,8 +44,48 @@
+         <div id="dp-spinner" class="dp-spinner" hidden></div>
+       </div>
++      <p id="dp-cache-note" class="muted" style="margin-top:.25rem;"></p>
+     </section>
+
++    <!-- Settings Modal -->
++    <div id="settings-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
++      <div class="modal-backdrop" data-close></div>
++      <div class="modal-card">
++        <header class="modal-header">
++          <h2 id="settings-title">Supersonic Settings</h2>
++          <button id="settings-close" class="btn btn-mini" title="Close" aria-label="Close">✕</button>
++        </header>
++        <section class="modal-body">
++          <div class="set-row"><label>Theme</label><div class="inline"><select id="set-theme-mode"><option value="dark">Dark</option><option value="light">Light</option><option value="system">System</option></select><button id="set-theme-reset" class="btn btn-mini" title="Reset to System">Reset</button></div></div>
++          <div class="set-row"><label>Glow effects</label><input id="set-glow" type="checkbox" checked><small class="muted">Restart label & UI accents glow</small></div>
++          <hr>
++          <div class="set-row"><label>Default format</label><select id="set-default-format"><option value="pdf">pdf</option><option value="png">png</option></select></div>
++          <div class="set-row"><label>Default variant</label><select id="set-default-variant"><option value="dark">dark</option><option value="light">light</option></select></div>
++          <div class="set-row"><label>Default quality</label><input id="set-default-quality" type="range" min="0.6" max="2.0" step="0.05" value="1.25"><span id="set-default-quality-val" class="muted">1.25×</span></div>
++          <div class="set-row"><label>Remember last preview on load</label><input id="set-remember-last" type="checkbox"><small class="muted">Auto-restore last diagram into preview when the page opens</small></div>
++          <div class="set-row"><label>Persist last preview</label><input id="set-persist-last" type="checkbox" checked><small class="muted">Store last preview locally for auto-restore after reload</small></div>
++          <hr>
++          <div class="set-row"><label>Export settings</label><div class="inline"><button id="set-export" class="btn btn-mini">Export JSON</button><input id="set-import-file" type="file" accept="application/json" hidden><button id="set-import" class="btn btn-mini">Import JSON</button></div></div>
++          <hr>
++          <div class="set-row"><label>Catalog cache</label><div class="inline"><button id="set-catalog-refresh" class="btn btn-mini">Refresh catalog</button><button id="set-catalog-clear" class="btn btn-mini">Clear cache</button></div><small class="muted">Uses version+TTL; refresh pulls latest right now.</small></div>
++          <div class="set-row"><label>Catalog TTL</label><div class="inline"><output id="set-catalog-ttl" class="muted">—</output><small class="muted">env/meta driven</small></div></div>
++        </section>
++        <footer class="modal-footer"><button id="settings-save" class="btn primary">Save</button><button id="settings-cancel" class="btn">Cancel</button></footer>
++      </div>
++    </div>
++
+     <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
++    <script src="{{ url_for('static', filename='vendor/pdfjs/pdf.min.js') }}"></script>
++    <script src="{{ url_for('static', filename='vendor/pdfjs/pdf.worker.min.js') }}"></script>
++    <script src="{{ url_for('static', filename='vendor/jszip/jszip.min.js') }}"></script>
++    <script src="{{ url_for('static', filename='js/settings.js') }}"></script>
+     <script src="{{ url_for('static', filename='js/diagram_picker.js') }}"></script>
+   </body>
+ </html>
+
+diff --git a/static/css/diagram_picker.css b/static/css/diagram_picker.css
+--- a/static/css/diagram_picker.css
++++ b/static/css/diagram_picker.css
+@@ -1,3 +1,43 @@
+ /* Additions for PDF canvas, progress, restart label, glow, and modal */
+ #dp-canvas { width:100%; height:auto; display:block; background:#0b0f14; }
+ .dp-preview-toolbar .sep { opacity:.5; margin:0 .35rem; }
++.dp-inline { color:#cbd5e1; margin-right:.35rem; }
++.dp-progress { width:140px; height:8px; background:#1d232b; border:1px solid #2b2f36; border-radius:4px; overflow:hidden; display:inline-block; vertical-align:middle; margin:0 .4rem; }
++.dp-progress-bar { height:100%; background: linear-gradient(90deg, #60a5fa, #34d399); width:0%; transition: width .15s ease; }
++.dp-progress-text { min-width:38px; display:inline-block; text-align:right; }
++#dp-preview .btn[disabled]{opacity:.45;pointer-events:none}
++
++@keyframes fadeInUp { from { opacity:0; transform: translateY(3px);} to {opacity:1; transform: translateY(0);} }
++#dp-restart, #dp-restart-label { opacity:0; transition: opacity .2s ease-out, transform .2s ease-out; }
++#dp-restart.fade-visible, #dp-restart-label.fade-visible { animation: fadeInUp .25s ease-out; opacity:1; }
++
++/* Theme-adaptive glow */
++body.dark #dp-restart.fade-visible, body.dark #dp-restart-label.fade-visible { box-shadow:0 0 8px rgba(0,255,255,0.35); color:#8efcff; }
++body.light #dp-restart.fade-visible, body.light #dp-restart-label.fade-visible { box-shadow:0 0 8px rgba(80,80,80,0.25); color:#222; }
++body.no-glow #dp-restart.fade-visible, body.no-glow #dp-restart-label.fade-visible { box-shadow:none !important; }
++
++/* Modal shell */
++.modal { position:fixed; inset:0; display:block; }
++.modal[hidden]{ display:none; }
++.modal-backdrop { position:absolute; inset:0; background:rgba(0,0,0,.55); }
++.modal-card { position:relative; margin:8vh auto; max-width:680px; width:92%; background: var(--bg); color: var(--fg); border:1px solid var(--border); border-radius:10px; overflow:hidden; box-shadow:0 18px 50px rgba(0,0,0,.5); }
++.modal-header, .modal-footer { padding:.75rem 1rem; border-bottom:1px solid var(--border); }
++.modal-footer { border-top:1px solid var(--border); border-bottom:0; display:flex; gap:.5rem; justify-content:flex-end; }
++.modal-body { padding:.75rem 1rem; }
++.set-row { display:grid; grid-template-columns:180px 1fr; gap:.75rem .75rem; align-items:center; margin:.6rem 0; }
++.set-row .inline { display:flex; gap:.5rem; align-items:center; }
++#theme-toggle { display:inline-flex; align-items:center; gap:.35rem; }
++#theme-label { font-size:.9rem; opacity:.85; }
++.menu { position:absolute; margin-top:.35rem; padding:.35rem; min-width:140px; background: var(--bg); border:1px solid var(--border); border-radius:6px; box-shadow:0 8px 22px rgba(0,0,0,.35); z-index:1000; }
++.menu-item { width:100%; text-align:left; padding:.4rem .5rem; background:transparent; border:0; color:var(--fg); }
++.menu-item:hover { background: rgba(255,255,255,.06); cursor:pointer; }
++
++/* Theme variables (base) */
++:root { --bg:#0b0f14; --fg:#e5e7eb; --muted:#9aa3af; --border:#2b2f36; --accent-color:#00ffff; --accent-glow:rgba(0,255,255,0.35);}
++body.dark { --bg:#0b0f14; --fg:#e5e7eb; --muted:#9aa3af; --border:#2b2f36; --accent-color:#8efcff; --accent-glow:rgba(0,255,255,0.35); background:var(--bg); color:var(--fg); }
++body.light{ --bg:#ffffff; --fg:#111827; --muted:#4b5563; --border:#e5e7eb; --accent-color:#222; --accent-glow:rgba(0,0,0,0.25); background:var(--bg); color:var(--fg); }
+
+diff --git a/static/js/theme.js b/static/js/theme.js
+new file mode 100644
+--- /dev/null
++++ b/static/js/theme.js
+@@ -0,0 +1,120 @@
++(()=>{const KEY="supersonic-theme";const icon=document.getElementById("theme-icon");const label=document.getElementById("theme-label");const btn=document.getElementById("theme-toggle");const menu=document.getElementById("theme-menu");const mm=window.matchMedia("(prefers-color-scheme: dark)");let current=null;function osPref(){return mm.matches?"dark":"light"}function desiredTheme(){const saved=localStorage.getItem(KEY);if(!saved||saved==="system")return osPref();return(saved==="dark"||saved==="light")?saved:osPref()}function applyTheme(theme){if(theme===current)return;current=theme;document.body.classList.remove("dark","light");document.body.classList.add(theme);document.body.dataset.theme=theme;const saved=localStorage.getItem(KEY)||"system";if(icon)icon.textContent=theme==="dark"?"🌙":"☀️";if(label){const modeText=(saved==="dark"||saved==="light"||saved==="system")?saved:"system";label.textContent=modeText.charAt(0).toUpperCase()+modeText.slice(1)}if(btn)btn.setAttribute("aria-expanded","false");const ev=new CustomEvent("themechange",{detail:{theme}});window.dispatchEvent(ev)}function setUserTheme(next){const saved=localStorage.getItem(KEY)||"system";let newPref;if(next)newPref=next;else newPref=saved==="dark"?"light":saved==="light"?"system":"dark";localStorage.setItem(KEY,newPref);applyTheme(desiredTheme())}function openMenu(){if(!btn||!menu)return;btn.setAttribute("aria-expanded","true");menu.hidden=false;const r=btn.getBoundingClientRect();menu.style.left=r.left+"px";menu.style.top=(r.bottom+window.scrollY)+"px"}function closeMenu(){if(!btn||!menu)return;btn.setAttribute("aria-expanded","false");menu.hidden=true}applyTheme(desiredTheme());btn?.addEventListener("click",(e)=>{if(!menu){setUserTheme();return}const expanded=btn.getAttribute("aria-expanded")==="true";expanded?closeMenu():openMenu()});menu?.addEventListener("click",(e)=>{const t=e.target.closest(".menu-item");if(!t)return;const pick=t.dataset.theme;localStorage.setItem(KEY,pick);setUserTheme(pick);closeMenu()});document.addEventListener("click",(e)=>{if(!menu||menu.hidden)return;if(e.target===btn||btn.contains(e.target)||menu.contains(e.target))return;closeMenu()});mm.addEventListener("change",()=>{if((localStorage.getItem(KEY)||"system")==="system"){applyTheme(desiredTheme())}});window.addEventListener("storage",(e)=>{if(e.key===KEY)applyTheme(desiredTheme())});window.SonicTheme={get:()=>({saved:localStorage.getItem(KEY)||"system",applied:current}),set:setUserTheme}})();
+diff --git a/static/js/settings.js b/static/js/settings.js
+new file mode 100644
+--- /dev/null
++++ b/static/js/settings.js
+@@ -0,0 +1,200 @@
++(()=>{const KEY="supersonic-settings";const THEME_KEY="supersonic-theme";const el={btnCog:document.getElementById("settings-cog"),modal:document.getElementById("settings-modal"),close:document.getElementById("settings-close"),cancel:document.getElementById("settings-cancel"),save:document.getElementById("settings-save"),reset:document.querySelector("[data-close]"),themeMode:document.getElementById("set-theme-mode"),themeReset:document.getElementById("set-theme-reset"),glow:document.getElementById("set-glow"),defFmt:document.getElementById("set-default-format"),defVar:document.getElementById("set-default-variant"),defQual:document.getElementById("set-default-quality"),defQualVal:document.getElementById("set-default-quality-val"),remember:document.getElementById("set-remember-last"),persist:document.getElementById("set-persist-last"),exportBtn:document.getElementById("set-export"),importBtn:document.getElementById("set-import"),importFile:document.getElementById("set-import-file"),setCatRefresh:document.getElementById("set-catalog-refresh"),setCatClear:document.getElementById("set-catalog-clear")};const Default={glow:true,defaultFormat:"pdf",defaultVariant:"dark",defaultQuality:1.25,rememberLast:false,persistLast:true};function load(){try{return Object.assign({},Default,JSON.parse(localStorage.getItem(KEY)||"{}"))}catch{return{...Default}}}function save(obj){localStorage.setItem(KEY,JSON.stringify(obj))}function openModal(){el.modal.hidden=false}function closeModal(){el.modal.hidden=true}function uiFromSettings(s){el.glow.checked=!!s.glow;el.defFmt.value=s.defaultFormat;el.defVar.value=s.defaultVariant;el.defQual.value=String(s.defaultQuality||1.25);el.defQualVal.textContent=`${parseFloat(el.defQual.value).toFixed(2)}×`;el.remember.checked=!!s.rememberLast;el.persist.checked=!!s.persistLast;const savedTheme=localStorage.getItem(THEME_KEY)||"system";el.themeMode.value=(["dark","light","system"].includes(savedTheme)?savedTheme:"system")}function settingsFromUI(){return{glow:!!el.glow.checked,defaultFormat:el.defFmt.value,defaultVariant:el.defVar.value,defaultQuality:parseFloat(el.defQual.value||"1.25"),rememberLast:!!el.remember.checked,persistLast:!!el.persist.checked}}function applyToRuntime(s){document.body.classList.toggle("no-glow",!s.glow);const fmt=document.getElementById("dp-format");const vnt=document.getElementById("dp-variant");const qsl=document.getElementById("dp-quality");if(fmt&&!fmt.value)fmt.value=s.defaultFormat;if(vnt&&!vnt.value)vnt.value=s.defaultVariant;if(qsl){qsl.value=String(s.defaultQuality||1.25);const qtxt=document.getElementById("dp-quality-val");if(qtxt)qtxt.textContent=`${parseFloat(qsl.value).toFixed(2)}×`}if(!s.persistLast){try{localStorage.removeItem("supersonic-last-preview-v1")}catch{}}if(s.rememberLast&&window.SonicDiagramPicker?.restartIfAvailable){window.SonicDiagramPicker.restartIfAvailable()}}el.exportBtn?.addEventListener("click",()=>{const payload={settings:load(),theme:localStorage.getItem(THEME_KEY)||"system"};const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="supersonic_settings.json";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000)});el.importBtn?.addEventListener("click",()=>el.importFile?.click());el.importFile?.addEventListener("change",async(e)=>{const file=e.target.files?.[0];if(!file)return;try{const text=await file.text();const data=JSON.parse(text);if(data?.settings)save(Object.assign({},Default,data.settings));if(typeof data?.theme==="string")localStorage.setItem(THEME_KEY,data.theme);uiFromSettings(load());if(window.SonicTheme?.set)window.SonicTheme.set(data?.theme||"system");applyToRuntime(load());closeModal()}catch{alert("Import failed: not valid supersonic_settings.json")}});el.defQual?.addEventListener("input",()=>{el.defQualVal.textContent=`${parseFloat(el.defQual.value||"1.25").toFixed(2)}×`});el.themeReset?.addEventListener("click",()=>{localStorage.setItem(THEME_KEY,"system");if(window.SonicTheme?.set)window.SonicTheme.set("system");el.themeMode.value="system"});el.themeMode?.addEventListener("change",()=>{localStorage.setItem(THEME_KEY,el.themeMode.value);if(window.SonicTheme?.set)window.SonicTheme.set(el.themeMode.value)});el.btnCog?.addEventListener("click",openModal);el.close?.addEventListener("click",closeModal);el.cancel?.addEventListener("click",closeModal);el.reset?.addEventListener("click",(e)=>{if(e.target?.dataset?.close!==undefined)closeModal()});el.setCatClear?.addEventListener("click",()=>{try{localStorage.removeItem("supersonic-catalog-cache-v1");localStorage.removeItem("supersonic-catalog-meta-v1");alert("Catalog cache cleared.")}catch{alert("Could not clear cache (storage error).")}});el.setCatRefresh?.addEventListener("click",async()=>{try{if(window.SonicDiagramPicker?.reloadCatalogNow){await window.SonicDiagramPicker.reloadCatalogNow();alert("Catalog refreshed.")}else{localStorage.removeItem("supersonic-catalog-cache-v1");localStorage.removeItem("supersonic-catalog-meta-v1");location.reload()}}catch{alert("Catalog refresh failed.")}});const s=load();uiFromSettings(s);applyToRuntime(s);window.SonicSettings={get:load,applyToRuntime}})();
+diff --git a/static/js/diagram_picker.js b/static/js/diagram_picker.js
+--- a/static/js/diagram_picker.js
++++ b/static/js/diagram_picker.js
+@@ -1,5 +1,420 @@
+-// your existing picker script...
++(()=> {
++  const $ = (id) => document.getElementById(id);
++  const status = (msg) => { const s = $("dp-status"); if (s) s.textContent = msg || ""; };
++
++  // --- selects (assumed existing) ---
++  const selMake = $("dp-make"), selModel=$("dp-model"), selYear=$("dp-year"), selDiag=$("dp-diagram"), selVar=$("dp-variant"), selFmt=$("dp-format");
++  // --- buttons ---
++  const btnPrev=$("dp-preview"), btnOpen=$("dp-open"), btnCopy=$("dp-copy"), btnRefresh=$("dp-refresh"), btnClose=$("dp-close");
++  const btnFirst=$("dp-first"), btnP=$("dp-prev"), btnN=$("dp-next"), btnLast=$("dp-last");
++  const btnZoomIn=$("dp-zoomin"), btnZoomOut=$("dp-zoomout"), btnZoomFit=$("dp-zoomfit"), btnRotate=$("dp-rotate");
++  const btnFitW=$("dp-fitw"), btnFitH=$("dp-fith");
++  const btnDlPNG=$("dp-download-png"), btnDlPDF=$("dp-download-pdf"), btnZip=$("dp-download-zip"), btnPrint=$("dp-print");
++  const btnCancel=$("dp-cancel"), btnRestart=$("dp-restart");
++  const pageInfo=$("dp-page-info");
++  // --- progress+quality ---
++  const sliderQ=$("dp-quality"), sliderVal=$("dp-quality-val");
++  const progBar=$("dp-progress-bar"), progText=$("dp-progress-text");
++
++  // --- surfaces ---
++  const wrap=$("dp-preview-wrap"), canvas=$("dp-canvas"), image=$("dp-image"), spinner=$("dp-spinner");
++
++  // ---- Catalog caching + readiness (env-aware) -----------------------------------
++  let catalog = {};
++  let catalogReadyResolve; const catalogReady = new Promise(res => (catalogReadyResolve = res));
++  const CATALOG_CACHE_KEY = "supersonic-catalog-cache-v1";
++  const CATALOG_META_KEY  = "supersonic-catalog-meta-v1";
++  let CATALOG_TTL_MS = 6 * 60 * 60 * 1000;
++  const isLocalHost = () => /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
++  const readCache = () => { try { return { data: JSON.parse(localStorage.getItem(CATALOG_CACHE_KEY)||"null"), meta: JSON.parse(localStorage.getItem(CATALOG_META_KEY)||"null") }; } catch { return {data:null,meta:null}; } };
++  const writeCache = (data, meta) => { try { localStorage.setItem(CATALOG_CACHE_KEY, JSON.stringify(data)); localStorage.setItem(CATALOG_META_KEY, JSON.stringify(meta)); } catch {} };
++  const clearCatalogCache = () => { try { localStorage.removeItem(CATALOG_CACHE_KEY); localStorage.removeItem(CATALOG_META_KEY);} catch {} };
++  const readConfigFromMeta = () => { const m=document.getElementById("catalog-config"); if(!m) return null; const ttlStr=m.getAttribute("data-ttl-ms"); const verStr=m.getAttribute("data-version"); const ttl=ttlStr?parseInt(ttlStr,10):null; return { ttl_ms: Number.isFinite(ttl)?ttl:null, version: verStr||null}; };
++  const fetchCatalogConfig = async () => { try { const r=await fetch("/api/diagrams/catalog-config",{cache:"no-store"}); if(!r.ok) return null; return await r.json(); } catch { return null; } };
++  const resolveCatalogConfig = async () => { const fromMeta=readConfigFromMeta(); if(fromMeta&&(fromMeta.ttl_ms||fromMeta.version)){ if(Number.isFinite(fromMeta.ttl_ms)) CATALOG_TTL_MS=fromMeta.ttl_ms; return fromMeta; } const fromNet=await fetchCatalogConfig(); if(fromNet&&Number.isFinite(fromNet.ttl_ms)){ CATALOG_TTL_MS=fromNet.ttl_ms; return fromNet; } if(isLocalHost()) CATALOG_TTL_MS=10*60*1000; return { version:null, ttl_ms: CATALOG_TTL_MS }; };
++  const setCacheNote = (msg) => { const n=$("dp-cache-note"); if(n) n.textContent = msg || ""; };
++  const fetchCatalogFresh = async () => { const r=await fetch("/api/diagrams/catalog",{cache:"no-store"}); if(!r.ok) throw new Error("catalog http "+r.status); return await r.json(); };
++  async function loadCatalog(){
++    status("Loading catalog…");
++    const now=Date.now();
++    const cfg=await resolveCatalogConfig(); const serverVersion=cfg?.version||null;
++    const {data:cached, meta} = readCache();
++    const cacheValidByVersion = !!(cached && meta && serverVersion && meta.version===serverVersion);
++    const cacheValidByTTL = !!(cached && meta && (now - (meta.ts||0) < CATALOG_TTL_MS));
++    if (cacheValidByVersion || cacheValidByTTL) {
++      catalog = cached;
++      status(cacheValidByVersion ? "Catalog ready (matched version)." : `Catalog ready (TTL ${(CATALOG_TTL_MS/3600000).toFixed(2)}h).`);
++      setCacheNote(cacheValidByVersion ? "Source: local cache (version match)" : "Source: local cache (TTL)");
++      try {
++        if (serverVersion && (!meta || meta.version !== serverVersion)) {
++          const fresh=await fetchCatalogFresh();
++          catalog=fresh; writeCache(fresh,{version:serverVersion||"unknown", ts:Date.now()});
++          status("Catalog updated (background)."); setCacheNote("Source: refreshed");
++        }
++      } catch {}
++      populateMakeSelect(); catalogReadyResolve&&catalogReadyResolve(); return;
++    }
++    try {
++      const fresh=await fetchCatalogFresh(); catalog=fresh; writeCache(fresh,{version:serverVersion||"unknown", ts:Date.now()});
++      status("Catalog ready."); setCacheNote("Source: server");
++    } catch (e) {
++      if (cached) { catalog=cached; status("Offline: using cached catalog."); setCacheNote("Source: offline cache"); }
++      else { status("Failed to load catalog (no cache)."); setCacheNote("Source: unavailable"); catalog={}; }
++    }
++    populateMakeSelect(); catalogReadyResolve&&catalogReadyResolve();
++  }
++  function populateMakeSelect(){
++    if(!selMake) return;
++    selMake.innerHTML=`<option value="">— select —</option>`;
++    Object.keys(catalog).sort().forEach(mk=>{
++      const opt=document.createElement("option"); opt.value=mk; opt.textContent=mk; selMake.appendChild(opt);
++    });
++  }
++
++  // ---- URL/Preview utils --------------------------------------------------------
++  function buildURL(withBust=false){
++    const mk=encodeURIComponent(selMake.value), md=encodeURIComponent(selModel.value), yr=encodeURIComponent(selYear.value), id=encodeURIComponent(selDiag.value);
++    const fmt=encodeURIComponent(selFmt.value), variant=encodeURIComponent(selVar.value);
++    let url=`/api/diagrams/${mk}/${md}/${yr}/${id}?format=${fmt}&variant=${variant}`;
++    if (withBust) url += `&t=${Date.now()}`;
++    return url;
++  }
++  function canAct(){ return !!selDiag?.value; }
++  function showSpinner(b){ if(spinner) spinner.hidden=!b; }
++  function hidePreview(){ if(!wrap) return; wrap.hidden=true; canvas.hidden=true; image.hidden=true; status(""); setProgress(0,"0%"); }
++  function setProgress(pct,label){ const clamped=Math.max(0,Math.min(100,pct||0)); if(progBar) progBar.style.width=clamped.toFixed(0)+"%"; if(progText) progText.textContent = label ? label : clamped.toFixed(0)+"%"; }
++  const getQualityScale = () => { const v=parseFloat(sliderQ?.value||"1.25"); return isFinite(v)?v:1.25; };
++  sliderQ?.addEventListener("input", ()=> { if(sliderVal) sliderVal.textContent = getQualityScale().toFixed(2)+"×"; });
++  if (sliderVal) sliderVal.textContent = getQualityScale().toFixed(2)+"×";
++
++  // ---- PDF preview state --------------------------------------------------------
++  let pdfDoc=null, pdfURL=null, page=1, pages=0, scale=1.25, rotation=0;
++  const ctx = canvas.getContext("2d");
++  if (window["pdfjsLib"]) pdfjsLib.GlobalWorkerOptions.workerSrc="/static/vendor/pdfjs/pdf.worker.min.js";
++
++  async function computeFitScale(pdfPage, mode, rotationDeg){
++    const surface=canvas.parentElement; const sw=surface.clientWidth||900; const sh=surface.clientHeight||Math.round(window.innerHeight*.6);
++    const v1=pdfPage.getViewport({scale:1, rotation:rotationDeg}); const fitW = sw / v1.width; const fitH = sh / v1.height;
++    return mode==="height" ? fitH : fitW;
++  }
++
++  // ---- Cancellation -------------------------------------------------------------
++  let CANCEL={active:false}; let pdfLoadingTask=null; let currentRenderTask=null;
++  function beginLongTask(){ CANCEL.active=false; if (btnCancel) btnCancel.disabled=false; }
++  function endLongTask(){ if (btnCancel) btnCancel.disabled=true; CANCEL.active=false; }
++  async function cancelAll(reason="User canceled"){
++    CANCEL.active=true; status(reason);
++    try { currentRenderTask?.cancel(); } catch {}
++    currentRenderTask=null;
++    try { await pdfLoadingTask?.destroy?.(); } catch {}
++    pdfLoadingTask=null;
++    setProgress(0,"0%"); showSpinner(false); hidePreview();
++    canvas.width=canvas.height=0; image.src=""; image.hidden=true; canvas.hidden=true; endLongTask();
++    showRestart(LAST.has);
++  }
++  btnCancel?.addEventListener("click", ()=> cancelAll());
++
++  async function loadPDF(url){
++    pdfDoc=null; page=1; pages=0; scale=1.25; rotation=0; if(pageInfo) pageInfo.textContent="– / –";
++    pdfLoadingTask = pdfjsLib.getDocument(url);
++    try {
++      const doc = await pdfLoadingTask.promise;
++      if (CANCEL.active) throw new Error("cancelled");
++      pdfDoc = doc; pages=pdfDoc.numPages; if(pageInfo) pageInfo.textContent = `1 / ${pages}`;
++    } catch(e){
++      if (String(e).includes("cancel")) throw e;
++      console.error(e); status("Failed to load PDF."); throw e;
++    } finally { pdfLoadingTask=null; }
++  }
++
++  async function renderPage(){
++    if(!pdfDoc) return; showSpinner(true); const pdfPage = await pdfDoc.getPage(page);
++    const surfaceWidth = canvas.parentElement.clientWidth || 900;
++    const vw = pdfPage.getViewport({scale:1, rotation}).width;
++    const fitScale = surfaceWidth / vw; const targetScale = Math.max(.1, fitScale * scale);
++    const viewport = pdfPage.getViewport({scale:targetScale, rotation});
++    canvas.width=viewport.width; canvas.height=viewport.height;
++    currentRenderTask = pdfPage.render({ canvasContext: ctx, viewport });
++    try { await currentRenderTask.promise; if (CANCEL.active) throw new Error("cancelled"); if(pageInfo) pageInfo.textContent=`${page} / ${pages}`; }
++    catch(e){ if (!String(e).includes("cancel")) { console.error(e); status("Render failed."); throw e; } }
++    finally { currentRenderTask=null; showSpinner(false); }
++  }
++
++  async function preview(){
++    if(!wrap) return; wrap.hidden=false; showSpinner(true); beginLongTask();
++    const fmt=selFmt.value;
++    try {
++      if (fmt==="png") {
++        pdfDoc=null; image.hidden=false; canvas.hidden=true; image.src=buildURL(true);
++        image.onload=()=>{ status(""); showSpinner(false); endLongTask(); rememberState(); };
++        image.onerror=()=>{ status("Preview failed."); showSpinner(false); endLongTask(); };
++        return;
++      }
++      image.hidden=true; canvas.hidden=false; pdfURL=buildURL(true);
++      await loadPDF(pdfURL); if(CANCEL.active) return;
++      await renderPage(); if(CANCEL.active) return;
++      rememberState(); status("");
++    } catch(_) {
++      if(!CANCEL.active) window.open(buildURL(),"_blank","noopener");
++    } finally { if(!CANCEL.active) endLongTask(); }
++  }
++
++  // --- Controls ---
++  btnPrev?.addEventListener("click", preview);
++  btnRefresh?.addEventListener("click", ()=> preview());
++  btnClose?.addEventListener("click", ()=> hidePreview());
++  btnOpen?.addEventListener("click", ()=> window.open(buildURL(),"_blank","noopener"));
++  btnCopy?.addEventListener("click", async ()=>{const url=location.origin+buildURL(); try{await navigator.clipboard.writeText(url); status("URL copied."); setTimeout(()=>status(""),1200);}catch{status("Copy failed. Long-press to copy.")}});
++
++  btnFirst?.addEventListener("click", async()=>{ if(!pdfDoc) return; page=1; await renderPage(); rememberState(); });
++  btnP?.addEventListener("click", async()=>{ if(!pdfDoc) return; page=Math.max(1,page-1); await renderPage(); rememberState(); });
++  btnN?.addEventListener("click", async()=>{ if(!pdfDoc) return; page=Math.min(pages,page+1); await renderPage(); rememberState(); });
++  btnLast?.addEventListener("click", async()=>{ if(!pdfDoc) return; page=pages; await renderPage(); rememberState(); });
++  btnZoomIn?.addEventListener("click", async()=>{ if(!pdfDoc) return; scale*=1.15; await renderPage(); rememberState(); });
++  btnZoomOut?.addEventListener("click", async()=>{ if(!pdfDoc) return; scale/=1.15; await renderPage(); rememberState(); });
++  btnZoomFit?.addEventListener("click", async()=>{ if(!pdfDoc) return; scale=1.0; await renderPage(); rememberState(); });
++  btnRotate?.addEventListener("click", async()=>{ if(!pdfDoc) return; rotation=(rotation+90)%360; await renderPage(); rememberState(); });
++  btnFitW?.addEventListener("click", async()=>{ if(!pdfDoc) return; const p=await pdfDoc.getPage(page); scale=await computeFitScale(p,"width",rotation); await renderPage(); rememberState(); });
++  btnFitH?.addEventListener("click", async()=>{ if(!pdfDoc) return; const p=await pdfDoc.getPage(page); scale=await computeFitScale(p,"height",rotation); await renderPage(); rememberState(); });
++
++  // Downloads
++  function downloadBlob(blob, filename){const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),5000);}
++  btnDlPNG?.addEventListener("click", async()=>{
++    try {
++      if (wrap?.hidden) return;
++      if (!image.hidden) { const res=await fetch(image.src,{cache:"no-store"}); const blob=await res.blob(); downloadBlob(blob,`${selMake.value}_${selModel.value}_${selYear.value}_${selDiag.value}.png`); return; }
++      if (canvas.hidden || !pdfDoc) return;
++      const q=getQualityScale(); const off=document.createElement("canvas"); const w=Math.round(canvas.width*q), h=Math.round(canvas.height*q);
++      off.width=w; off.height=h; const octx=off.getContext("2d"); octx.imageSmoothingQuality="high"; octx.drawImage(canvas,0,0,w,h);
++      off.toBlob((blob)=>{ if(!blob) return; downloadBlob(blob,`${selMake.value}_${selModel.value}_${selYear.value}_${selDiag.value}_p${page}.png`); },"image/png",1.0);
++    } catch(e){ console.error(e); status("PNG download failed."); }
++  });
++  btnDlPDF?.addEventListener("click", async()=>{
++    try{ const url=(pdfDoc&&pdfURL)?pdfURL:buildURL(true).replace("format=png","format=pdf"); const res=await fetch(url,{cache:"no-store"}); const blob=await res.blob(); downloadBlob(blob,`${selMake.value}_${selModel.value}_${selYear.value}_${selDiag.value}.pdf`); }
++    catch(e){ console.error(e); status("PDF download failed."); }
++  });
++  btnPrint?.addEventListener("click", async()=>{
++    try{ const url=buildURL().replace("format=png","format=pdf"); const w = window.open(url,"_blank","noopener"); if(w){ setTimeout(()=>{ try{ w.focus(); w.print(); }catch{} },600); return; } }catch{}
++    const srcNode = (!image.hidden)?image:(!canvas.hidden?canvas:null); if(!srcNode) return;
++    const html = `<html><head><meta charset="utf-8"><title>Print</title><style>body{margin:0;background:#fff;text-align:center} img,canvas{max-width:100%;}</style></head><body>${srcNode.outerHTML||""}</body></html>`;
++    const p=window.open("","_blank"); if(!p) return; p.document.open(); p.document.write(html); p.document.close(); p.focus(); setTimeout(()=>{ try{ p.print(); }catch{} },400);
++  });
++  btnZip?.addEventListener("click", async()=>{
++    try {
++      beginLongTask(); setProgress(0,"0%");
++      const url=buildURL(true).replace("format=png","format=pdf");
++      if (!pdfDoc || !pdfURL || pdfURL !== url) { wrap.hidden=false; showSpinner(true); pdfURL=url; await loadPDF(pdfURL); if(CANCEL.active){ endLongTask(); return; } }
++      const zip = new JSZip(); const surface=canvas.parentElement; const sw=surface.clientWidth||900; const q=getQualityScale(); const bump=1.5*q; const total=pdfDoc.numPages;
++      const tmp=document.createElement("canvas"); const tctx=tmp.getContext("2d",{alpha:false});
++      for(let p=1;p<=total;p++){
++        if(CANCEL.active){ endLongTask(); return; }
++        status(`Rendering page ${p}/${total}…`); setProgress(((p-1)/total)*70);
++        const pdfPage=await pdfDoc.getPage(p); if(CANCEL.active){ endLongTask(); return; }
++        const v1=pdfPage.getViewport({scale:1, rotation}); const fitW=(sw/v1.width); const exportScale=fitW*bump;
++        const vp=pdfPage.getViewport({scale:exportScale, rotation}); tmp.width=Math.round(vp.width); tmp.height=Math.round(vp.height);
++        currentRenderTask = pdfPage.render({ canvasContext:tctx, viewport:vp });
++        try { await currentRenderTask.promise; } catch(e){ if(e?.name!=="RenderingCancelledException") throw e; } finally { currentRenderTask=null; }
++        if(CANCEL.active){ endLongTask(); return; }
++        const blob=await new Promise(res=>tmp.toBlob(res,"image/png",1.0)); const buf=await blob.arrayBuffer(); const fname=`${selMake.value}_${selModel.value}_${selYear.value}_${selDiag.value}_p${String(p).padStart(2,"0")}.png`; zip.file(fname,buf);
++      }
++      if(CANCEL.active){ endLongTask(); return; }
++      status("Zipping…");
++      const zipBlob = await zip.generateAsync({type:"blob", compression:"DEFLATE", compressionOptions:{level:9}}, (meta)=>{ const pct=70+(meta.percent||0)*.30; setProgress(pct,`${Math.round(pct)}%`); });
++      const base=`${selMake.value}_${selModel.value}_${selYear.value}_${selDiag.value}`; downloadBlob(zipBlob,`${base}_all_pages.zip`); setProgress(100,"100%"); status("ZIP ready.");
++    } catch(e){ if(!CANCEL.active){ console.error(e); status("ZIP export failed."); } }
++    finally { showSpinner(false); if(!CANCEL.active) endLongTask(); }
++  });
++
++  // --- Keyboard helpers ---
++  document.addEventListener("keydown", async (e)=>{
++    if(!canAct()) return;
++    if (e.key==="Enter" && !e.shiftKey){ e.preventDefault(); preview(); }
++    else if (e.key==="Enter" && e.shiftKey){ e.preventDefault(); window.open(buildURL(),"_blank","noopener"); }
++    else if (pdfDoc){ if(e.key==="ArrowLeft"){ page=Math.max(1,page-1); await renderPage(); rememberState(); }
++      if(e.key==="ArrowRight"){ page=Math.min(pages,page+1); await renderPage(); rememberState(); }
++      if(e.key==="+"){ scale*=1.15; await renderPage(); rememberState(); }
++      if(e.key==="-"){ scale/=1.15; await renderPage(); rememberState(); }
++      if(e.key.toLowerCase()==="r"){ rotation=(rotation+90)%360; await renderPage(); rememberState(); }
++      if(e.key.toLowerCase()==="f"){ scale=1.0; await renderPage(); rememberState(); } }
++  });
++
++  // ---- Restart last preview (persisted) -----------------------------------------
++  const LAST_KEY = "supersonic-last-preview-v1";
++  let LAST = { has:false, fmt:"pdf", url:null, make:"", model:"", year:"", id:"", name:"", variant:"dark", page:1, scale:1.25, rotation:0, ts:null };
++  const lblRestart = $("dp-restart-label");
++  const loadLastFromStorage = ()=>{ try { return JSON.parse(localStorage.getItem(LAST_KEY)||"{}"); } catch { return {}; } };
++  const saveLastToStorage = (p)=>{ try { localStorage.setItem(LAST_KEY, JSON.stringify(p)); } catch {} };
++  const clearLastInStorage = ()=>{ try { localStorage.removeItem(LAST_KEY); } catch {} };
++  function lastLabelText(){ if(!LAST||!LAST.has) return "Last: —"; const base=`${LAST.make} ${LAST.model} ${LAST.year}`.trim(); const diag=(LAST.name||LAST.id||"—"); const fmtv=`${(LAST.fmt||"pdf")}, ${(LAST.variant||"dark")}`; const pageTxt=(LAST.page&&Number.isFinite(LAST.page))?` · p${LAST.page}`:""; return `Last: ${base} · ${diag} (${fmtv})${pageTxt}`; }
++  function lastTooltipText(){ if(!LAST||!LAST.has) return "No previous preview."; const time=new Date(LAST.ts||Date.now()).toLocaleString(); const zoom=LAST.scale?`${(LAST.scale*100).toFixed(0)}% zoom`:""; const rot=LAST.rotation?`${LAST.rotation}° rotation`:""; const fmtv=`${LAST.fmt||"pdf"} · ${LAST.variant||"dark"}`; return [`${LAST.make} ${LAST.model} ${LAST.year}`,`Diagram: ${LAST.name||LAST.id||"—"}`,`Format: ${fmtv}`,`Page: ${LAST.page||1}`,zoom,rot,`Saved: ${time}`].filter(Boolean).join("\n"); }
++  function showRestart(show=true){ if(btnRestart){ btnRestart.hidden=!show; btnRestart.classList.toggle("fade-visible", !!show); btnRestart.title = show?("↺ Restart last preview\n"+lastTooltipText()):""; } if(lblRestart){ lblRestart.textContent=lastLabelText(); lblRestart.hidden=!show; lblRestart.classList.toggle("fade-visible", !!show); lblRestart.title = show?lastTooltipText():""; } }
++  function rememberState(){
++    // guard persistence if user disabled it
++    const persist = !!window.SonicSettings?.get()?.persistLast ?? true;
++    let friendly = LAST?.id || selDiag.value;
++    try {
++      const mk=selMake.value, md=selModel.value, yr=selYear.value, id=selDiag.value;
++      const item = (catalog?.[mk]?.[md]?.[yr] || []).find(d => d.id === id);
++      if (item?.name) friendly = item.name;
++    } catch {}
++    LAST = { has:true, fmt:selFmt.value, url:buildURL(), make:selMake.value, model:selModel.value, year:selYear.value, id:selDiag.value, name:friendly||selDiag.value, variant:selVar.value, page, scale, rotation, ts:Date.now() };
++    if (persist) saveLastToStorage(LAST);
++    showRestart(true);
++  }
++  function forgetState(){ LAST.has=false; clearLastInStorage(); showRestart(false); }
++
++  [selMake, selModel, selYear, selDiag, selVar, selFmt].forEach(el=> el?.addEventListener("change", ()=> forgetState()));
++  btnRestart?.addEventListener("click", async ()=>{
++    if(!LAST.has) return;
++    await selectVehicle(LAST.make, LAST.model, LAST.year, LAST.id);
++    selVar.value = LAST.variant || "dark"; selFmt.value = LAST.fmt || "pdf";
++    wrap.hidden=false; showSpinner(true); beginLongTask();
++    try {
++      if (LAST.fmt === "png") {
++        image.hidden=false; canvas.hidden=true; image.src=LAST.url+"&t="+Date.now();
++        image.onload=()=>{ status(""); showSpinner(false); endLongTask(); rememberState(); };
++        image.onerror=()=>{ status("Preview failed."); showSpinner(false); endLongTask(); };
++        return;
++      }
++      image.hidden=true; canvas.hidden=false;
++      if (!pdfDoc || pdfURL !== LAST.url) { pdfURL=LAST.url; await loadPDF(pdfURL); if(CANCEL.active) return; }
++      page=Math.min(Math.max(1, LAST.page||1), pdfDoc.numPages); scale=LAST.scale||1.25; rotation=(LAST.rotation||0)%360;
++      await renderPage(); if(CANCEL.active) return; rememberState(); status("");
++    } catch(e){ if(!CANCEL.active){ console.error(e); status("Restart failed; opening in new tab."); window.open(LAST.url,"_blank","noopener"); } }
++    finally { if(!CANCEL.active) endLongTask(); }
++  });
++
++  // Rehydrate from storage on load
++  (function initLastFromStorage(){ const saved=loadLastFromStorage(); if(saved&&saved.has&&saved.make&&saved.model&&saved.year&&saved.id){ LAST=saved; showRestart(true);} else { forgetState(); } })();
++  async function selectVehicle(make, model, year, id){
++    await catalogReady;
++    selMake.value=make; selMake.dispatchEvent(new Event("change")); await Promise.resolve();
++    selModel.value=model; selModel.dispatchEvent(new Event("change")); await Promise.resolve();
++    selYear.value=year; selYear.dispatchEvent(new Event("change")); await Promise.resolve();
++    selDiag.value=id; selDiag.dispatchEvent(new Event("change"));
++  }
++
++  // Exports for Settings
++  window.SonicDiagramPicker = Object.assign({}, window.SonicDiagramPicker, {
++    async reloadCatalogNow(){ clearCatalogCache(); await loadCatalog(); if(selMake&&selMake.value) selMake.dispatchEvent(new Event("change")); },
++    getTTLms: ()=> CATALOG_TTL_MS,
++    restartIfAvailable: async (autoOpen=true)=>{ const saved=loadLastFromStorage(); if(!saved||!saved.has) return; await selectVehicle(saved.make,saved.model,saved.year,saved.id); selVar.value=saved.variant||"dark"; selFmt.value=saved.fmt||"pdf"; LAST=Object.assign({has:true},saved); showRestart(true); if (autoOpen){ const r=btnRestart; if(r && !r.hidden) r.click(); } }
++  });
++
++  // Theme change re-render
++  (function(){ let t=null; window.addEventListener("themechange", ()=>{ if(!pdfDoc||canvas.hidden) return; clearTimeout(t); t=setTimeout(()=>{ renderPage().catch(()=>{}); },150); }); })();
++
++  // Boot
++  loadCatalog();
++})();
+diff --git a/tools/get_pdfjs.sh b/tools/get_pdfjs.sh
+new file mode 100755
+--- /dev/null
++++ b/tools/get_pdfjs.sh
+@@ -0,0 +1,12 @@
++#!/usr/bin/env bash
++set -euo pipefail
++VER="4.6.82"
++DEST="static/vendor/pdfjs"
++mkdir -p "$DEST"
++curl -sSL "https://unpkg.com/pdfjs-dist@${VER}/build/pdf.min.js"        -o "$DEST/pdf.min.js"
++curl -sSL "https://unpkg.com/pdfjs-dist@${VER}/build/pdf.worker.min.js" -o "$DEST/pdf.worker.min.js"
++echo "PDF.js ${VER} vendored into ${DEST}/"
+diff --git a/tools/get_jszip.sh b/tools/get_jszip.sh
+new file mode 100755
+--- /dev/null
++++ b/tools/get_jszip.sh
+@@ -0,0 +1,9 @@
++#!/usr/bin/env bash
++set -euo pipefail
++VER="3.10.1"
++DEST="static/vendor/jszip"
++mkdir -p "$DEST"
++curl -sSL "https://unpkg.com/jszip@${VER}/dist/jszip.min.js" -o "$DEST/jszip.min.js"
++echo "JSZip ${VER} vendored into ${DEST}/"

@@ -1,0 +1,2 @@
+chmod +x tools/get_pdfjs.sh
+./tools/get_pdfjs.sh

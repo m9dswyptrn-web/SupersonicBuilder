@@ -1,0 +1,98 @@
+# ──────────────────────────────
+# SupersonicBuilder Safe GitIgnore
+# Prevents large, auto-generated, or transient files from being committed
+# ──────────────────────────────
+
+# Core Replit and Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+*.log
+*.tmp
+*.bak
+.env
+.env.*
+.venv/
+venv/
+.replit
+replit_db/
+
+# Git / backup artifacts
+.git/
+.gitbackup/
+.git.backup*/
+.git.DESTROYED.backup/
+*.lock
+*.patch
+*.orig
+
+# OS / system junk
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+
+# Large media / archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+*.iso
+*.dmg
+*.img
+*.bin
+*.exe
+*.dll
+*.pkg
+*.deb
+*.rpm
+
+# PDF and other large exports
+*.pdf
+*.docx
+*.pptx
+*.xlsx
+*.csv
+*.rtf
+
+# Auto-generated outputs
+/output/
+build/
+dist/
+cache/
+tmp/
+node_modules/
+.npm/
+__build__/
+__output__/
+assets/
+downloads/
+
+# Replit and GitHub specific artifacts
+replit.yaml
+replit.nix
+*.backup
+*.bak
+*.old
+*.repl
+
+# Local testing / dev scripts
+test_*.py
+*_test.py
+local_*
+dev_*
+sandbox_*
+
+# build outputs
+build/
+*.zip
+
+# build outputs
+build/
+*.zip

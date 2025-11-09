@@ -1,0 +1,77 @@
+name: 🚀 Supersonic Auto Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags (e.g., v3.2.1)
+
+jobs:
+  build-and-release:
+    name: Build, Verify, and Release Supersonic
+    runs-on: ubuntu-latest
+
+    steps:
+      # --- Checkout Repo ---
+      - name: 🧭 Checkout Code
+        uses: actions/checkout@v4
+
+      # --- Python Setup ---
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # --- Install Dependencies ---
+      - name: 📦 Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r supersonic_requirements.txt
+          pip install build twine pillow
+
+      # --- Run Lean Environment Setup ---
+      - name: 🧩 Initialize Environment
+        run: python make_supersonic_lean_auto.py
+
+      # --- Full Build + Verification ---
+      - name: 🧠 Run Supersonic Build
+        run: python supersonic_build_all.py
+
+      # --- Generate Mission Cards ---
+      - name: 🗂️ Generate Mission Cards
+        run: python make_supersonic_cards_autoattach.py
+
+      # --- Generate Presentation Assets ---
+      - name: 🎨 Generate Banners & Dashboard
+        run: python supersonic_build_secure_all.py
+
+      # --- Upload Mission Cards as Artifacts ---
+      - name: 📤 Upload Mission Cards
+        uses: actions/upload-artifact@v4
+        with:
+          name: Supersonic_Mission_Cards
+          path: SonicBuilder/docs/Mission_Cards_Supersonic*.zip
+
+      # --- Upload Field Kit ---
+      - name: 📤 Upload Field Kit
+        uses: actions/upload-artifact@v4
+        with:
+          name: Supersonic_FieldKit
+          path: SonicBuilder/docs/Supersonic_FieldKit*.zip
+
+      # --- Create GitHub Release ---
+      - name: 🏁 Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            SonicBuilder/docs/Mission_Cards_Supersonic*.zip
+            SonicBuilder/docs/Supersonic_FieldKit*.zip
+            dist/*.zip
+            BUILD_REPORT.md
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # --- Print Success Message ---
+      - name: ✅ Build Complete
+        run: echo "Supersonic Build and Release Successful!"

@@ -1,0 +1,55 @@
+// Rehydrate LAST from localStorage on startup
+(function initLastFromStorage() {
+  const saved = loadLastFromStorage();
+  if (saved && saved.has && saved.make && saved.model && saved.year && saved.id) {
+    LAST = saved;
+    showRestart(true);  // show the button + label immediately
+  } else {
+    forgetState();
+  }
+})();
+
+// Helper to set selects to given values (after catalog is ready)
+async function selectVehicle(make, model, year, id) {
+  await catalogReady;
+
+  // populate models for make
+  selMake.value = make;
+  selMake.dispatchEvent(new Event("change"));
+
+  // wait a tick for models to populate
+  await Promise.resolve();
+  selModel.value = model;
+  selModel.dispatchEvent(new Event("change"));
+
+  await Promise.resolve();
+  selYear.value = year;
+  selYear.dispatchEvent(new Event("change"));
+
+  await Promise.resolve();
+  selDiag.value = id;
+  selDiag.dispatchEvent(new Event("change"));
+}
+
+// Public hook used by Settings “remember last on load”
+window.SonicDiagramPicker = {
+  restartIfAvailable: async (autoOpen = true) => {
+    const saved = loadLastFromStorage();
+    if (!saved || !saved.has) return;
+
+    // Set UI controls to match saved state
+    await selectVehicle(saved.make, saved.model, saved.year, saved.id);
+    selVar.value = saved.variant || "dark";
+    selFmt.value = saved.fmt || "pdf";
+
+    // Restore view state to LAST (used by restart)
+    LAST = Object.assign({ has: true }, saved);
+    showRestart(true);
+
+    // Kick the actual restart (opens preview) if allowed
+    if (autoOpen) {
+      const btnRestart = document.getElementById("dp-restart");
+      if (btnRestart && !btnRestart.hidden) btnRestart.click();
+    }
+  }
+};

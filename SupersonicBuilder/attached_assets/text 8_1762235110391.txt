@@ -1,0 +1,86 @@
+<script>
+// ---- thresholds (tweak if you like) ----
+const PERF_ALERTS = true;
+const FPS_MIN = 25;          // fps below this is “low”
+const FPS_MIN_DURATION = 2000; // ms sustained low FPS before alert
+const RTT_MAX = 500;         // ms; “high latency”
+const RTT_MAX_DURATION = 3000; // ms sustained high RTT before alert
+const PERF_COOLDOWN = 15000; // ms between identical alerts
+
+// ---- internal state ----
+let _lowFpsSince = null, _highRttSince = null;
+let _lastFpsAlert = 0, _lastRttAlert = 0;
+let _perfTweaksActive = false;
+
+// Quick actions
+function applyPerfTweaks(){
+  if (_perfTweaksActive) return;
+  _perfTweaksActive = true;
+
+  // 1) Reduce motion
+  document.body.classList.add('reduced-motion');
+
+  // 2) Trim volume / mute sounds
+  if (typeof SETTINGS !== 'undefined'){
+    // lower master volume to 40%
+    SETTINGS.volume = Math.min(SETTINGS.volume ?? 1, 0.4);
+    // optionally mute entirely:
+    // SETTINGS.sound = false;
+    saveSettings?.();
+  }
+  applySettingsToUI?.();
+  applySettingsToRuntime?.();
+
+  // 3) Theme flip to lighter load (often cheaper on some UIs)
+  try { applyTheme?.((SETTINGS && SETTINGS.theme==='field') ? 'field' : 'light'); } catch(_){}
+
+  showToast('Performance mode applied (reduced motion, lower volume, lighter theme)');
+}
+
+function restorePerfTweaks(){
+  if (!_perfTweaksActive) return;
+  _perfTweaksActive = false;
+
+  document.body.classList.remove('reduced-motion');
+
+  // Restore only if user didn’t change manually after apply; be conservative.
+  // (We’ll just stop enforcing; user can bump volume/theme as desired.)
+  showToast('Performance mode released');
+}
+
+// Called from your existing _updatePerfLabel() every frame-ish
+function perfWatchdogTick(currentFps, currentRttMs){
+  if (!PERF_ALERTS) return;
+
+  const now = Date.now();
+
+  // --- FPS path ---
+  if (currentFps < FPS_MIN){
+    if (_lowFpsSince == null) _lowFpsSince = now;
+    const sustained = (now - _lowFpsSince) >= FPS_MIN_DURATION;
+    if (sustained && (now - _lastFpsAlert) >= PERF_COOLDOWN){
+      _lastFpsAlert = now;
+      showToast('⚠️ Low FPS detected — consider reducing motion or audio load');
+      if (SETTINGS?.perfAuto) applyPerfTweaks();
+    }
+  } else {
+    _lowFpsSince = null;
+    // If we’re back healthy (>40 fps), gently release tweaks
+    if (currentFps >= 40 && _perfTweaksActive) restorePerfTweaks();
+  }
+
+  // --- RTT path ---
+  if (currentRttMs >= RTT_MAX){
+    if (_highRttSince == null) _highRttSince = now;
+    const sustained = (now - _highRttSince) >= RTT_MAX_DURATION;
+    if (sustained && (now - _lastRttAlert) >= PERF_COOLDOWN){
+      _lastRttAlert = now;
+      showToast('🌐 High network latency — network congestion or server busy');
+      // For latency, we don’t auto-apply visual tweaks; sound trim can still help
+      if (SETTINGS?.perfAuto && !_perfTweaksActive) applyPerfTweaks();
+    }
+  } else {
+    _highRttSince = null;
+  }
+}
+</script>

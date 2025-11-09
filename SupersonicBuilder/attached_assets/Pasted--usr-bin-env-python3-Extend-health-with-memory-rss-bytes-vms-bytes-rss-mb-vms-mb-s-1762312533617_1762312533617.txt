@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+"""
+Extend /health with:
+  - memory: {rss_bytes, vms_bytes, rss_mb, vms_mb, source}
+  - http_5xx: {count, window_sec, pattern}
+Scans log tail best-effort and uses psutil if available for memory.
+
+Env:
+  SUPERSONIC_LOG_FILE       (default: supersonic.log)
+  HEALTH_5XX_WINDOW_SEC     (default: 600)  # 10 minutes
+  HEALTH_5XX_REGEX          (default matches 500–599 in common logs)
+"""
+import os, re, shutil, datetime
+from pathlib import Path
+
+ROOT   = Path(os.getcwd())
+SERVER = ROOT / "serve_pdfs.py"
+STAMP  = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+
+def backup(p: Path):
+    dst = p.with_suffix(p.suffix + f".bak.{STAMP}")
+    shutil.copy2(p, dst)
+    print(f"🧾 Backup => {dst.name}")
+    return dst
+
+# Code we’ll inject into supersonic_health() just before `return jsonify({`
+PATCH_SNIPPET = r"""
+    # --- Supersonic: memory + HTTP 5xx extension ---
+    _mem = {"rss_bytes": None, "vms_bytes": None, "rss_mb": None, "vms_mb": None, "source": "unknown"}
+    try:
+        import psutil as _ps
+        _p = _ps.Process()
+        _mi = _p.memory_info()
+        _mem["rss_bytes"] = int(getattr(_mi, "rss", 0))
+        _mem["vms_bytes"] = int(getattr(_mi, "vms", 0))
+        _mem["rss_mb"]    = round(_mem["rss_bytes"] / (1024*1024), 3)
+        _mem["vms_mb"]    = round(_mem["vms_bytes"] / (1024*1024), 3)
+        _mem["source"]    = "psutil"
+    except Exception:
+        # Linux fallback: /proc/self/statm → pages * page_size
+        try:
+            import resource as _res, os as _os
+            _page = _os.sysconf("SC_PAGE_SIZE")
+            with open("/proc/self/statm","r") as _f:
+                _vals = _f.read().strip().split()
+                _rss_pages = int(_vals[1]) if len(_vals) > 1 else 0
+                _rss_bytes = _rss_pages * _page
+                _mem["rss_bytes"] = int(_rss_bytes)
+                _mem["rss_mb"]    = round(_rss_bytes / (1024*1024), 3)
+                _mem["source"]    = "proc/statm"
+        except Exception:
+            try:
+                import resource as _res
+                _ru = _res.getrusage(_res.RUSAGE_SELF)
+                # ru_maxrss on Linux = KB, macOS = bytes; normalize to bytes if looks small
+                _rss_kb = getattr(_ru, "ru_maxrss", 0)
+                _rss_b  = int(_rss_kb * 1024) if _rss_kb < 10**7 else int(_rss_kb)
+                _mem["rss_bytes"] = _rss_b
+                _mem["rss_mb"]    = round(_rss_b / (1024*1024), 3)
+                _mem["source"]    = "resource"
+            except Exception:
+                pass
+
+    # Rolling HTTP 5xx counter from log tail
+    _log_path = _os.getenv("SUPERSONIC_LOG_FILE", "supersonic.log")
+    _win_sec  = int(_os.getenv("HEALTH_5XX_WINDOW_SEC", "600"))
+    _pat_str  = _os.getenv("HEALTH_5XX_REGEX", r'(?i)\\b(5\\d\\d)\\b')  # permissive
+    try:
+        _pat = __import__("re").compile(_pat_str)
+    except Exception:
+        _pat = __import__("re").compile(r'(?i)\\b(5\\d\\d)\\b')
+
+    _http_5xx_count = 0
+    try:
+        import time as _time
+        _now = _time.time()
+        _cut = _now - _win_sec
+        _max_bytes = 250_000
+        with open(_log_path, "r", encoding="utf-8", errors="replace") as _f:
+            _f.seek(0, _os.SEEK_END)
+            _size = _f.tell()
+            _pos  = max(0, _size - _max_bytes)
+            _f.seek(_pos)
+            _chunk = _f.read()
+        _ts_re = __import__("re").compile(r"(20\\d\\d-\\d\\d-\\d\\d \\d\\d:\\d\\d:\\d\\d)")
+        for _ln in _chunk.splitlines():
+            if not _pat.search(_ln):
+                continue
+            _m = _ts_re.search(_ln)
+            if _m:
+                try:
+                    import datetime as _dt, time as _time
+                    _t = _time.mktime(_dt.datetime.strptime(_m.group(1), "%Y-%m-%d %H:%M:%S").timetuple())
+                    if _t >= _cut:
+                        _http_5xx_count += 1
+                except Exception:
+                    _http_5xx_count += 1
+            else:
+                _http_5xx_count += 1
+    except FileNotFoundError:
+        _http_5xx_count = 0
+    except Exception:
+        pass
+    # --- end Supersonic extension ---
+"""
+
+def inject_into_health(src: str) -> str:
+    import re
+    rx_def = re.compile(r"@app\.route\(\s*[\"']\/health[\"']\s*\)\s*def\s+supersonic_health\s*\(\s*\)\s*:\s*(?:\n|\r\n)", re.MULTILINE)
+    m = rx_def.search(src)
+    if not m:
+        print("❌ Could not find supersonic_health(). Run prior health upgraders first.")
+        return src
+    start = m.end()
+
+    rx_ret = re.compile(r"return\s+jsonify\s*\(\s*\{", re.MULTILINE)
+    mret = rx_ret.search(src, pos=start)
+    if not mret:
+        print("❌ Could not find 'return jsonify({' in supersonic_health().")
+        return src
+
+    patched = src[:mret.start()] + PATCH_SNIPPET + src[mret.start():]
+
+    # Insert new fields into the JSON dict
+    add_fields = (
+        '        "memory": _mem,\n'
+        '        "http_5xx": {\n'
+        '            "count": int(_http_5xx_count),\n'
+        '            "window_sec": int(_win_sec),\n'
+        '            "pattern": "' + r'(?i)\b(5\d\d)\b' + '"\n'
+        '        },\n'
+    )
+    brace_pos = patched.find("{", mret.start())
+    if brace_pos != -1:
+        patched = patched[:brace_pos+1] + "\n" + add_fields + patched[brace_pos+1:]
+    else:
+        print("⚠️ Could not inject fields cleanly; snippet still added.")
+    return patched
+
+def main():
+    if not SERVER.exists():
+        print("❌ serve_pdfs.py not found.")
+        return
+    backup(SERVER)
+    src = SERVER.read_text(encoding="utf-8", errors="ignore")
+    out = inject_into_health(src)
+    if out != src:
+        SERVER.write_text(out, encoding="utf-8")
+        print("✅ /health now includes memory + HTTP 5xx metrics.")
+        print("   Env: SUPERSONIC_LOG_FILE | HEALTH_5XX_WINDOW_SEC | HEALTH_5XX_REGEX")
+        print("\n🧪 Try:")
+        print("  curl -s -H \"X-Doctor-Key: $DOCTOR_KEY\" $APP_URL/health | jq .")
+    else:
+        print("⚠️ No changes applied.")
+
+if __name__ == "__main__":
+    main()

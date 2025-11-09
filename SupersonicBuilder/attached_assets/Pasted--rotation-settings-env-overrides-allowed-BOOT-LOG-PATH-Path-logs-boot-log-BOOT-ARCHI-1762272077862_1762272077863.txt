@@ -1,0 +1,65 @@
+# --- rotation settings (env overrides allowed) ---
+BOOT_LOG_PATH = Path("logs/boot.log")
+BOOT_ARCHIVE_DIR = Path("logs/archive")
+BOOT_MAX_SIZE_BYTES = int(os.getenv("BOOT_MAX_SIZE_BYTES", str(512 * 1024)))  # 512 KB default
+BOOT_KEEP_FILES = int(os.getenv("BOOT_KEEP_FILES", "5"))                     # keep last 5 gz archives
+BOOT_MAX_TOTAL_MB = int(os.getenv("BOOT_MAX_TOTAL_MB", "10"))                # cap archive folder to ~10 MB
+
+def _rotate_boot_logs_if_needed():
+    """
+    If logs/boot.log exceeds BOOT_MAX_SIZE_BYTES, rotate it:
+      - Move to logs/archive/boot.YYYYmmdd-HHMMSS.log.gz
+      - Keep only BOOT_KEEP_FILES newest gz files
+      - Enforce total archive size <= BOOT_MAX_TOTAL_MB
+    """
+    try:
+        BOOT_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+        if not BOOT_LOG_PATH.exists():
+            return
+
+        sz = BOOT_LOG_PATH.stat().st_size
+        if sz < BOOT_MAX_SIZE_BYTES:
+            return
+
+        ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+        rotated_raw = BOOT_ARCHIVE_DIR / f"boot.{ts}.log"
+        rotated_gz  = BOOT_ARCHIVE_DIR / f"boot.{ts}.log.gz"
+
+        # 1) move current log to a timestamped file
+        shutil.move(str(BOOT_LOG_PATH), rotated_raw)
+
+        # 2) gzip it
+        with open(rotated_raw, "rb") as fin, gzip.open(rotated_gz, "wb", compresslevel=6) as fout:
+            shutil.copyfileobj(fin, fout)
+        rotated_raw.unlink(missing_ok=True)
+
+        # 3) enforce "keep last N"
+        archives = sorted(BOOT_ARCHIVE_DIR.glob("boot.*.log.gz"), key=lambda p: p.stat().st_mtime, reverse=True)
+        for old in archives[BOOT_KEEP_FILES:]:
+            old.unlink(missing_ok=True)
+
+        # 4) enforce total size budget
+        def total_mb():
+            return sum(p.stat().st_size for p in BOOT_ARCHIVE_DIR.glob("boot.*.log.gz")) / (1024 * 1024)
+
+        # prune oldest until under threshold
+        archives = sorted(BOOT_ARCHIVE_DIR.glob("boot.*.log.gz"), key=lambda p: p.stat().st_mtime, reverse=True)
+        while total_mb() > BOOT_MAX_TOTAL_MB and len(archives) > 1:
+            victim = archives.pop()  # oldest
+            victim.unlink(missing_ok=True)
+
+    except Exception as e:
+        # rotation failures should never crash the app
+        print(f"[WARN] log rotation failed: {e}")
+
+def _log_banner_to_file(text: str):
+    """Write banner text to logs/boot.log, then rotate if needed."""
+    try:
+        os.makedirs("logs", exist_ok=True)
+        with open(BOOT_LOG_PATH, "a", encoding="utf-8") as f:
+            ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+            f.write(f"\n[{ts}] Boot Banner\n{text}\n")
+    except Exception as e:
+        print(f"[WARN] Could not write boot log: {e}")
+    # rotate non-critically after write
+    _rotate_boot_logs_if_needed()

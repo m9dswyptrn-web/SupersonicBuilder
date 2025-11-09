@@ -1,0 +1,17 @@
+.PHONY: install_badges update_readme_badges verify_badges
+
+install_badges:
+	@echo "[SB] Installing/refreshing README badges…"
+	@SB_OWNER=$$(git remote get-url origin 2>/dev/null | sed -E 's#.*github.com[:/]([^/]+)/.*#\1#' || echo "m9dswyptrn-web"); \
+	SB_REPO=$$(basename `git rev-parse --show-toplevel` 2>/dev/null || echo "SonicBuilder"); \
+	SB_OWNER=$$SB_OWNER SB_REPO=$$SB_REPO python3 scripts/badges/update_readme_badges.py
+
+update_readme_badges:
+	@SB_OWNER=$$(git remote get-url origin 2>/dev/null | sed -E 's#.*github.com[:/]([^/]+)/.*#\1#' || echo "m9dswyptrn-web"); \
+	SB_REPO=$$(basename `git rev-parse --show-toplevel` 2>/dev/null || echo "SonicBuilder"); \
+	SB_OWNER=$$SB_OWNER SB_REPO=$$SB_REPO python3 scripts/badges/update_readme_badges.py
+
+verify_badges:
+	@test -f docs/badges/pages_smoke.json || (echo "Missing pages_smoke.json" && exit 1)
+	@test -f docs/badges/docs_coverage.json || (echo "Missing docs_coverage.json" && exit 1)
+	@echo "[SB] Badge JSONs present."

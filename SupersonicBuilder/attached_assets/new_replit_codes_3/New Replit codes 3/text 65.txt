@@ -1,0 +1,10 @@
+let LAST = {
+  has: false,
+  fmt: "pdf",
+  url: null,
+  make: "", model: "", year: "", id: "",
+  variant: "dark",
+  page: 1,
+  scale: 1.25,
+  rotation: 0
+};

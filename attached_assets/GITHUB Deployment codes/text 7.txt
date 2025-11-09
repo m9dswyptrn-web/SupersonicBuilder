@@ -1,0 +1,13 @@
+.PHONY: ship tag release
+ship:
+	git add -A && git commit -m "chore: ship $(shell date -u +%F-%H%MZ)" || true
+	git push origin HEAD:main
+
+# Usage: make tag V=0.2.0
+tag:
+	@test -n "$(V)" || (echo "Provide V=x.y.z"; exit 1)
+	git tag -a v$(V) -m "release v$(V)"
+	git push origin v$(V)
+
+release:
+	@python3 scripts/ai_console.py

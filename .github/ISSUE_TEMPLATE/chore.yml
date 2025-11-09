@@ -1,0 +1,18 @@
+---
+name: "🧹 Chore / Maintenance"
+about: Code cleanup, dependency bumps, CI/CD tweaks, refactors.
+title: "[CHORE] "
+labels: ["chore"]
+assignees: []
+---
+
+## Description
+<!-- What kind of chore or maintenance is this -->
+
+## Checklist
+- [ ] Low risk change
+- [ ] No breaking build changes
+- [ ] CI should pass
+
+## Additional context
+<!-- Optional: notes, links, related issues -->

@@ -1,0 +1,14 @@
+# 1) sanity checks
+make preflight
+
+# 2) build and render the manifest (dark + light)
+make all
+
+# 3) verify key outputs and checksums
+make verify
+
+# 4) list your generated artifacts
+make tree
+
+# 5) one-liner release flow (build+manifest+verify+release)
+make release VERSION=5.0.0 OUT=/mnt/data

@@ -1,0 +1,66 @@
+  btnZip?.addEventListener("click", async () => {
+    try {
+      // Ensure PDF is loaded
+      const url = buildURL(true).replace("format=png", "format=pdf");
+      if (!pdfDoc || !pdfURL || pdfURL !== url) {
+        wrap.hidden = false; showSpinner(true);
+        resetProgress();
+        pdfURL = url; await loadPDF(pdfURL);
+      }
+
+      const zip = new JSZip();
+      const surface = canvas.parentElement;
+      const sw = surface.clientWidth || 900;
+      const q = getQualityScale();          // quality multiplier (0.6 – 2.0)
+      const bump = 1.5 * q;                 // baseline export multiplier
+      const total = pdfDoc.numPages;
+
+      // Offscreen canvas for rendering each page
+      const tmp = document.createElement("canvas");
+      const tctx = tmp.getContext("2d", { alpha: false });
+
+      // Render loop with per-page progress
+      for (let p = 1; p <= total; p++) {
+        status(`Rendering page ${p}/${total}…`);
+        setProgress(((p - 1) / total) * 70); // 0–70% while rendering pages
+
+        const pdfPage = await pdfDoc.getPage(p);
+        // width-fit baseline relative to the current surface width
+        const v1 = pdfPage.getViewport({ scale: 1, rotation });
+        const fitW = (sw / v1.width);
+        const exportScale = fitW * bump;     // quality-aware export scale
+
+        const vp = pdfPage.getViewport({ scale: exportScale, rotation });
+        tmp.width = Math.round(vp.width);
+        tmp.height = Math.round(vp.height);
+
+        await pdfPage.render({ canvasContext: tctx, viewport: vp }).promise;
+
+        const blob = await new Promise(res => tmp.toBlob(res, "image/png", 1.0));
+        const buf = await blob.arrayBuffer();
+        const fname = `${selMake.value}_${selModel.value}_${selYear.value}_${selDiag.value}_p${String(p).padStart(2,"0")}.png`;
+        zip.file(fname, buf);
+      }
+
+      status("Zipping…");
+      // 70–100% while compressing
+      const zipBlob = await zip.generateAsync(
+        { type: "blob", compression: "DEFLATE", compressionOptions: { level: 9 } },
+        (metadata) => {
+          const pct = 70 + (metadata.percent || 0) * 0.30; // map to 70–100
+          setProgress(pct, `${Math.round(pct)}%`);
+        }
+      );
+
+      const base = `${selMake.value}_${selModel.value}_${selYear.value}_${selDiag.value}`;
+      downloadBlob(zipBlob, `${base}_all_pages.zip`);
+      setProgress(100, "100%");
+      status("ZIP ready.");
+      showSpinner(false);
+    } catch (e) {
+      console.error(e);
+      showSpinner(false);
+      status("ZIP export failed.");
+      resetProgress();
+    }
+  });

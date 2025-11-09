@@ -1,0 +1,44 @@
+name: pr-docs-ready-autoreset
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [ main ]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  autoreset:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove docs:ready on new commits
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.setFailed("No pull_request payload.");
+              return;
+            }
+            const issue_number = pr.number;
+
+            // List labels currently on the PR
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({ owner, repo, issue_number });
+            const has = labels.some(l => l.name === 'docs:ready');
+            if (!has) {
+              core.info("No 'docs:ready' label present; nothing to reset.");
+              return;
+            }
+
+            // Remove the label
+            await github.rest.issues.removeLabel({ owner, repo, issue_number, name: 'docs:ready' });
+            core.info("Removed 'docs:ready' due to new commits or PR re-open.");
+
+            // (Optional) leave a light note for visibility
+            await github.rest.issues.createComment({
+              owner, repo, issue_number,
+              body: "🔁 New commits detected — removed **docs:ready**. It will be re-applied automatically after the next successful _docs-build_, or a maintainer can comment `/docs-ready`."
+            });

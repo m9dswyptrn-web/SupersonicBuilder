@@ -1,0 +1,14 @@
+// --- Persistence for last preview ---
+const LAST_KEY = "supersonic-last-preview-v1";
+
+// Load from localStorage (safe parse)
+function loadLastFromStorage() {
+  try { return JSON.parse(localStorage.getItem(LAST_KEY) || "{}"); }
+  catch { return {}; }
+}
+function saveLastToStorage(payload) {
+  try { localStorage.setItem(LAST_KEY, JSON.stringify(payload)); } catch {}
+}
+function clearLastInStorage() {
+  try { localStorage.removeItem(LAST_KEY); } catch {}
+}

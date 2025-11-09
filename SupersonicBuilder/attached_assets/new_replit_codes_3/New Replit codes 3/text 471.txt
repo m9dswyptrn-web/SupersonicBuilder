@@ -1,0 +1,15 @@
+function defaultSnoozeMidnight() {
+  const inp = document.getElementById('optSnoozeUntil');
+  if (!inp) return;
+  const now = new Date();
+  const midnight = new Date(now);
+  midnight.setHours(24, 0, 0, 0); // next midnight
+  // datetime-local expects local time in YYYY-MM-DDTHH:MM (no Z)
+  const yyyy = midnight.getFullYear();
+  const mm = String(midnight.getMonth()+1).padStart(2,'0');
+  const dd = String(midnight.getDate()).padStart(2,'0');
+  const HH = String(midnight.getHours()).padStart(2,'0');
+  const MM = String(midnight.getMinutes()).padStart(2,'0');
+  inp.value = `${yyyy}-${mm}-${dd}T${HH}:${MM}`;
+}
+setTimeout(defaultSnoozeMidnight, 300);

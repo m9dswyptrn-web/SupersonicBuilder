@@ -1,0 +1,7 @@
+  function hidePreview() {
+    wrap.hidden = true;
+    canvas.hidden = true;
+    image.hidden = true;
+    status("");
+    resetProgress();
+  }

@@ -1,0 +1,31 @@
+# ---- Snooze state (mute all cues) ----
+MUTE_UNTIL_TS = 0  # epoch seconds; 0 = not muted
+
+def is_muted_now() -> bool:
+    return int(time.time()) < int(os.environ.get("MUTE_UNTIL_TS", MUTE_UNTIL_TS) or 0)
+
+def set_mute_for_minutes(minutes: int):
+    global MUTE_UNTIL_TS
+    minutes = max(0, int(minutes))
+    MUTE_UNTIL_TS = int(time.time()) + minutes * 60
+    os.environ["MUTE_UNTIL_TS"] = str(MUTE_UNTIL_TS)
+
+def clear_mute():
+    global MUTE_UNTIL_TS
+    MUTE_UNTIL_TS = 0
+    os.environ["MUTE_UNTIL_TS"] = "0"
+
+def get_req_volume(default: float = 1.0) -> float:
+    """Pull volume from header X-Volume (0..1) or env DEFAULT_VOLUME."""
+    v = request.headers.get("X-Volume")
+    if v is None:
+        try:
+            v = float(os.getenv("DEFAULT_VOLUME", default))
+        except Exception:
+            v = default
+    else:
+        try:
+            v = float(v)
+        except Exception:
+            v = default
+    return max(0.0, min(1.0, v))

@@ -1,0 +1,6 @@
+document.getElementById('msTheme')?.addEventListener('click', ()=>{
+  const order = ['dark','light','field'];
+  const cur = (SETTINGS && SETTINGS.theme) || 'dark';
+  const next = order[(order.indexOf(cur)+1)%order.length];
+  applyTheme(next);
+});

@@ -1,0 +1,8 @@
+# set your repo stamping (if not already set)
+export GITHUB_OWNER="YourUser"
+export GITHUB_REPO="SonicBuilder"
+
+python3 live_artifacts_bootstrap.py
+git add -A
+git commit -m "Docs: live Artifacts & Releases panel"
+git push origin main

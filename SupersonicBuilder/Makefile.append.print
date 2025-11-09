@@ -1,0 +1,36 @@
+
+# ==== Print Pro: Light Mode + Two-Up Crop Marks ==============================
+.PHONY: finalize_light add_footer_light build_release_meta_light two_up_dark
+
+# --- LIGHT MODE (optional) ----------------------------------------------------
+finalize_light:
+	$(PY) scripts/set_pdf_metadata.py \
+	  output/sonic_manual_light.pdf \
+	  -o output/sonic_manual_light.pdf \
+	  --title "2014 Chevy Sonic LTZ – Android Head-Unit Install Guide (Light)" \
+	  --author "Sonic Builder" \
+	  --subject "Install manual & wiring (RR2/GM2, G-RZ-GM59)" \
+	  --keywords "Chevy Sonic, 2014, Android head unit, wiring, RR2 GM2, G-RZ-GM59"
+
+add_footer_light:
+	$(PY) scripts/add_pdf_footer.py \
+	  output/sonic_manual_light.pdf \
+	  -o output/sonic_manual_light.pdf \
+	  --line "$(FOOTER_LINE1)" \
+	  --line "$(FOOTER_LINE2)" \
+	  --line "$(FOOTER_LINE3)" \
+	  $(if $(wildcard $(QR_PNG)),--qr "$(QR_PNG)")
+
+# Convenience full pass for light
+build_release_meta_light:
+	$(MAKE) build_release
+	$(MAKE) finalize_light
+	$(MAKE) add_footer_light
+	$(MAKE) clean_tmp
+	$(MAKE) package
+
+# --- TWO-UP WITH CROP MARKS (dark) -------------------------------------------
+two_up_dark:
+	$(PY) scripts/two_up_crops.py \
+	  --input output/sonic_manual_dark.pdf \
+	  --output output/sonic_manual_dark_two_up.pdf

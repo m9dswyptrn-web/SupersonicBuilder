@@ -1,0 +1,4 @@
+document.getElementById('msBoost')?.addEventListener('click', ()=>{
+  if (_perfTweaksActive) restorePerfTweaks();
+  else applyPerfTweaks();
+});

@@ -1,0 +1,2 @@
+python3 deploy_to_github.py --owner ChristopherElgin --repo SonicBuilderSupersonic \
+  --version v1.1.0 --public

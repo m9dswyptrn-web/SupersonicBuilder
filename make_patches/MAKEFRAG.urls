@@ -1,0 +1,8 @@
+# MAKEFRAG.urls — include from your Makefile with:  -include make_patches/MAKEFRAG.urls
+# Exposes SB_REPO_URL to downstream Python stampers and builders.
+
+SB_REPO_URL ?= https://08abbd3d-777f-4af5-b274-466c8cc1c573-00-1ko1zjf07c39i.riker.replit.dev
+
+.PHONY: echo-url
+echo-url:
+	@echo Using SB_REPO_URL=$(SB_REPO_URL)

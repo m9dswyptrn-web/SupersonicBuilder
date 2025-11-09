@@ -1,0 +1,167 @@
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const status = (msg) => { $("dp-status").textContent = msg || ""; };
+
+  const selMake   = $("dp-make");
+  const selModel  = $("dp-model");
+  const selYear   = $("dp-year");
+  const selDiag   = $("dp-diagram");
+  const selVar    = $("dp-variant");
+  const selFmt    = $("dp-format");
+  const btnPrev   = $("dp-preview");
+  const btnOpen   = $("dp-open");
+  const btnCopy   = $("dp-copy");
+  const btnRefresh= $("dp-refresh");
+  const btnClose  = $("dp-close");
+
+  const wrap      = $("dp-preview-wrap");
+  const iframe    = $("dp-iframe");
+  const image     = $("dp-image");
+  const spinner   = $("dp-spinner");
+
+  let catalog = {};
+
+  async function loadCatalog() {
+    status("Loading catalog…");
+    try {
+      const res = await fetch("/api/diagrams/catalog");
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      catalog = await res.json();
+
+      selMake.innerHTML = `<option value="">— select —</option>`;
+      Object.keys(catalog).sort().forEach(mk => {
+        const opt = document.createElement("option");
+        opt.value = mk; opt.textContent = mk;
+        selMake.appendChild(opt);
+      });
+      status("Catalog ready.");
+    } catch (e) {
+      console.error(e);
+      status("Failed to load catalog.");
+    }
+  }
+
+  function resetSelect(sel, disable=true) {
+    sel.innerHTML = `<option value="">— select —</option>`;
+    sel.disabled = !!disable;
+  }
+
+  function disableActions() {
+    btnPrev.disabled = btnOpen.disabled = btnCopy.disabled = true;
+  }
+  function enableActions() {
+    const ok = !!selDiag.value;
+    btnPrev.disabled = btnOpen.disabled = btnCopy.disabled = !ok;
+  }
+
+  selMake.addEventListener("change", () => {
+    resetSelect(selModel); resetSelect(selYear); resetSelect(selDiag);
+    disableActions(); hidePreview();
+    const mk = selMake.value; if (!mk) return;
+    Object.keys(catalog[mk] || {}).sort().forEach(md => {
+      const opt = document.createElement("option");
+      opt.value = md; opt.textContent = md; selModel.appendChild(opt);
+    });
+    selModel.disabled = true === false; // enable
+  });
+
+  selModel.addEventListener("change", () => {
+    resetSelect(selYear); resetSelect(selDiag);
+    disableActions(); hidePreview();
+    const mk = selMake.value, md = selModel.value; if (!mk || !md) return;
+    Object.keys(catalog[mk]?.[md] || {}).sort().forEach(yr => {
+      const opt = document.createElement("option");
+      opt.value = yr; opt.textContent = yr; selYear.appendChild(opt);
+    });
+    selYear.disabled = false;
+  });
+
+  selYear.addEventListener("change", () => {
+    resetSelect(selDiag); disableActions(); hidePreview();
+    const mk = selMake.value, md = selModel.value, yr = selYear.value;
+    if (!mk || !md || !yr) return;
+    (catalog[mk]?.[md]?.[yr] || []).forEach(d => {
+      const opt = document.createElement("option");
+      opt.value = d.id; opt.textContent = `${d.name} (${d.category || "misc"})`;
+      selDiag.appendChild(opt);
+    });
+    selDiag.disabled = false;
+  });
+
+  selDiag.addEventListener("change", () => {
+    enableActions(); hidePreview();
+  });
+
+  function buildURL(withCacheBust=false) {
+    const mk = encodeURIComponent(selMake.value);
+    const md = encodeURIComponent(selModel.value);
+    const yr = encodeURIComponent(selYear.value);
+    const id = encodeURIComponent(selDiag.value);
+    const fmt = encodeURIComponent(selFmt.value);
+    const variant = encodeURIComponent(selVar.value);
+    let url = `/api/diagrams/${mk}/${md}/${yr}/${id}?format=${fmt}&variant=${variant}`;
+    if (withCacheBust) url += `&t=${Date.now()}`;
+    return url;
+  }
+
+  function showSpinner(show) {
+    spinner.hidden = !show;
+  }
+
+  function hidePreview() {
+    iframe.hidden = true; image.hidden = true; wrap.hidden = true;
+  }
+
+  async function preview() {
+    const fmt = selFmt.value;
+    const url = buildURL(true);
+    wrap.hidden = false;
+    showSpinner(true);
+    status("Loading preview…");
+
+    if (fmt === "pdf") {
+      image.hidden = true;
+      iframe.hidden = false;
+      iframe.src = url;
+      // Give the iframe a tiny moment; rely on load event
+      iframe.onload = () => { showSpinner(false); status(""); };
+      iframe.onerror = () => { showSpinner(false); status("Preview failed to load."); };
+    } else {
+      iframe.hidden = true;
+      image.hidden = false;
+      image.src = url;
+      image.onload = () => { showSpinner(false); status(""); };
+      image.onerror = () => { showSpinner(false); status("Preview failed to load."); };
+    }
+  }
+
+  btnPrev.addEventListener("click", preview);
+  btnRefresh.addEventListener("click", () => preview());
+  btnClose.addEventListener("click", () => hidePreview());
+
+  btnOpen.addEventListener("click", () => {
+    window.open(buildURL(), "_blank", "noopener");
+  });
+
+  btnCopy.addEventListener("click", async () => {
+    const url = location.origin + buildURL();
+    try {
+      await navigator.clipboard.writeText(url);
+      status("URL copied to clipboard.");
+      setTimeout(() => status(""), 1500);
+    } catch {
+      status("Copy failed. Long-press to copy: " + url);
+    }
+  });
+
+  // Shortcuts: Enter = Preview, Shift+Enter = Open
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !btnPrev.disabled) {
+      e.preventDefault(); preview();
+    } else if (e.key === "Enter" && e.shiftKey && !btnOpen.disabled) {
+      e.preventDefault(); window.open(buildURL(), "_blank", "noopener");
+    }
+  });
+
+  document.addEventListener("DOMContentLoaded", loadCatalog);
+})();

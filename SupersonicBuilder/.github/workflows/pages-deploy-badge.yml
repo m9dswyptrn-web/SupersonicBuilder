@@ -1,0 +1,61 @@
+name: Badges • Pages Deploy Status
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/20 * * * *"        # every 20 min
+  workflow_run:                   # refresh right after your Pages workflow finishes
+    workflows:
+      - "pages"
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  deploy-badge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure docs/badges
+        run: mkdir -p docs/badges
+
+      - name: Query latest Pages build
+        id: pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          API="https://api.github.com/repos/${{ github.repository }}/pages/builds/latest"
+          JSON=$(curl -sSL -H "Accept: application/vnd.github+json" \
+                       -H "Authorization: Bearer $GH_TOKEN" "$API")
+          echo "$JSON" > /tmp/latest_pages_build.json
+          STATUS=$(jq -r '.status // "unknown"' /tmp/latest_pages_build.json)
+          CREATED=$(jq -r '.created_at // ""' /tmp/latest_pages_build.json)
+          UPDATED=$(jq -r '.updated_at // ""' /tmp/latest_pages_build.json)
+          echo "status=$STATUS"  >> $GITHUB_OUTPUT
+          echo "created=$CREATED" >> $GITHUB_OUTPUT
+          echo "updated=$UPDATED" >> $GITHUB_OUTPUT
+
+      - name: Write Pages deploy badge JSON
+        run: |
+          STATUS="${{ steps.pages.outputs.status }}"
+          case "$STATUS" in
+            built)     COLOR="brightgreen"; MSG="built"     ;;
+            building)  COLOR="blue";        MSG="building"  ;;
+            queued)    COLOR="blue";        MSG="queued"    ;;
+            errored)   COLOR="red";         MSG="errored"   ;;
+            *)         COLOR="lightgrey";   MSG="${STATUS:-unknown}" ;;
+          esac
+          cat > docs/badges/pages-deploy.json <<EOF
+          { "schemaVersion": 1, "label": "pages deploy", "message": "${MSG}", "color": "${COLOR}" }
+          EOF
+
+      - name: Commit badge
+        run: |
+          git config user.name  "actions-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/badges/pages-deploy.json
+          git commit -m "chore(badges): refresh Pages deploy status (${{ steps.pages.outputs.status }})" || echo "No changes"
+          git push

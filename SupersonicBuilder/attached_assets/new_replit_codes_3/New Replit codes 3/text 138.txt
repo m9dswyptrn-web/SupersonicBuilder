@@ -1,0 +1,3 @@
+@app.context_processor
+def inject_catalog_config():
+    return dict(CATALOG_TTL_HOURS=CATALOG_TTL_HOURS, _catalog_version=_catalog_version)

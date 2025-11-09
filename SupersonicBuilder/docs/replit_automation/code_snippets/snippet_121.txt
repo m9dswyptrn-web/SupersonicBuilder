@@ -1,0 +1,12 @@
+import hashlib
+
+def _catalog_version():
+    try:
+        raw = DIAGRAM_INDEX.read_bytes()
+        return hashlib.sha1(raw).hexdigest()[:12]  # short, stable version id
+    except Exception:
+        return "unknown"
+
+@app.get("/api/diagrams/catalog-version")
+def diagrams_catalog_version():
+    return jsonify({"version": _catalog_version()}), 200

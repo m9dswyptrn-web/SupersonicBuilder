@@ -1,0 +1,25 @@
+title: Harness Labels (Print & Cut)
+items:
+  - LF +
+  - LF -
+  - RF +
+  - RF -
+  - LR +
+  - LR -
+  - RR +
+  - RR -
+  - ACC
+  - B+ 12V
+  - GND
+  - GMLAN-H
+  - GMLAN-L
+  - RR2 DATA
+  - BACK CAM +
+  - REVERSE TRIG
+  - ILL (+)
+layout:
+  cols: 4
+  row_height: 28
+  cell_w: 120
+  font_size: 12
+  border: true

@@ -1,0 +1,19 @@
+---
+name: "✨ Feature request"
+about: Suggest a new idea or enhancement for SonicBuilder.
+title: "[FEATURE] "
+labels: ["feature"]
+assignees: []
+---
+
+## Description
+<!-- Describe the feature or improvement -->
+
+## Motivation / Rationale
+<!-- Why is this feature useful or needed -->
+
+## Proposal
+<!-- Optional: Sketch of how it might work (CLI flags, UI, files, etc.) -->
+
+## Additional context
+<!-- Links, examples, screenshots -->

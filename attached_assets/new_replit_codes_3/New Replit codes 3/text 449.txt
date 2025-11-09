@@ -1,0 +1,11 @@
+<script>
+async function runBench(){
+  await withHeaderLock(async () => {
+    const r = await fetch('/api/bench', {method:'POST'});
+    await loadBench();
+    await refreshReady();
+    showToast('Bench complete');
+    playChime(true, 'bench complete');
+  });
+}
+</script>

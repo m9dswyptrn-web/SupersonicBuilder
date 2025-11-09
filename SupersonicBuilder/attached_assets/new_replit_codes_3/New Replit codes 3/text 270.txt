@@ -1,0 +1,10 @@
+# in your repo root (ideally inside a venv)
+python3 -m pip install --upgrade pip
+pip install -r agent/requirements.txt -r desktop/webui/requirements.txt
+
+# get a model (or copy your own .gguf to the path you set in .env)
+python scripts/download_gguf.py
+
+# run
+python scripts/run_offline_llm.py
+# open http://127.0.0.1:7860

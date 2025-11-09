@@ -1,0 +1,5 @@
+cd SonicBuilder
+# Dry run
+DRY_RUN=1 PURGE_ARTIFACTS=1 ./uninstall_sonicbuilder.sh /mnt/data
+# Actual cleanup
+PURGE_ARTIFACTS=1 ./uninstall_sonicbuilder.sh /mnt/data

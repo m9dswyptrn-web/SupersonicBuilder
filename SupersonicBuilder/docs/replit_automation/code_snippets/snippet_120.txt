@@ -1,0 +1,3 @@
+if (!s.persistLast) {
+  try { localStorage.removeItem("supersonic-last-preview-v1"); } catch {}
+}

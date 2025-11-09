@@ -1,0 +1,34 @@
+# ==== Metadata, Footer & Cleanup =============================================
+.PHONY: clean_tmp finalize_dark finalize_dark_pro add_footer_dark add_footer_dark_pro build_release_meta
+STAMP_DATE := $(shell date +"%Y-%m-%d")
+STAMP_VERSION := $(shell git describe --tags --always --abbrev=0 2>/dev/null || echo "dev")
+REPO_URL ?= https://github.com/myusername/sonicbuilder
+QR_PNG   ?= assets/qr_repo.png
+clean_tmp:
+	find . -name "._*" -type f -delete || true
+	find . -name ".DS_Store" -type f -delete || true
+	find . -name "__pycache__" -type d -exec rm -rf {} + || true
+	find . -name "*.pyc" -type f -delete || true
+finalize_dark:
+	$(PY) scripts/set_pdf_metadata.py output/sonic_manual_dark.pdf -o output/sonic_manual_dark.pdf --title "2014 Chevy Sonic LTZ – Android Head-Unit Install Guide (Dark)" --author "Sonic Builder" --subject "Install manual & wiring (RR2/GM2, G-RZ-GM59)" --keywords "Chevy Sonic, 2014, Android head unit, wiring, RR2 GM2, G-RZ-GM59"
+finalize_dark_pro:
+	@if [ -f output/sonic_manual_dark_PRO.pdf ]; then \
+	  $(PY) scripts/set_pdf_metadata.py output/sonic_manual_dark_PRO.pdf -o output/sonic_manual_dark_PRO.pdf --title "2014 Chevy Sonic LTZ – Android Head-Unit Install Guide (Dark, PRO)" --author "Sonic Builder" --subject "Install manual & wiring (RR2/GM2, G-RZ-GM59) – PRO" --keywords "Chevy Sonic, 2014, Android head unit, wiring, RR2 GM2, G-RZ-GM59"; \
+	else echo "skip finalize_dark_pro (no PRO PDF present)"; fi
+FOOTER_LINE1 := SonicBuilder v2 — Professional Manual System
+FOOTER_LINE2 := Last Updated: $(STAMP_DATE)   |   Release: $(STAMP_VERSION)
+FOOTER_LINE3 := $(REPO_URL)
+add_footer_dark:
+	$(PY) scripts/add_pdf_footer.py output/sonic_manual_dark.pdf -o output/sonic_manual_dark.pdf --line "$(FOOTER_LINE1)" --line "$(FOOTER_LINE2)" --line "$(FOOTER_LINE3)" $(if $(wildcard $(QR_PNG)),--qr "$(QR_PNG)")
+add_footer_dark_pro:
+	@if [ -f output/sonic_manual_dark_PRO.pdf ]; then \
+	  $(PY) scripts/add_pdf_footer.py output/sonic_manual_dark_PRO.pdf -o output/sonic_manual_dark_PRO.pdf --line "$(FOOTER_LINE1)" --line "$(FOOTER_LINE2)" --line "$(FOOTER_LINE3)" $(if $(wildcard $(QR_PNG)),--qr "$(QR_PNG)"); \
+	else echo "skip add_footer_dark_pro (no PRO PDF present)"; fi
+build_release_meta:
+	$(MAKE) build_release
+	$(MAKE) finalize_dark
+	-$(MAKE) finalize_dark_pro
+	$(MAKE) add_footer_dark
+	-$(MAKE) add_footer_dark_pro
+	$(MAKE) clean_tmp
+	$(MAKE) package

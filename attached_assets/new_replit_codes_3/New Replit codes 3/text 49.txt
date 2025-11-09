@@ -1,0 +1,18 @@
+  function setProgress(pct, label) {
+    const clamped = Math.max(0, Math.min(100, pct || 0));
+    progBar.style.width = clamped.toFixed(0) + "%";
+    progText.textContent = (label ? label : clamped.toFixed(0) + "%");
+  }
+  function resetProgress() { setProgress(0, "0%"); }
+
+  // reflect slider value live
+  function getQualityScale() {
+    const v = parseFloat(sliderQ?.value || "1.25");
+    return isFinite(v) ? v : 1.25;
+  }
+  sliderQ?.addEventListener("input", () => {
+    const v = getQualityScale();
+    sliderVal.textContent = v.toFixed(2) + "×";
+  });
+  // initialize text on load
+  sliderVal.textContent = getQualityScale().toFixed(2) + "×";

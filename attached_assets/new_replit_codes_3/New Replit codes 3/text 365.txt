@@ -1,0 +1,4 @@
+mv gguf/llama-3.1-8b-q4_0.gguf gguf/_tmp_hide.gguf  # temporarily hide
+python scripts/diagnostic_system.py
+# expect error ping + printed reason
+mv gguf/_tmp_hide.gguf gguf/llama-3.1-8b-q4_0.gguf

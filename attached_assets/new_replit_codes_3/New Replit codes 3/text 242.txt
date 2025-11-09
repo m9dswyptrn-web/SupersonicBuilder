@@ -1,0 +1,286 @@
+set -euo pipefail
+
+cat > supersonic_hardening_bootstrap.py <<'PY'
+#!/usr/bin/env python3
+# Wires in: pre-commit (ruff/black/bandit/codespell), markdownlint, lychee, MkDocs strict/nav,
+# prettier, editorconfig, npm devDeps & helper scripts. Idempotent.
+
+import json, os
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+
+def write(path: Path, text: str, executable=False, create_if_missing=True, overwrite=True):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and not overwrite and create_if_missing:
+        print(f"→ exists {path} (kept)")
+        return
+    if path.exists() and not overwrite:
+        print(f"→ exists {path} (no change)")
+        return
+    path.write_text(text, encoding="utf-8")
+    if executable:
+        path.chmod(path.stat().st_mode | 0o111)
+    print(f"→ wrote {path}")
+
+def ensure_merge_yaml_block(file: Path, block: str, fingerprint: str):
+    current = file.read_text(encoding="utf-8") if file.exists() else ""
+    if fingerprint in current:
+        print(f"→ {file.name}: block already present")
+        return
+    new = current.rstrip() + ("\n\n" if not current.endswith("\n") and current else "") + block.strip() + "\n"
+    file.write_text(new, encoding="utf-8")
+    print(f"→ merged block into {file}")
+
+# --- Config payloads ---
+
+EDITORCONFIG = """# .editorconfig
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.py]
+indent_size = 4
+"""
+
+MARKDOWNLINT = """{
+  "config": {
+    "MD013": { "line_length": 120, "code_blocks": false, "tables": false },
+    "MD033": { "allowed_elements": ["br","sub","sup","kbd","img","a"] },
+    "MD041": false
+  },
+  "ignores": [
+    "site/**",
+    "dist/**",
+    "static/**",
+    "node_modules/**"
+  ]
+}
+"""
+
+LYCHEE = """# lychee link checker config
+exclude = ["mailto:*","tel:*"]
+accept = [200,204,206,429]
+include_verbatim = true
+"""
+
+PYPROJECT = """[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+"""
+
+PRETTIER_RC = """{
+  "printWidth": 100,
+  "singleQuote": false,
+  "trailingComma": "es5"
+}
+"""
+
+# local scripts (hard-fail if tools missing → by request)
+MARKDOWNLINT_SH = r"""#!/usr/bin/env bash
+set -euo pipefail
+if command -v npx >/dev/null 2>&1; then
+  npx -y markdownlint-cli2 '**/*.md' --config .markdownlint.jsonc
+else
+  echo "❌ npx not found. Run: npm i -D markdownlint-cli2"; exit 1
+fi
+"""
+
+LYCHEE_SH = r"""#!/usr/bin/env bash
+set -euo pipefail
+ARGS=(--verbose --no-progress --accept 200,204,206,429 .)
+[[ -f lychee.toml ]] && ARGS=(--config lychee.toml "${ARGS[@]}")
+if command -v lychee >/dev/null 2>&1; then
+  lychee "${ARGS[@]}"
+  exit 0
+fi
+if command -v docker >/dev/null 2>&1; then
+  docker run --rm -v "$PWD:/work" -w /work lycheeverse/lychee:latest "${ARGS[@]}"
+  exit 0
+fi
+echo "❌ lychee not found (install binary or use Docker)"; exit 1
+"""
+
+MKDOCS_STRICT_SH = r"""#!/usr/bin/env bash
+set -euo pipefail
+python -m pip install --upgrade pip >/dev/null
+if [[ -f requirements.docs.txt ]]; then
+  python -m pip install -r requirements.docs.txt >/dev/null
+else
+  python -m pip install mkdocs mkdocs-material >/dev/null
+fi
+mkdocs build --clean --strict
+"""
+
+PRETTIER_SH = r"""#!/usr/bin/env bash
+set -euo pipefail
+if ! command -v npx >/dev/null 2>&1; then
+  echo "❌ npx not found. Run: npm i -D prettier"; exit 1
+fi
+# Format common web/doc assets
+npx -y prettier -w \
+  "**/*.{js,jsx,ts,tsx,css,scss,html,json,yml,yaml,md}"
+"""
+
+PRE_COMMIT_BASE = """repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: mixed-line-ending
+      - id: check-yaml
+      - id: check-json
+        args: [--verbose]
+"""
+
+PRE_COMMIT_MD = """# md lint (npx)\n- repo: local\n  hooks:\n    - id: markdownlint-cli2\n      name: markdownlint-cli2\n      entry: bash scripts/markdownlint.sh\n      language: system\n      pass_filenames: false\n      files: ^(docs/|README\\.md|CHANGELOG\\.md|.*\\.md)$\n"""
+
+PRE_COMMIT_LYCHEE = """# link check\n- repo: local\n  hooks:\n    - id: lychee-links\n      name: lychee\n      entry: bash scripts/lychee_check.sh\n      language: system\n      pass_filenames: false\n"""
+
+PRE_COMMIT_MKDOCS = """# mkdocs strict + nav sanity\n- repo: local\n  hooks:\n    - id: mkdocs-strict\n      name: mkdocs --strict\n      entry: bash scripts/mkdocs_strict.sh\n      language: system\n      pass_filenames: false\n    - id: mkdocs-nav-sanity\n      name: mkdocs nav sanity\n      entry: python .github/scripts/verify_mkdocs_nav.py\n      language: system\n      pass_filenames: false\n"""
+
+PRE_COMMIT_PY = """# python quality\n- repo: https://github.com/astral-sh/ruff-pre-commit\n  rev: v0.6.9\n  hooks:\n    - id: ruff\n      args: [--fix, --exit-non-zero-on-fix]\n    - id: ruff-format\n- repo: https://github.com/psf/black\n  rev: 24.10.0\n  hooks:\n    - id: black\n- repo: https://github.com/PyCQA/bandit\n  rev: 1.7.10\n  hooks:\n    - id: bandit\n      args: [-r, .]\n- repo: https://github.com/codespell-project/codespell\n  rev: v2.3.0\n  hooks:\n    - id: codespell\n      args: [\"-L\", \"crate,nd,te,ser,fo,ba\"]\n"""
+
+PRE_COMMIT_PRETTIER = """# prettier (npx)\n- repo: local\n  hooks:\n    - id: prettier\n      name: prettier\n      entry: bash scripts/prettier.sh\n      language: system\n      pass_filenames: false\n"""
+
+VERIFY_NAV = r"""# .github/scripts/verify_mkdocs_nav.py
+import sys, os
+from pathlib import Path
+try:
+    import yaml  # type: ignore
+except Exception:
+    os.system("python -m pip install pyyaml >/dev/null 2>&1")
+    import yaml  # type: ignore
+
+ROOT = Path(__file__).resolve().parents[2]
+mk = ROOT / "mkdocs.yml"
+docs = ROOT / "docs"
+
+def iter_nav(n):
+    if isinstance(n, list):
+        for i in n:
+            yield from iter_nav(i)
+    elif isinstance(n, dict):
+        for _, v in n.items():
+            if isinstance(v, str):
+                yield v
+            else:
+                yield from iter_nav(v)
+
+if not mk.exists(): sys.exit(0)
+cfg = yaml.safe_load(mk.read_text(encoding="utf-8")) or {}
+nav = cfg.get("nav", [])
+missing = []
+for rel in iter_nav(nav):
+    if rel.startswith(("http://","https://")): continue
+    p = docs / rel
+    if not p.exists():
+        missing.append(rel)
+if missing:
+    print("❌ mkdocs.yml references missing files:\\n  - " + "\\n  - ".join(missing)); sys.exit(1)
+print("✅ mkdocs nav sanity OK")
+"""
+
+PACKAGE_JSON_SNIPPET = {
+  "name": "sonicbuilder-supersonic",
+  "private": True,
+  "devDependencies": {
+    "markdownlint-cli2": "^0.15.0",
+    "prettier": "^3.3.3"
+  },
+  "scripts": {
+    "lint:md": "markdownlint-cli2 \"**/*.md\"",
+    "fmt": "prettier -w \"**/*.{js,jsx,ts,tsx,css,scss,html,json,yml,yaml,md}\""
+  }
+}
+
+def ensure_package_json():
+    pj = ROOT / "package.json"
+    if pj.exists():
+        try:
+            data = json.loads(pj.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+        dev = data.setdefault("devDependencies", {})
+        dev.update(PACKAGE_JSON_SNIPPET["devDependencies"])
+        scripts = data.setdefault("scripts", {})
+        scripts.update(PACKAGE_JSON_SNIPPET["scripts"])
+        pj.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        print("→ merged package.json devDependencies & scripts")
+    else:
+        pj.write_text(json.dumps(PACKAGE_JSON_SNIPPET, indent=2) + "\n", encoding="utf-8")
+        print("→ wrote package.json")
+
+def main():
+    # Hygiene
+    write(ROOT / ".editorconfig", EDITORCONFIG, overwrite=False)
+    write(ROOT / ".markdownlint.jsonc", MARKDOWNLINT, overwrite=False)
+    write(ROOT / "lychee.toml", LYCHEE, overwrite=False)
+    # Python config
+    pyproj = ROOT / "pyproject.toml"
+    if not pyproj.exists():
+        write(pyproj, PYPROJECT, overwrite=True)
+    else:
+        print("→ pyproject.toml exists (kept)")
+    # NPM deps & scripts
+    ensure_package_json()
+    # Helper scripts
+    write(ROOT / "scripts" / "markdownlint.sh", MARKDOWNLINT_SH, executable=True)
+    write(ROOT / "scripts" / "lychee_check.sh", LYCHEE_SH, executable=True)
+    write(ROOT / "scripts" / "mkdocs_strict.sh", MKDOCS_STRICT_SH, executable=True)
+    write(ROOT / "scripts" / "prettier.sh", PRETTIER_SH, executable=True)
+    # mkdocs nav sanity helper
+    write(ROOT / ".github" / "scripts" / "verify_mkdocs_nav.py", VERIFY_NAV, executable=False)
+    # pre-commit
+    pc = ROOT / ".pre-commit-config.yaml"
+    if not pc.exists():
+        write(pc, PRE_COMMIT_BASE)
+    ensure_merge_yaml_block(pc, PRE_COMMIT_MD, "markdownlint-cli2")
+    ensure_merge_yaml_block(pc, PRE_COMMIT_LYCHEE, "lychee-links")
+    ensure_merge_yaml_block(pc, PRE_COMMIT_MKDOCS, "mkdocs-nav-sanity")
+    ensure_merge_yaml_block(pc, PRE_COMMIT_PY, "ruff-pre-commit")
+    ensure_merge_yaml_block(pc, PRE_COMMIT_PRETTIER, "prettier")
+    print("\n✅ Hardening pack installed. Next steps printed by the shell wrapper.")
+if __name__ == "__main__":
+    main()
+PY
+
+python3 supersonic_hardening_bootstrap.py
+
+# Install Python pieces for local runs
+python3 -m pip install --upgrade pip >/dev/null
+pip install pre-commit bandit codespell >/dev/null
+
+# Install Node tools for md/prettier (uses package.json we just wrote/merged)
+if command -v npm >/dev/null 2>&1; then
+  npm install --no-audit --no-fund >/dev/null
+else
+  echo "⚠ npm not found; markdownlint/prettier hooks will fail locally until npm is installed."
+fi
+
+# Wire and update pre-commit hooks
+pre-commit autoupdate >/dev/null || true
+pre-commit install
+
+# First full pass (won’t stop you now; just reports). Remove "|| true" if you want it to hard-fail now.
+pre-commit run --all-files || true
+
+echo
+echo "✅ Supersonic hardening complete."
+echo "   • Python: ruff, black, bandit, codespell"
+echo "   • Docs: markdownlint, lychee, mkdocs strict, nav sanity"
+echo "   • Web: prettier"
+echo "   • Editor: .editorconfig"
+echo
+echo "Next commits will enforce these. CI already mirrors them."

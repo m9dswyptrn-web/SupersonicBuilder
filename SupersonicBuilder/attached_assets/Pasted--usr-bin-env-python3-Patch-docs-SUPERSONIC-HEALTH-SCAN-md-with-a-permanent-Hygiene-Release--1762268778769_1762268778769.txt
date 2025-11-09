@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""
+Patch docs/SUPERSONIC_HEALTH_SCAN.md with a permanent
+"Hygiene & Release Routine" section, then commit & tag.
+
+Usage:
+  python3 tools/patch_docs_healthscan.py
+  python3 tools/patch_docs_healthscan.py --no-tag
+  python3 tools/patch_docs_healthscan.py --version v4.0.2-docs
+  python3 tools/patch_docs_healthscan.py --dry-run
+
+Behavior:
+- Creates docs/SUPERSONIC_HEALTH_SCAN.md if it doesn't exist.
+- Replaces any previous block between the START/END markers (idempotent).
+- Commits changes and tags a release (default: v4.0.2-docs).
+"""
+
+from __future__ import annotations
+import argparse
+import os
+import subprocess
+from pathlib import Path
+from textwrap import dedent
+
+ROOT = Path(__file__).resolve().parents[1]
+DOCS = ROOT / "docs"
+TARGET = DOCS / "SUPERSONIC_HEALTH_SCAN.md"
+
+MARK_START = "<!-- SUPERSONIC_HYGIENE_RELEASE:START -->"
+MARK_END   = "<!-- SUPERSONIC_HYGIENE_RELEASE:END -->"
+
+BLOCK = dedent("""
+    <!-- SUPERSONIC_HYGIENE_RELEASE:START -->
+    ## 🧼 Supersonic Hygiene & Release Routine — v4.0.1 and Later
+
+    ### 🧩 Purpose  
+    This section defines the unified process for verifying, linting, type-checking, documenting, and publishing Supersonic releases. It ensures that every build entering production is **validated, reproducible, and fully documented**.
+
+    ---
+
+    ### 🔧 One-Shot Local Hygiene Commands
+    ```bash
+    make hooks lint typecheck
+    make health-scan
+    make health-open
+    ```
+    - **hooks** → runs all pre-commit checks  
+    - **lint** → applies Ruff + Black auto-fixes  
+    - **typecheck** → runs MyPy validation  
+    - **health-scan** → performs repository-wide structural scan  
+    - **health-open** → opens the generated report (`docs/HEALTH_REPORT.md`)
+
+    ---
+
+    ### 🚀 Hygiene Release Commit Flow
+    ```bash
+    git add -A
+    git commit -m "chore: add dev hygiene configs, pre-commit, and budgets dashboard docs"
+    VERSION=v4.0.1-hygiene
+    git tag -a $VERSION -m "Supersonic hygiene + dashboard polish"
+    git push
+    git push --tags
+    ```
+    This guarantees the GitHub Action **Release Budgets & Badges** triggers automatically.
+
+    ---
+
+    ### 🧮 Optional — Automated Release via CLI
+    ```bash
+    export GITHUB_REPOSITORY="ChristopherElgin/SonicBuilderSupersonic"
+    export GITHUB_TOKEN="ghp_..."
+    python3 tools/release_now.py --version $VERSION --create-release
+    ```
+    **Result:**  
+    - Budgets dashboard rebuilt and committed  
+    - Tag pushed  
+    - GitHub Release created and annotated  
+    - Budget badges and sparkline generated automatically  
+
+    ---
+
+    ### 📊 Validation Checklist
+    | Check | Command | Expected Output |
+    |-------|----------|----------------|
+    | 🟩 Lint Clean | `make lint` | “0 violations” |
+    | 🟩 Type Safe | `make typecheck` | “Success: no issues” |
+    | 🟩 Health OK | `make health-scan` | “No missing integrations” |
+    | 🟩 Docs Up-to-date | `make release-budgets` | new `docs/budgets.html` and SVG |
+
+    ---
+
+    ### 💡 Tips
+    - Use `make release-open` to preview dashboard updates locally.  
+    - Use `python3 tools/release_now.py --dry-run` before live tagging to preview actions.  
+    - Adjust budget thresholds any time:
+      ```bash
+      export TOTAL_WARN_MB="900"
+      export TOTAL_HARD_MB="1200"
+      ```
+    <!-- SUPERSONIC_HYGIENE_RELEASE:END -->
+""").strip() + "\n"
+
+def run(cmd: str, check=True):
+    print(f"$ {cmd}")
+    return subprocess.run(cmd, shell=True, check=check)
+
+def ensure_file_with_header(path: Path):
+    if path.exists():
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    header = "# Supersonic Health Scan\n\n"
+    path.write_text(header, encoding="utf-8")
+    print(f"Created {path}")
+
+def patch_block():
+    ensure_file_with_header(TARGET)
+    original = TARGET.read_text(encoding="utf-8")
+    if MARK_START in original and MARK_END in original:
+        pre = original.split(MARK_START)[0]
+        post = original.split(MARK_END)[-1]
+        merged = pre.rstrip() + "\n\n" + BLOCK + "\n" + post.lstrip()
+        action = "updated"
+    else:
+        # Append at end with a divider
+        divider = "\n\n---\n\n" if not original.endswith("\n\n") else ""
+        merged = original + divider + BLOCK
+        action = "inserted"
+    TARGET.write_text(merged, encoding="utf-8")
+    print(f"{action.capitalize()} hygiene block in {TARGET}")
+    return action
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--version", default="v4.0.2-docs",
+                    help="Tag name to create (default: v4.0.2-docs)")
+    ap.add_argument("--no-tag", action="store_true",
+                    help="Do not create a git tag")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="Print intended changes, no git ops")
+    args = ap.parse_args()
+
+    action = patch_block()
+
+    if args.dry_run:
+        print("Dry-run: skipping git commit/tag.")
+        return
+
+    # Commit changes
+    run(f'git add "{TARGET.as_posix()}"', check=False)
+    run('git commit -m "docs(health): update hygiene & release routine section"', check=False)
+
+    # Tag (optional)
+    if not args.no_tag:
+        run(f'git tag -a {args.version} -m "Docs update: hygiene & release routine"')
+        run("git push")
+        run("git push --tags")
+        print(f"✅ Pushed tag {args.version}")
+    else:
+        run("git push")
+        print("✅ Changes pushed (no tag)")
+
+if __name__ == "__main__":
+    main()

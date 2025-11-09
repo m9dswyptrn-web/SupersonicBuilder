@@ -1,0 +1,18 @@
+# Standalone preflight and artifact-inventory targets
+# Include this in your main Makefile with: -include Makefile.preflight
+
+.PHONY: preflight artifact-inventory
+
+preflight:
+	@echo "🔎 Preflight: checking required tools and files..."
+	@command -v git >/dev/null || (echo "❌ git missing"; exit 1)
+	@command -v python3 >/dev/null || (echo "❌ python3 missing"; exit 1)
+	@[ -n "$$(git config user.name || true)" ] || git config user.name "SonicBuilder AutoDeploy"
+	@[ -n "$$(git config user.email || true)" ] || git config user.email "autodeploy@users.noreply.github.com"
+	@echo "✅ Preflight OK"
+
+artifact-inventory:
+	@echo "📦 Artifact inventory (out/ and dist/):"
+	@ls -lh out/*.pdf 2>/dev/null || true
+	@ls -lh out/*.sha256 2>/dev/null || true
+	@ls -lh dist/*.pdf 2>/dev/null || true

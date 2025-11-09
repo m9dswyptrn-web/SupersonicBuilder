@@ -1,0 +1,4 @@
+trigger_ground:
+  title: Trigger Bus + Star Ground
+  diagram: trigger_ground
+  photo: trigger_ground_star_point

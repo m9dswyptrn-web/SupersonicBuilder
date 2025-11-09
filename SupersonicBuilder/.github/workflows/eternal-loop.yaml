@@ -1,0 +1,142 @@
+name: 🧠 SonicBuilder Eternal Loop
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # Runs every hour on the hour
+  workflow_dispatch:      # Manual run support
+
+jobs:
+  eternal-loop:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 🌀 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🧰 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: ⚙️ Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt || echo "No requirements.txt or install failed"
+
+      - name: 🧱 Rebuild Documentation
+        run: |
+          echo "🔨 Rebuilding SonicBuilder Documentation..."
+          if [ -f "supersonic_autodeploy.py" ]; then
+            python3 supersonic_autodeploy.py || echo "⚠️  Build encountered issues"
+          else
+            echo "⚠️  No build script found, skipping..."
+          fi
+
+      - name: 💓 Generate Harmony Badge
+        run: |
+          python3 generate_heartbeat_badge.py
+
+      - name: 🏷️ Update README and Badges
+        run: |
+          python3 founder_infinity/scripts/update_badges.py
+
+      - name: 🪞 Mirror Harmony Dashboard to GitHub Pages
+        run: |
+          python3 export_dashboard_to_pages.py
+
+      - name: 📡 Mirror Harmony Feed to GitHub Pages
+        env:
+          REPLIT_URL: ${{ secrets.REPLIT_HARMONY_URL }}
+        run: |
+          mkdir -p docs_build/status
+          
+          # Extract base URL from harmony URL (remove /founder_autodeploy/harmony)
+          BASE_URL="${REPLIT_URL%/founder_autodeploy/harmony}"
+          
+          echo "📡 Fetching feeds from: $BASE_URL"
+          
+          # Download JSON and RSS feeds
+          curl -sf "$BASE_URL/status/feed" -o docs_build/status/feed.json || echo "⚠️  JSON feed fetch failed"
+          curl -sf "$BASE_URL/status/feed?format=rss" -o docs_build/status/feed.rss || echo "⚠️  RSS feed fetch failed"
+          
+          echo "✅ Harmony feed JSON and RSS mirrored to docs_build/status/"
+
+      - name: 🗄️ Archive Harmony Feed Snapshot
+        run: |
+          mkdir -p docs_build/status/archive
+          ARCHIVE_NAME="feed_$(date -u +%Y%m%d).json"
+          
+          if [ -f docs_build/status/feed.json ]; then
+            cp docs_build/status/feed.json "docs_build/status/archive/${ARCHIVE_NAME}"
+            echo "🗂️  Archived feed as ${ARCHIVE_NAME}"
+          else
+            echo "⚠️  No feed.json found, skipping archive"
+          fi
+
+      - name: 🧾 Generate Archive Index
+        run: |
+          mkdir -p docs_build/status/archive
+          echo "<!DOCTYPE html><html><head><title>Harmony Feed Archive</title>" > docs_build/status/archive/index.html
+          echo "<style>body{font-family:sans-serif;max-width:800px;margin:50px auto;background:#0d1117;color:#e6edf3;}" >> docs_build/status/archive/index.html
+          echo "a{color:#58a6ff;text-decoration:none;}a:hover{text-decoration:underline;}</style></head>" >> docs_build/status/archive/index.html
+          echo "<body><h1>📜 Harmony Feed Archive</h1>" >> docs_build/status/archive/index.html
+          echo "<p>Daily snapshots of the Harmony heartbeat feed.</p><ul>" >> docs_build/status/archive/index.html
+          
+          for f in docs_build/status/archive/feed_*.json; do
+            if [ -f "$f" ]; then
+              fname=$(basename "$f")
+              echo "<li><a href='$fname'>$fname</a></li>" >> docs_build/status/archive/index.html
+            fi
+          done
+          
+          echo "</ul><p><a href='../feed.json'>← Back to live feed</a></p></body></html>" >> docs_build/status/archive/index.html
+          echo "✅ Archive index generated"
+
+      - name: 🔍 Generate Feed Health Badge
+        run: |
+          python3 scripts/gen_feed_badge.py
+
+      - name: 🚀 Deploy to GitHub Pages
+        if: github.ref == 'refs/heads/main'
+        run: |
+          if [ -f "founder_infinity/scripts/deploy_pages.sh" ]; then
+            bash founder_infinity/scripts/deploy_pages.sh
+          else
+            echo "⚠️  Deployment script not found"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🛰️ Verify Health
+        run: |
+          echo "✅ Verifying deployment health..."
+          if [ -f "docs_build/latest.pdf" ]; then
+            echo "✅ PDF exists"
+          else
+            echo "⚠️  PDF not found"
+          fi
+          
+          # Check Pages health (if deployed)
+          PAGES_URL="https://${{ github.repository_owner }}.github.io/SonicBuilder/latest.pdf"
+          echo "📡 Checking: $PAGES_URL"
+          curl -Is "$PAGES_URL" | head -n 1 || echo "⚠️  Pages not yet deployed"
+
+      - name: 🔁 Commit Updated Metadata
+        run: |
+          git config user.name "SonicBuilder Eternal Agent"
+          git config user.email "eternal@sonicbuilder.local"
+          git add README.md badges/*.json docs_build/ || true
+          git commit -m "♻️ Eternal Loop: metadata + feed refresh [$(date -u '+%Y-%m-%d %H:%M:%S UTC')]" || echo "No changes to commit"
+          git push || echo "No changes to push"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📊 Summary
+        run: |
+          echo "╔════════════════════════════════════════════════════════════════╗"
+          echo "║   ✨ SonicBuilder Eternal Loop Completed                      ║"
+          echo "╚════════════════════════════════════════════════════════════════╝"
+          echo ""
+          echo "Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Run: #${{ github.run_number }}"

@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""
+Supersonic Ingest Auditor
+- Scans repo for newly ingested .py files
+- Dedupes by SHA256
+- Classifies each file: standalone / package / snippet
+- (Dry-run) shows proposed moves to: tools/, supersonic_pkg/, extras/snippets/
+- Writes a REPORT at docs/INGEST_REPORT.md
+- Use --apply to actually move files
+"""
+
+import argparse, hashlib, os, re, shutil, sys, textwrap
+from datetime import datetime
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]  # repo root from tools/
+IGNORE_DIRS = {".git", ".github", ".venv", "venv", "__pycache__", "node_modules", "build", "dist", ".replit", ".mypy_cache", ".ruff_cache", ".pytest_cache", ".idea", ".vscode", ".DS_Store", "tmp", "temp"}
+DEST_TOOLS = REPO / "tools"
+DEST_PKG   = REPO / "supersonic_pkg"
+DEST_SNIP  = REPO / "extras" / "snippets"
+REPORT_MD  = REPO / "docs" / "INGEST_REPORT.md"
+
+PKG_INITS = {"__init__.py"}
+
+STANDALONE_HINTS = (
+    r"if\s+__name__\s*==\s*[\"']__main__[\"']",
+    r"argparse\.ArgumentParser\(",
+    r"click\.command\(",
+)
+
+def sha256(p: Path) -> str:
+    h = hashlib.sha256()
+    with p.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+def looks_standalone(code: str) -> bool:
+    for pat in STANDALONE_HINTS:
+        if re.search(pat, code):
+            return True
+    return False
+
+def looks_pkg_file(p: Path, code: str) -> bool:
+    # package-ish if it's __init__.py or has clear importable functions/classes without a main block
+    if p.name in PKG_INITS:
+        return True
+    if "class " in code or "def " in code:
+        return not looks_standalone(code)
+    return False
+
+def classify_file(p: Path) -> str:
+    try:
+        code = p.read_text(errors="ignore")
+    except Exception:
+        return "snippet"
+    if looks_standalone(code):
+        return "standalone"
+    if looks_pkg_file(p, code):
+        return "package"
+    return "snippet"
+
+def discover_py_files():
+    for p in REPO.rglob("*.py"):
+        # Skip internal tool & known destinations to avoid reprocessing endlessly
+        if any(seg in IGNORE_DIRS for seg in p.parts):
+            continue
+        if p.is_dir():
+            continue
+        # Don’t reclassify our destinations
+        if DEST_TOOLS in p.parents or DEST_PKG in p.parents or DEST_SNIP in p.parents:
+            continue
+        yield p
+
+def ensure_dirs():
+    for d in [DEST_TOOLS, DEST_PKG, DEST_SNIP, REPORT_MD.parent]:
+        d.mkdir(parents=True, exist_ok=True)
+    # ensure package root has __init__.py
+    (DEST_PKG / "__init__.py").touch(exist_ok=True)
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--apply", action="store_true", help="Actually move files into destinations")
+    ap.add_argument("--only-new", action="store_true", help="Ignore files already under tools/, supersonic_pkg/, extras/snippets/")
+    args = ap.parse_args()
+
+    ensure_dirs()
+
+    files = list(discover_py_files())
+    entries = []
+    hashes = {}
+    dups = []
+
+    for p in files:
+        try:
+            h = sha256(p)
+        except Exception:
+            continue
+        if h in hashes:
+            dups.append((p, hashes[h]))
+            # keep one, mark other as duplicate
+        else:
+            hashes[h] = p
+            kind = classify_file(p)
+            entries.append((p, h, kind))
+
+    moves = []
+    for p, h, kind in entries:
+        dest_root = DEST_TOOLS if kind == "standalone" else DEST_PKG if kind == "package" else DEST_SNIP
+        planned = dest_root / p.name
+        if planned.resolve() == p.resolve():
+            continue
+        moves.append((p, planned, kind))
+
+    # Render report
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
+    lines = []
+    lines.append(f"# Ingest Audit Report\n\nGenerated: **{now} UTC**\n")
+    lines.append(f"- Repository: `{REPO.name}`")
+    lines.append(f"- Total .py scanned: **{len(files)}**")
+    lines.append(f"- Unique (non-duplicate): **{len(entries)}**")
+    lines.append(f"- Duplicates detected: **{len(dups)}**\n")
+
+    if dups:
+        lines.append("## Duplicates\n")
+        for a, b in dups:
+            lines.append(f"- `{a}` is duplicate of `{b}`")
+        lines.append("")
+
+    groups = {"standalone": [], "package": [], "snippet": []}
+    for p, h, kind in entries:
+        groups[kind].append(p)
+
+    for kind, plist in groups.items():
+        lines.append(f"## {kind.title()} ({len(plist)})\n")
+        for p in sorted(plist):
+            lines.append(f"- `{p}`")
+        lines.append("")
+
+    if moves:
+        lines.append("## Proposed Moves\n")
+        for src, dst, kind in moves:
+            lines.append(f"- `{src}` → `{dst}`  _(as {kind})_")
+        lines.append("")
+    else:
+        lines.append("## Proposed Moves\n- None (all organized)\n")
+
+    REPORT_MD.write_text("\n".join(lines))
+    print(f"Report written to {REPORT_MD}")
+
+    if not moves and not dups:
+        print("Everything already looks tidy. ✅")
+        return
+
+    if args.apply:
+        # Execute moves (create parents just in case)
+        for src, dst, _ in moves:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            print(f"Moving: {src} -> {dst}")
+            shutil.move(str(src), str(dst))
+        print("Re-run to generate a fresh report after moves. ✅")
+    else:
+        print("\nDRY-RUN complete. No files were moved. Add --apply to perform the moves.")
+
+if __name__ == "__main__":
+    sys.exit(main())

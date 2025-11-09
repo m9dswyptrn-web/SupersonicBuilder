@@ -1,0 +1,8 @@
+# 1) Unzip the package
+# 2) Create the auto-elevating Desktop shortcut
+cd SonicBuilder\tools
+.\Create_SonicBuilder_Shortcut_AutoElevate.ps1 -Version "5.0.0" -OutDir "." -Push "both"
+
+# 3) Double-click on your Desktop:
+#    “SonicBuilder Build (Auto).lnk”
+#    → auto-elevates → builds FULL zip → makes LATEST link → optional GitHub/S3 push

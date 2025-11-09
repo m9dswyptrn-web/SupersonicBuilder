@@ -1,0 +1,4 @@
+export FLASK_ENV=development
+# optional override:
+# export CATALOG_TTL_HOURS=0.17
+flask run

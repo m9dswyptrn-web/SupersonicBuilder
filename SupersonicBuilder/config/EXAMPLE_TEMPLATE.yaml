@@ -1,0 +1,38 @@
+# Example YAML Template - Simplified Field Names
+# Copy this template to create new sections
+
+section_name:
+  title: "Section Title"
+  
+  # DIAGRAMS & PHOTOS (extension-less names, auto-finds .svg/.png/.jpg)
+  diagram: "left_side_diagram"       # Left side - technical diagram
+  photo: "right_side_photo"          # Right side - installation photo
+  # Alternative: diagram_right: "some_diagram"  # Use diagram instead of photo on right
+  
+  # MULTI-IMAGE SUPPORT (1-2 images per side)
+  # diagram:
+  #   - "overview_diagram"
+  #   - "detail_diagram"
+  
+  # LAYOUT HINTS (optional)
+  # layout:
+  #   left: "stack"    # or "two-up" (auto if omitted)
+  #   right: "two-up"  # or "stack"
+  
+  # QR CODE (optional)
+  # qr_url: "https://your.video/guide"
+  
+  # INSTALLATION NOTES (optional)
+  notes:
+    - "Key installation tip 1"
+    - "Important wiring note 2"
+    - "Safety reminder 3"
+  
+  # CUSTOM FIELDS (section-specific data)
+  role: "Brief description of component role"
+  outputs:
+    signal_1: "Description of output 1"
+    signal_2: "Description of output 2"
+  inputs:
+    - name: "Input source 1"
+    - name: "Input source 2"

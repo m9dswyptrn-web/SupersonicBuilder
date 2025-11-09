@@ -1,0 +1,5 @@
+function forgetState() {
+  LAST.has = false;
+  clearLastInStorage();
+  showRestart(false);
+}

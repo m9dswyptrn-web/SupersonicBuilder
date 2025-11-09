@@ -1,0 +1,48 @@
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install deps
+        run: pip install reportlab
+
+      - name: Build artifacts
+        shell: bash
+        run: |
+          # Rebuild the dark installer card (idempotent)
+          python tools/make_installer_card.py || true
+
+          # Ensure build dir exists
+          mkdir -p build
+
+          # Package the health pack ZIP (PDF + health snapshot)
+          ZIP="build/Supersonic_Control_And_Health_Pack_${GITHUB_REF_NAME}.zip"
+          rm -f "$ZIP"
+          zip -j "$ZIP" \
+            docs/installer/Supersonic_Installer_Summary_Dark_USLetter.pdf \
+            docs/status/git_health_snapshot.txt
+
+      - name: Publish GitHub Release (attach 3 files)
+        uses: softprops/action-gh-release@v2
+        with:
+          name: SupersonicBuilder ${{ github.ref_name }}
+          files: |
+            build/Supersonic_Control_And_Health_Pack_${{ github.ref_name }}.zip
+            docs/installer/Supersonic_Installer_Summary_Dark_USLetter.pdf
+            docs/status/git_health_snapshot.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

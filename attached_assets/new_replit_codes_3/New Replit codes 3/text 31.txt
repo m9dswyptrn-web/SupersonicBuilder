@@ -1,0 +1,2 @@
+#dp-canvas { width:100%; height:auto; display:block; background:#0b0f14; }
+.dp-preview-toolbar .sep { opacity:.5; margin:0 .35rem; }

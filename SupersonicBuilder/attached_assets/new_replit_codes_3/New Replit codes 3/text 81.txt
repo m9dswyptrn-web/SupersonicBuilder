@@ -1,0 +1,28 @@
+function lastTooltipText() {
+  if (!LAST || !LAST.has) return "No previous preview.";
+  const time = new Date().toLocaleString();
+  const zoom = LAST.scale ? `${(LAST.scale*100).toFixed(0)}% zoom` : "";
+  const rot  = LAST.rotation ? `${LAST.rotation}° rotation` : "";
+  const fmtv = `${LAST.fmt || "pdf"} · ${LAST.variant || "dark"}`;
+  return [
+    `${LAST.make} ${LAST.model} ${LAST.year}`,
+    `Diagram: ${LAST.id || "—"}`,
+    `Format: ${fmtv}`,
+    `Page: ${LAST.page || 1}`,
+    zoom, rot,
+    `Saved: ${time}`
+  ].filter(Boolean).join("\n");
+}
+
+// enhance the showRestart() to update tooltip too
+function showRestart(show=true) {
+  if (btnRestart) {
+    btnRestart.hidden = !show;
+    btnRestart.title = show ? "↺ Restart last preview\n" + lastTooltipText() : "";
+  }
+  if (lblRestart) {
+    lblRestart.textContent = lastLabelText();
+    lblRestart.hidden = !show;
+    lblRestart.title = show ? lastTooltipText() : "";
+  }
+}

@@ -1,0 +1,4 @@
+  // Fit presets + ZIP
+  const btnFitW   = $("dp-fitw");
+  const btnFitH   = $("dp-fith");
+  const btnZip    = $("dp-download-zip");

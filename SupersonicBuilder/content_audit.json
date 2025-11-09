@@ -1,0 +1,97 @@
+{
+  "core_scripts": [
+    {
+      "path": "replit_auto_healer.py",
+      "description": "Auto-healer service",
+      "exists": true,
+      "status": "\u2705"
+    },
+    {
+      "path": "replit_feed_dashboard.py",
+      "description": "Feed dashboard",
+      "exists": true,
+      "status": "\u2705"
+    },
+    {
+      "path": "serve_pdfs.py",
+      "description": "PDF viewer service",
+      "exists": true,
+      "status": "\u2705"
+    },
+    {
+      "path": "supersonic_settings_server.py",
+      "description": "Settings server",
+      "exists": true,
+      "status": "\u2705"
+    },
+    {
+      "path": "autopush_to_github.py",
+      "description": "GitHub autopush script",
+      "exists": true,
+      "status": "\u2705"
+    },
+    {
+      "path": "create_support_bundle.py",
+      "description": "Support bundle generator",
+      "exists": true,
+      "status": "\u2705"
+    },
+    {
+      "path": "cleanup_large_files.sh",
+      "description": "Large files cleanup script",
+      "exists": true,
+      "status": "\u2705"
+    }
+  ],
+  "workflows": [],
+  "documentation": [
+    {
+      "path": "README.md",
+      "description": "Main documentation",
+      "exists": true,
+      "status": "\u2705"
+    },
+    {
+      "path": "replit.md",
+      "description": "Replit project documentation",
+      "exists": true,
+      "status": "\u2705"
+    },
+    {
+      "path": "docs/README.md",
+      "description": "Docs folder",
+      "exists": false,
+      "status": "\u274c"
+    }
+  ],
+  "badges": [],
+  "dependencies": [
+    {
+      "path": "requirements.txt",
+      "description": "Python dependencies",
+      "exists": true,
+      "status": "\u2705"
+    },
+    {
+      "path": ".gitignore",
+      "description": "Git ignore rules",
+      "exists": true,
+      "status": "\u2705"
+    },
+    {
+      "path": ".replit",
+      "description": "Replit config",
+      "exists": true,
+      "status": "\u2705"
+    },
+    {
+      "path": "replit.nix",
+      "description": "Nix environment config",
+      "exists": false,
+      "status": "\u274c"
+    }
+  ],
+  "python_errors": [],
+  "missing_critical": [],
+  "recommendations": []
+}

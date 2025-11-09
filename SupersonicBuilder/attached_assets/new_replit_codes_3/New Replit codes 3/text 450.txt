@@ -1,0 +1,11 @@
+<!-- Settings -->
+<div class="settings" style="position:relative;">
+  <button class="pill" id="settingsBtn" onclick="toggleSettings()" title="Audio & voice options">Settings ⚙️</button>
+  <div id="settingsMenu" class="dropdown" style="display:none;">
+    <label><input type="checkbox" id="optSound"> Enable sound cues</label>
+    <label><input type="checkbox" id="optVoice"> Enable voice cues</label>
+    <label><input type="checkbox" id="optAutoSpeak"> Auto-speak when Ready</label>
+    <div class="hr"></div>
+    <button class="pill" onclick="testCues()">Test cues</button>
+  </div>
+</div>

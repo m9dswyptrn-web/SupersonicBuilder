@@ -1,0 +1,10 @@
+Makefile
+tools/preflight.sh
+tools/verify_artifacts.py
+tools/release.sh
+.github/workflows/sonicbuilder-release.yml
+docs/CONTRIBUTING.md
+RELEASE_NOTES.md
+.editorconfig
+.gitignore
+sonicbuilder.toml.sample

@@ -1,0 +1,39 @@
+# Workflows
+write(ROOT / ".github" / "workflows" / "supersonic-build.yml", CI_YML)
+write(ROOT / ".github" / "workflows" / "supersonic-release.yml", _subst(RELEASE_YML))
+write(ROOT / ".github" / "workflows" / "docs-mkdocs.yml", DOCS_WORKFLOW)
+
+# Vendors
+write(ROOT / "tools" / "get_pdfjs.sh", _subst(REPLIT_TO_GH).split("cat > tools/get_pdfjs.sh <<'SH'\n")[1].split("\nSH")[0] + "\n", exe=True, do_subst=False)
+write(ROOT / "tools" / "get_jszip.sh", _subst(REPLIT_TO_GH).split("cat > tools/get_jszip.sh <<'SH'\n")[1].split("\nSH")[0] + "\n", exe=True, do_subst=False)
+
+# Docs
+write(ROOT / "mkdocs.yml", MKDOCS_YML)
+write(ROOT / "requirements.docs.txt", REQS)
+write(ROOT / "docs" / "index.md", INDEX_MD)
+write(ROOT / "docs" / "quickstart.md", QUICKSTART_MD)
+write(ROOT / "docs" / "build-run.md", BUILD_RUN_MD)
+write(ROOT / "docs" / "diagrams" / "picker.md", PICKER_MD)
+write(ROOT / "docs" / "diagrams" / "export.md", EXPORT_MD)
+write(ROOT / "docs" / "devops" / "ci.md", CI_MD)
+write(ROOT / "docs" / "devops" / "releases.md", RELEASES_MD)
+write(ROOT / "docs" / "about.md", ABOUT_MD)
+(ROOT / "docs" / "assets").mkdir(parents=True, exist_ok=True)
+with open(ROOT / "docs" / "assets" / "preview_placeholder.png", "wb") as f:
+    f.write(ASSET_PNG)
+print("→ wrote docs/assets/preview_placeholder.png")
+
+# Extras
+write(ROOT / ".env.example", ENV_EXAMPLE)
+write(ROOT / "README_badges_snippet.md", BADGES)
+
+print("\n✅ Super bootstrap complete.")
+print("Detected OWNER/REPO →", OWNER, "/", REPO)
+if OWNER == "OWNER" or REPO == "REPO":
+    print("⚠️  Tip: set GITHUB_OWNER/GITHUB_REPO env vars before running to auto-stamp docs/links.")
+print("\nNext:")
+print("  1) chmod +x replit_to_github.sh tools/get_pdfjs.sh tools/get_jszip.sh")
+print("  2) (optional) gh auth login  # or set GITHUB_TOKEN")
+print("  3) ./replit_to_github.sh")
+print("  4) Commit/push; Actions will run CI + Docs to gh-pages")
+print("  5) First time only: Settings → Pages → Source: GitHub Actions")

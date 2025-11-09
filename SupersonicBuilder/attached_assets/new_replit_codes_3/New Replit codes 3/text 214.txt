@@ -1,0 +1,2 @@
+python3 supersonic_super_bootstrap.py
+python3 release_notes_bootstrap.py

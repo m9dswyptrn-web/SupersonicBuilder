@@ -1,0 +1,43 @@
+# After printing Key paths and .env status, insert this:
+
+# --- Failure hooks: missing model or CPU-only warning ---
+from pathlib import Path
+import subprocess
+
+# Determine model path from .env (simple parse)
+model_path = "gguf/llama-3.1-8b-q4_0.gguf"
+env_file = ROOT / ".env"
+if env_file.exists():
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        if line.startswith("AGENT_MODEL="):
+            model_path = line.split("=",1)[1].strip()
+            break
+
+model_missing = not Path(model_path).exists()
+
+# Ask gpu_detect to see backend
+backend = "unknown"
+gp = ROOT / "scripts" / "gpu_detect.py"
+if gp.exists():
+    out = run_py([str(gp)]).stdout
+    for ln in out.splitlines():
+        if ln.startswith("Backend:"):
+            backend = ln.split(":",1)[1].strip()
+            break
+
+# Emit error pings when appropriate
+if model_missing:
+    print("\n❌ Model file is missing:", model_path)
+    try:
+        subprocess.run([sys.executable, "scripts/post_tune_ping.py", "--error",
+                        f"Model not found: {model_path}"], check=False)
+    except Exception:
+        pass
+
+elif backend in ("cpu","unknown"):
+    print("\n⚠️ GPU acceleration not detected; running on CPU.")
+    try:
+        subprocess.run([sys.executable, "scripts/post_tune_ping.py", "--error",
+                        "GPU acceleration not detected; CPU mode"], check=False)
+    except Exception:
+        pass

@@ -1,0 +1,42 @@
+name: SonicBuilder Health Check
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+  workflow_dispatch:
+
+jobs:
+  healthcheck:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Check GitHub Pages
+        run: |
+          curl -f https://m9dswyptrn-web.github.io/SonicBuilder/ || exit 1
+      
+      - name: Verify badge endpoints
+        run: |
+          curl -f https://m9dswyptrn-web.github.io/SonicBuilder/badge/latest.json || true
+          curl -f https://m9dswyptrn-web.github.io/SonicBuilder/badge/downloads.json || true
+      
+      - name: Check failsafe status
+        run: |
+          test -f failsafe_tools/failsafe_manifest.json || exit 1
+          test -f failsafe_tools/checksums.sha256 || exit 1
+      
+      - name: Update health badge
+        run: |
+          mkdir -p scripts/badges
+          echo '{"schemaVersion":1,"label":"health","message":"operational","color":"success"}' > scripts/badges/health.json
+      
+      - name: Commit health status
+        if: github.event_name == 'schedule'
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add scripts/badges/health.json || true
+          git commit -m "chore: update health badge" || true
+          git push || true

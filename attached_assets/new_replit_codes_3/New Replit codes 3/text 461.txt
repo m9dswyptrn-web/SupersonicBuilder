@@ -1,0 +1,27 @@
+<div class="hr"></div>
+<label style="flex-direction:column; align-items:flex-start;">
+  <span>Mute until (local):</span>
+  <input type="datetime-local" id="optSnoozeUntil" style="width: 200px;">
+  <div style="display:flex; gap:8px; margin-top:6px;">
+    <button class="pill" onclick="snoozeUntil()">Snooze until…</button>
+    <button class="pill" onclick="unsnooze()">Unmute</button>
+  </div>
+</label>
+
+<div class="hr"></div>
+<div style="font-size:13px; color:#aaa; margin-bottom:6px;">Per-event volumes (multiplier):</div>
+<label>Ready&nbsp;<span id="volReadyPct">100%</span>
+  <input type="range" id="volReady"  min="0" max="100" step="1" style="width:120px;">
+</label>
+<label>Online&nbsp;<span id="volOnlinePct">100%</span>
+  <input type="range" id="volOnline" min="0" max="100" step="1" style="width:120px;">
+</label>
+<label>Error&nbsp;<span id="volErrorPct">100%</span>
+  <input type="range" id="volError"  min="0" max="100" step="1" style="width:120px;">
+</label>
+<label>Bench&nbsp;<span id="volBenchPct">100%</span>
+  <input type="range" id="volBench"  min="0" max="100" step="1" style="width:120px;">
+</label>
+<label>Voice&nbsp;<span id="volVoicePct">100%</span>
+  <input type="range" id="volVoice"  min="0" max="100" step="1" style="width:120px;">
+</label>

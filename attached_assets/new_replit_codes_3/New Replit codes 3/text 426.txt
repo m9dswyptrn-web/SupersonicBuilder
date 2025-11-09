@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# Activate venv if you use one:
+# source .venv/bin/activate
+exec python supervisor.py -- python scripts/run_offline_llm.py

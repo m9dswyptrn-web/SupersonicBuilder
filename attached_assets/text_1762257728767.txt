@@ -1,0 +1,21 @@
+# --- at top of file ---
+import time
+from flask import jsonify, request
+# (you likely already import these)
+
+# --- near other @app.route handlers ---
+@app.route("/api/ping", methods=["GET"])
+def api_ping():
+    """
+    Simple liveness/latency probe.
+    Client sends ?t=<ms since epoch>, we echo back server time.
+    """
+    try:
+        client_t = float(request.args.get("t", "0"))
+    except Exception:
+        client_t = 0.0
+    return jsonify({
+        "ok": True,
+        "server_ts": time.time(),
+        "echo_client_ts": client_t
+    })

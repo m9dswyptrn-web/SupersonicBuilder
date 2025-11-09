@@ -1,0 +1,5 @@
+<div id="theme-menu" class="menu" hidden role="menu" aria-labelledby="theme-toggle">
+  <button class="menu-item" role="menuitem" data-theme="dark">🌙 Dark</button>
+  <button class="menu-item" role="menuitem" data-theme="light">☀️ Light</button>
+  <button class="menu-item" role="menuitem" data-theme="system">🖥 System</button>
+</div>

@@ -1,0 +1,156 @@
+(() => {
+  const KEY = "supersonic-settings";
+  const THEME_KEY = "supersonic-theme"; // shared with theme.js
+
+  const el = {
+    btnCog:  document.getElementById("settings-cog"),
+    modal:   document.getElementById("settings-modal"),
+    close:   document.getElementById("settings-close"),
+    cancel:  document.getElementById("settings-cancel"),
+    save:    document.getElementById("settings-save"),
+    reset:   document.querySelector("[data-close]"),
+
+    themeMode: document.getElementById("set-theme-mode"),
+    themeReset:document.getElementById("set-theme-reset"),
+
+    glow:     document.getElementById("set-glow"),
+    defFmt:   document.getElementById("set-default-format"),
+    defVar:   document.getElementById("set-default-variant"),
+    defQual:  document.getElementById("set-default-quality"),
+    defQualVal:document.getElementById("set-default-quality-val"),
+    remember: document.getElementById("set-remember-last"),
+
+    exportBtn:document.getElementById("set-export"),
+    importBtn:document.getElementById("set-import"),
+    importFile:document.getElementById("set-import-file"),
+  };
+
+  const Default = {
+    glow: true,
+    defaultFormat: "pdf",
+    defaultVariant: "dark",
+    defaultQuality: 1.25,
+    rememberLast: false,
+  };
+
+  function load() {
+    try {
+      return Object.assign({}, Default, JSON.parse(localStorage.getItem(KEY) || "{}"));
+    } catch { return { ...Default }; }
+  }
+  function save(obj) { localStorage.setItem(KEY, JSON.stringify(obj)); }
+  function openModal() { el.modal.hidden = false; }
+  function closeModal() { el.modal.hidden = true; }
+
+  function uiFromSettings(s) {
+    el.glow.checked = !!s.glow;
+    el.defFmt.value = s.defaultFormat;
+    el.defVar.value = s.defaultVariant;
+    el.defQual.value = String(s.defaultQuality || 1.25);
+    el.defQualVal.textContent = `${parseFloat(el.defQual.value).toFixed(2)}×`;
+    el.remember.checked = !!s.rememberLast;
+
+    // Theme picker shows the SAVED preference
+    const savedTheme = localStorage.getItem(THEME_KEY) || "system";
+    el.themeMode.value = (["dark","light","system"].includes(savedTheme) ? savedTheme : "system");
+  }
+
+  function settingsFromUI() {
+    return {
+      glow: !!el.glow.checked,
+      defaultFormat: el.defFmt.value,
+      defaultVariant: el.defVar.value,
+      defaultQuality: parseFloat(el.defQual.value || "1.25"),
+      rememberLast: !!el.remember.checked,
+    };
+  }
+
+  // Apply settings live to existing components (diagram picker, theme, etc.)
+  function applyToRuntime(s) {
+    // 1) Glow toggle: just switch a class that your CSS can check
+    document.body.classList.toggle("no-glow", !s.glow);
+
+    // 2) Default diagram picker values (if those selects exist)
+    const fmt = document.getElementById("dp-format");
+    const vnt = document.getElementById("dp-variant");
+    const qsl = document.getElementById("dp-quality");
+    if (fmt && !fmt.value) fmt.value = s.defaultFormat;
+    if (vnt && !vnt.value) vnt.value = s.defaultVariant;
+    if (qsl) {
+      qsl.value = String(s.defaultQuality || 1.25);
+      const qtxt = document.getElementById("dp-quality-val");
+      if (qtxt) qtxt.textContent = `${parseFloat(qsl.value).toFixed(2)}×`;
+    }
+
+    // 3) Remember last preview on initial load (only if we haven’t shown one yet)
+    if (s.rememberLast && window.SonicDiagramPicker?.restartIfAvailable) {
+      window.SonicDiagramPicker.restartIfAvailable();
+    }
+  }
+
+  // Export / Import
+  el.exportBtn?.addEventListener("click", () => {
+    const payload = { settings: load(), theme: localStorage.getItem(THEME_KEY) || "system" };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "supersonic_settings.json";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  });
+  el.importBtn?.addEventListener("click", () => el.importFile?.click());
+  el.importFile?.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (data?.settings) save(Object.assign({}, Default, data.settings));
+      if (typeof data?.theme === "string") localStorage.setItem(THEME_KEY, data.theme);
+      uiFromSettings(load());
+      // apply theme immediately
+      if (window.SonicTheme?.set) window.SonicTheme.set(data?.theme || "system");
+      applyToRuntime(load());
+      closeModal();
+    } catch {
+      alert("Import failed: not valid supersonic_settings.json");
+    }
+  });
+
+  // Live label for quality
+  el.defQual?.addEventListener("input", () => {
+    el.defQualVal.textContent = `${parseFloat(el.defQual.value || "1.25").toFixed(2)}×`;
+  });
+
+  // Theme controls
+  el.themeReset?.addEventListener("click", () => {
+    localStorage.setItem(THEME_KEY, "system");
+    if (window.SonicTheme?.set) window.SonicTheme.set("system");
+    el.themeMode.value = "system";
+  });
+  el.themeMode?.addEventListener("change", () => {
+    localStorage.setItem(THEME_KEY, el.themeMode.value);
+    if (window.SonicTheme?.set) window.SonicTheme.set(el.themeMode.value);
+  });
+
+  // Open/Close
+  el.btnCog?.addEventListener("click", openModal);
+  el.close?.addEventListener("click", closeModal);
+  el.cancel?.addEventListener("click", closeModal);
+  el.reset?.addEventListener("click", (e) => { if (e.target?.dataset?.close !== undefined) closeModal(); });
+
+  // Save
+  el.save?.addEventListener("click", () => {
+    const s = settingsFromUI();
+    save(s);
+    applyToRuntime(s);
+    closeModal();
+  });
+
+  // Init on load
+  const s = load();
+  uiFromSettings(s);
+  applyToRuntime(s);
+
+  // expose tiny hook for the picker (used by "remember last" feature)
+  window.SonicSettings = { get: load, applyToRuntime };
+})();

@@ -1,0 +1,32 @@
+.mini-status{
+  position: sticky; top: 6px; right: 10px; margin-left:auto;
+  display:flex; gap:10px; align-items:center; justify-content:flex-end;
+  padding:6px 10px; border-radius:10px;
+  background: rgba(10,10,11,.55);
+  border: 1px solid rgba(255,255,255,.06);
+  backdrop-filter: blur(6px);
+}
+.ms-item{
+  display:flex; align-items:center; gap:6px;
+  font-size:12px; color:#ddd; background:transparent; border:0; cursor:pointer;
+}
+.ms-item:disabled{ opacity:.6; cursor:not-allowed; }
+.ms-label{ opacity:.85; }
+.dot{
+  width:10px; height:10px; border-radius:50%;
+  border:1px solid rgba(255,255,255,.2);
+  box-shadow: 0 0 6px rgba(0,0,0,.35);
+}
+.dot.green{ background:#10b981; }
+.dot.yellow{ background:#f59e0b; }
+.dot.red{ background:#ef4444; }
+
+.ms-sync{
+  display:inline-block; width:10px; height:10px; border-radius:50%;
+  border:2px solid #9ca3af; border-top-color: transparent; animation: spin 1s linear infinite;
+}
+@keyframes spin{ to{ transform: rotate(360deg); } }
+
+body[data-theme="dark"]  .mini-status{ background: rgba(12,12,12,.55); }
+body[data-theme="light"] .mini-status{ background: rgba(245,245,248,.7); color:#222; }
+body[data-theme="field"] .mini-status{ background: rgba(18,22,24,.6); }

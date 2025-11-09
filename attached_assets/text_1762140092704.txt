@@ -1,0 +1,10 @@
+# remove Replit's old git and cache bloat
+rm -rf .git .replit .cache __pycache__ *.log *.tmp
+find . -name "__pycache__" -type d -exec rm -rf {} +
+find . -name "*.wav" -size +10M -delete
+find . -name "*.zip" -delete
+find . -name "*.tar" -delete
+
+# create a clean compressed package
+zip -r SonicBuilderSupersonic_Clean.zip . \
+  -x "*.git*" "*.cache*" "__pycache__*" "*.tmp" "*.log" "*.tar" "*.zip"

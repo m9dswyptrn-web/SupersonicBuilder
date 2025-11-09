@@ -1,0 +1,3 @@
+python scripts/run_offline_llm.py
+# open http://127.0.0.1:7860
+# try a query like:  "Create a step-by-step checklist to install my Android head unit with DSP."

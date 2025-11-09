@@ -1,0 +1,40 @@
+
+name: Release Signing (Cosign, OIDC) — Supersonic
+on:
+  release: { types: [published, released] }
+  workflow_dispatch: { inputs: { tag: { required: false } } }
+permissions: { contents: write, id-token: write }
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: sigstore/cosign-installer@v3.6.0
+      - uses: cli/cli@v3
+        with: { version: latest }
+      - name: Determine tag
+        id: tag
+        env: { GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} }
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+          else:
+            echo "tag=$(gh release view --json tagName -q .tagName)" >> $GITHUB_OUTPUT
+          fi
+      - name: Download assets
+        env: { GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} }
+        run: |
+          mkdir -p signed
+          gh release download "${{ steps.tag.outputs.tag }}" --dir signed --clobber || true
+      - name: Sign
+        working-directory: signed
+        env: { COSIGN_EXPERIMENTAL: "1" }
+        run: |
+          set -e
+          for f in *; do [ -f "$f" ] || continue; cosign sign-blob --yes --output-signature "$f.sig" "$f"; done
+      - name: Upload signatures
+        working-directory: signed
+        env: { GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} }
+        run: |
+          shopt -s nullglob
+          for sig in *.sig; do gh release upload "${{ steps.tag.outputs.tag }}" "$sig" --clobber || true; done

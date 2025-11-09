@@ -1,0 +1,87 @@
+name: readme-latest-docs
+on:
+  release: { types: [published] }
+permissions:
+  contents: write
+jobs:
+  stamp-latest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Latest Docs block from release assets (with commit)
+        id: block
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo  = context.repo.repo;
+            const rel   = context.payload.release;
+            const tag   = rel.tag_name;
+
+            // Resolve the commit SHA behind the tag (handles annotated vs lightweight)
+            async function resolveCommitSha(tag) {
+              try {
+                const ref = await github.rest.git.getRef({ owner, repo, ref: `tags/${tag}` });
+                const obj = ref.data.object;
+                if (obj.type === 'commit') return obj.sha;
+                if (obj.type === 'tag') {
+                  const tagObj = await github.rest.git.getTag({ owner, repo, tag_sha: obj.sha });
+                  return tagObj.data.object.sha;
+                }
+              } catch (e) {
+                core.warning(`Could not resolve tag ref for ${tag}: ${e.message}`);
+              }
+              return rel.target_commitish || 'unknown';
+            }
+
+            function human(n){
+              const u=['B','KB','MB','GB','TB']; let i=0, x=n;
+              while (x>=1024 && i<u.length-1) { x/=1024; i++; }
+              return `${x.toFixed(2)} ${u[i]}`;
+            }
+
+            const shaFull = await resolveCommitSha(tag);
+            const shaShort = typeof shaFull === 'string' ? shaFull.substring(0,12) : 'unknown';
+
+            const assets = (rel.assets || []).filter(a => /\.(pdf|zip(\.part\d+)?)$/i.test(a.name));
+            const rows = assets.map(a => `| [${a.name}](${a.browser_download_url}) | ${human(a.size)} |`);
+
+            const block = [
+              '<!-- SB_LATEST_DOCS_BEGIN -->',
+              '### Latest documentation bundle',
+              '',
+              `**Release:** \`${tag}\``,
+              `**Commit:** [g${shaShort}](https://github.com/${owner}/${repo}/commit/${shaFull})`,
+              '',
+              `**View release:** https://github.com/${owner}/${repo}/releases/tag/${tag}`,
+              '',
+              '| File | Size |',
+              '|---|---:|',
+              ...rows,
+              '<!-- SB_LATEST_DOCS_END -->'
+            ].join('\n');
+
+            core.setOutput('block', block);
+
+      - name: Update README.md (replace or prepend block)
+        run: |
+          begin='<!-- SB_LATEST_DOCS_BEGIN -->'
+          end='<!-- SB_LATEST_DOCS_END -->'
+          block="$(printf "%s" "${{ steps.block.outputs.block }}")"
+          if [ -f README.md ] && grep -q "$begin" README.md && grep -q "$end" README.md; then
+            awk -v b="$begin" -v e="$end" -v r="$block" '
+              $0~b {print r; inblock=1; next}
+              $0~e {inblock=0; next}
+              !inblock {print}
+            ' README.md > README.md.tmp
+          else
+            { printf "%s\n\n" "$block"; [ -f README.md ] && cat README.md; } > README.md.tmp
+          fi
+          mv README.md.tmp README.md
+
+      - name: Commit README update
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs(readme): update Latest Docs section (tag + commit)"
+          file_pattern: README.md

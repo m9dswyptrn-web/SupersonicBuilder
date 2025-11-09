@@ -1,0 +1,7 @@
+description: Variables from text 31.txt
+variables:
+  adb_alias: 'headunit"     # optional'
+  adb_group: 'daily"        # optional'
+  select_adb: 'false         # optional'
+  no_pdf: 'false             # optional'
+source: text 31.txt

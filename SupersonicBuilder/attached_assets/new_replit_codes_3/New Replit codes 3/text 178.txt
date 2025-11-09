@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+# mkdocs_bootstrap.py — Add MkDocs Material docs + CI deploy to gh-pages
+
+import os, stat
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+
+def write(path: Path, content: str, exe=False):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    if exe:
+        mode = path.stat().st_mode
+        path.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    print(f"→ wrote {path}")
+
+MKDOCS_YML = """site_name: SonicBuilder
+site_description: Android head unit project • DSP configs • wiring PDFs • packaging
+site_url: https://OWNER.github.io/REPO/
+repo_url: https://github.com/OWNER/REPO
+repo_name: OWNER/REPO
+copyright: © SonicBuilder
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.tabs.link
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: cyan
+      accent: cyan
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: cyan
+      accent: cyan
+  icon:
+    repo: fontawesome/brands/github
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/OWNER
+  generator: false
+
+plugins:
+  - search
+  - minify:
+      minify_html: true
+  - git-revision-date-localized:
+      enable_creation_date: true
+      fallback_to_build_date: true
+  - glightbox
+  - section-index
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.highlight
+  - pymdownx.extra
+  - pymdownx.tilde
+  - toc:
+      permalink: true
+
+nav:
+  - Overview: index.md
+  - Quickstart:
+      - Setup: quickstart.md
+      - Build & Run: build-run.md
+  - Diagrams:
+      - Using the Picker: diagrams/picker.md
+      - Export Options: diagrams/export.md
+  - DevOps:
+      - GitHub Actions: devops/ci.md
+      - Releases: devops/releases.md
+  - About: about.md
+"""
+
+INDEX_MD = """# ⚡ SonicBuilder
+
+Welcome to the **Supersonic** docs for the SonicBuilder project.
+
+!!! tip "What is this?"
+    A complete build system for Android head units:
+    DSP configs, wiring PDFs, packaging, and a slick diagram picker with PNG/PDF/ZIP export.
+
+## Highlights
+
+- 🎚️ DSP configs + wiring PDFs  
+- 🧩 Diagram picker with **ZIP/PNG/PDF** export  
+- ⏱️ Env-aware **catalog cache** (TTL + version)  
+- 🌙 Material theme with dark/light & search  
+- 🚀 CI (build, artifacts, release zip on tag)  
+
+## Useful Links
+
+- **Repository:** [OWNER/REPO](https://github.com/OWNER/REPO)
+- **CI Artifacts:** GitHub → Actions → latest run → *Artifacts*
+- **Releases:** GitHub → Releases (push a tag like `v1.0.0`)
+"""
+
+QUICKSTART_MD = """# Quickstart
+
+## Requirements
+- Python 3.11+
+- (Optional) `gh` GitHub CLI
+- Git
+
+## Steps
+
+```bash
+make vendor     # pulls PDF.js and JSZip
+make run        # dev server (fast cache; ~10m TTL)

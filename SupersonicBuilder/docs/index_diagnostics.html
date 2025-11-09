@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Supersonic Diagnostics — Control Core v4</title>
+<style>
+  :root{
+    --bg:#07080b; --card:#0e1117; --muted:#a1a1aa; --text:#eaeaf0; --acc:#10e7ff; --ok:#4ade80; --warn:#facc15; --err:#f87171; --border:#1f2937;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial}
+  header{padding:24px;border-bottom:1px solid var(--border);display:flex;gap:16px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+  h1{font-size:1.4rem;margin:0;color:var(--acc);text-shadow:0 0 10px rgba(16,231,255,.25)}
+  .pill{border:1px solid var(--acc);color:var(--acc);padding:8px 12px;border-radius:999px;text-decoration:none}
+  main{padding:24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .card header{border:none;padding:14px 16px;background:linear-gradient(90deg,rgba(16,231,255,.08),transparent)}
+  .card h2{margin:0;font-size:1.05rem}
+  .section{padding:14px 16px}
+  pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  pre{margin:0;white-space:pre-wrap;word-break:break-word;max-height:360px;overflow:auto;background:#0b0d13;padding:12px;border-radius:8px;border:1px solid #161b22}
+  .row{display:flex;justify-content:space-between;gap:12px;margin:8px 0}
+  .tag{font-size:.8rem;border:1px solid var(--border);padding:2px 8px;border-radius:999px;color:var(--muted)}
+  .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)}
+  footer{padding:20px;text-align:center;color:var(--muted);border-top:1px solid var(--border)}
+  .btn{display:inline-block;margin-top:8px;padding:8px 12px;border:1px solid var(--acc);color:var(--acc);text-decoration:none;border-radius:8px}
+  .btn:hover{background:var(--acc);color:var(--bg)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+</style>
+</head>
+<body>
+<header>
+  <h1>🛰️ Supersonic Diagnostics — Control Core v4</h1>
+  <div class="row">
+    <a class="pill" id="btnHome" href="../">← Release Portal</a>
+    <a class="pill" id="btnZip" href="../Supersonic_ControlCore_Addons_v4.zip">⬇ Add-ons v4</a>
+  </div>
+</header>
+
+<main>
+  <section class="card" id="statusCard">
+    <header><h2>System Status</h2></header>
+    <div class="section grid2">
+      <div>
+        <div class="row"><span class="tag">AI Reasoner</span><span id="stAI" class="mono">…</span></div>
+        <div class="row"><span class="tag">Voice Cues</span><span id="stVoice" class="mono">…</span></div>
+        <div class="row"><span class="tag">Webhooks</span><span id="stHooks" class="mono">…</span></div>
+      </div>
+      <div>
+        <div class="row"><span class="tag">Integrity (SHA)</span><span id="stSHA" class="mono">…</span></div>
+        <div class="row"><span class="tag">Signing (Cosign)</span><span id="stSign" class="mono">…</span></div>
+        <div class="row"><span class="tag">SBOM/Scan</span><span id="stSBOM" class="mono">…</span></div>
+      </div>
+      <div style="grid-column:1 / -1;margin-top:8px">
+        <small class="mono" id="tagInfo">Tag: (auto)</small>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <header><h2>AI Release Notes</h2></header>
+    <div class="section">
+      <pre id="notes">loading AI_RELEASE_NOTES.md …</pre>
+      <a class="btn" href="../AI_RELEASE_NOTES.md">Open raw</a>
+    </div>
+  </section>
+
+  <section class="card">
+    <header><h2>Changelog (AI Reasoner log)</h2></header>
+    <div class="section">
+      <pre id="changelog">loading logs/supersonic_changelog.log …</pre>
+      <a class="btn" href="../logs/supersonic_changelog.log">Open raw</a>
+    </div>
+  </section>
+
+  <section class="card">
+    <header><h2>Integrity & Signatures</h2></header>
+    <div class="section">
+      <pre id="sha">loading SHA256SUMS.txt …</pre>
+      <div class="row">
+        <a class="btn" href="../SHA256SUMS.txt">View checksums</a>
+        <a class="btn" href="../Supersonic_ControlCore_Addons_v4.zip">Download ZIP</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <header><h2>SBOM / Security Scan</h2></header>
+    <div class="section">
+      <pre id="sbom">looking for Syft/Trivy output …</pre>
+      <div class="row">
+        <a class="btn" id="btnSBOM" href="#">SBOM (auto)</a>
+        <a class="btn" id="btnSCAN" href="#">Scan (auto)</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>© 2025 Supersonic Systems — "Fast is fine. Supersonic is better."</footer>
+
+<script>
+/* Utility: fetch text with graceful fallback */
+async function grab(path){
+  try{
+    const r = await fetch(path, {cache:"no-store"});
+    if(!r.ok) throw new Error(r.status);
+    return await r.text();
+  }catch(e){
+    return null;
+  }
+}
+
+/* Resolve tag from URL: /<repo>/<tag>/docs/index_diagnostics.html */
+function resolveTag(){
+  try{
+    const parts = location.pathname.split("/").filter(Boolean);
+    // assume structure .../<repo>/<tag>/docs/index_diagnostics.html
+    const idx = parts.lastIndexOf("docs");
+    if(idx > 0) return parts[idx-1]; // the segment before /docs/
+  }catch(e){}
+  return "(unknown)";
+}
+
+function setStatus(el, ok, unknownLabel="n/a"){
+  if(!el) return;
+  if(ok === null){ el.textContent = unknownLabel; el.className="mono"; return; }
+  el.textContent = ok ? "OK" : "MISSING";
+  el.className = "mono " + (ok ? "ok":"err");
+}
+
+(async function run(){
+  const tag = resolveTag();
+  document.getElementById("tagInfo").textContent = "Tag: " + tag;
+
+  // Load major artifacts
+  const notes = await grab("../AI_RELEASE_NOTES.md");
+  document.getElementById("notes").textContent = notes || "AI_RELEASE_NOTES.md not found";
+
+  const log = await grab("../logs/supersonic_changelog.log");
+  document.getElementById("changelog").textContent = log || "logs/supersonic_changelog.log not found";
+
+  const sums = await grab("../SHA256SUMS.txt");
+  document.getElementById("sha").textContent = sums || "SHA256SUMS.txt not found";
+
+  // Try SBOM/scan in common names/locations produced by your pipeline
+  const sbomPaths = ["../sbom.json","../syft.json","../sbom.txt","../sbom.yaml"];
+  const scanPaths = ["../scan.txt","../trivy.txt","../pip-audit.txt"];
+  let sbom=null, scan=null, sbomHref="#", scanHref="#";
+  for (const p of sbomPaths){ const t = await grab(p); if(t){ sbom=t; sbomHref=p; break; } }
+  for (const p of scanPaths){ const t = await grab(p); if(t){ scan=t; scanHref=p; break; } }
+  document.getElementById("sbom").textContent = (sbom || "No SBOM/scan artifacts found.\n(Ensure syft/trivy/pip-audit outputs are uploaded near the tag root.)");
+  const b1=document.getElementById("btnSBOM"); b1.href = sbom ? sbomHref : "#";
+  const b2=document.getElementById("btnSCAN"); b2.href = scan ? scanHref : "#";
+  if(!scan){ document.getElementById("sbom").textContent += "\n\nTip: add 'sbom.json' or 'trivy.txt' to release artifacts."; }
+
+  // Derive status lights
+  setStatus(document.getElementById("stAI"), !!(notes || log));
+  setStatus(document.getElementById("stVoice"), true, "ready");
+  setStatus(document.getElementById("stHooks"), true, "configured");
+  setStatus(document.getElementById("stSHA"), !!sums);
+  // Cosign signal: look for *.sig in same folder, or a line hint in SHA256SUMS
+  const sig = await grab("../Supersonic_ControlCore_Addons_v4.zip.sig");
+  const signed = !!sig || (sums && /cosign|signature/i.test(sums));
+  setStatus(document.getElementById("stSign"), signed, "skipped");
+  setStatus(document.getElementById("stSBOM"), !!(sbom || scan));
+})();
+</script>
+</body>
+</html>

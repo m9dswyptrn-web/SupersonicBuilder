@@ -1,0 +1,4 @@
+<div class="modal-actions">
+  <button class="pill" onclick="copyModal()">Copy details</button>
+  <button class="pill" onclick="closeModal()">Close</button>
+</div>

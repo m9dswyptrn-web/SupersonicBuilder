@@ -1,0 +1,5 @@
+python3 precommit_bootstrap.py
+pip install pre-commit
+pre-commit install
+# (optional) run across the whole repo once)
+pre-commit run --all-files

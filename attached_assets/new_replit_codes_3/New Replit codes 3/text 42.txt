@@ -1,0 +1,12 @@
+  // Computes best scale for width/height fit against preview surface
+  async function computeFitScale(pdfPage, mode /* "width"|"height" */, rotationDeg) {
+    const surface = canvas.parentElement;
+    const sw = surface.clientWidth || 900;
+    const sh = surface.clientHeight || Math.round(window.innerHeight * 0.6);
+
+    // viewport at scale=1 to read natural size
+    const v1 = pdfPage.getViewport({ scale: 1, rotation: rotationDeg });
+    const fitW = sw / v1.width;
+    const fitH = sh / v1.height;
+    return (mode === "height") ? fitH : fitW;
+  }

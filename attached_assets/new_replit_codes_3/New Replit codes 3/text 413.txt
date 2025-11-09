@@ -1,0 +1,1 @@
+<a class="pill" href="/api/env/scan" target="_blank">Scan models</a>

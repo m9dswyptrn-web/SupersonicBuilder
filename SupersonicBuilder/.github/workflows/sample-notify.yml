@@ -1,0 +1,103 @@
+name: Sample Notification Workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_message:
+        description: 'Test notification message'
+        required: false
+        default: 'Test notification from SonicBuilder'
+
+permissions:
+  contents: read
+
+jobs:
+  notify-demo:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests
+
+      - name: Send simple notification
+        if: vars.SB_NOTIFY_ENABLED != 'false'
+        run: |
+          python scripts/notify.py \
+            --webhook "${{ secrets.SB_NOTIFY_WEBHOOK }}" \
+            --message "${{ github.event.inputs.test_message || 'Test notification' }}"
+
+      - name: Send rich notification
+        if: vars.SB_NOTIFY_ENABLED != 'false'
+        run: |
+          python scripts/notify.py \
+            --webhook "${{ secrets.SB_NOTIFY_WEBHOOK }}" \
+            --status "success" \
+            --title "Sample Notification Test" \
+            --message "This is a test from the sample-notify workflow" \
+            --url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Demonstrate success notification
+        if: success() && vars.SB_NOTIFY_ENABLED != 'false'
+        run: |
+          python scripts/notify.py \
+            --webhook "${{ secrets.SB_NOTIFY_WEBHOOK }}" \
+            --status "success" \
+            --title "✅ Success Notification" \
+            --message "All steps completed successfully!"
+
+      - name: Demonstrate failure notification (won't run)
+        if: failure() && vars.SB_NOTIFY_ENABLED != 'false'
+        run: |
+          python scripts/notify.py \
+            --webhook "${{ secrets.SB_NOTIFY_WEBHOOK }}" \
+            --status "failure" \
+            --title "❌ Failure Notification" \
+            --message "Something went wrong!"
+
+      - name: Always notify (demo)
+        if: always() && vars.SB_NOTIFY_ENABLED != 'false'
+        run: |
+          STATUS="${{ job.status }}"
+          case $STATUS in
+            success)
+              EMOJI="✅"
+              COLOR="success"
+              ;;
+            failure)
+              EMOJI="❌"
+              COLOR="failure"
+              ;;
+            cancelled)
+              EMOJI="⚠️"
+              COLOR="warning"
+              ;;
+            *)
+              EMOJI="ℹ️"
+              COLOR="info"
+              ;;
+          esac
+          
+          python scripts/notify.py \
+            --webhook "${{ secrets.SB_NOTIFY_WEBHOOK }}" \
+            --status "$COLOR" \
+            --title "$EMOJI Workflow Complete" \
+            --message "Final status: $STATUS" \
+            --url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Summary
+        run: |
+          echo "## Notification Demo Complete 📢" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Webhook configured:** ${{ secrets.SB_NOTIFY_WEBHOOK != '' && 'Yes ✅' || 'No ❌' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Notifications enabled:** ${{ vars.SB_NOTIFY_ENABLED != 'false' && 'Yes ✅' || 'No ❌' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check your notification channel for test messages!" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,30 @@
+name: Attach Release Notes (v2.0.10)
+
+on:
+  workflow_dispatch: {}
+  workflow_run:
+    workflows: ["Docs Release"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  attach-notes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Upload notes file to latest release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag=$(cat VERSION 2>/dev/null || echo "")
+          [ -z "$tag" ] && tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          echo "Using tag: $tag"
+          file="RELEASE_NOTES/${tag}.md"
+          if [ -f "$file" ]; then
+            gh release upload "$tag" "$file" --clobber
+          else
+            echo "No release notes file found for ${tag} (skipping)."
+          fi

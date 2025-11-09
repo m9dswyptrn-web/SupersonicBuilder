@@ -1,0 +1,57 @@
+name: pr-merge-guard
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review, labeled, unlabeled]
+    branches: [ main ]
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  issues: write
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce docs:ready only if docs changed
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {owner, repo} = context.repo;
+            const pr = context.payload.pull_request;
+            if (!pr) { core.setFailed('No PR payload.'); return; }
+
+            // Find changed files
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner, repo, pull_number: pr.number, per_page: 100
+            });
+            const names = files.map(f => f.filename);
+
+            // Docs-related paths
+            const isDocsChange = names.some(n =>
+              /^docs\//.test(n) ||
+              /^README\.md$/i.test(n) ||
+              /^assets\//.test(n) ||
+              /diagram|wiring|\.svg$|\.pdf$|\.png$|\.jpg$/i.test(n) ||
+              /^\.github\/workflows\/docs-/.test(n)
+            );
+
+            if (!isDocsChange) {
+              core.info('No docs-related changes; skipping label requirement.');
+              
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: pr.number,
+                body: "🟢 *No docs-related files detected — `docs:ready` requirement skipped.*"
+              });
+              
+              return;
+            }
+
+            const labels = (pr.labels || []).map(l => l.name);
+            if (!labels.includes('docs:ready')) {
+              core.setFailed("Merge blocked for docs PR: add 'docs:ready' after docs-build succeeds or use /docs-ready.");
+              return;
+            }
+            core.info("docs:ready present — merge gate passed for docs PR.");

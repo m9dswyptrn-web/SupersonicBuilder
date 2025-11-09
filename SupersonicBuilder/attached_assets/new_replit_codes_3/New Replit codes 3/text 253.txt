@@ -1,0 +1,3 @@
+git add -A
+git commit -m "Final supersonic docs + security + automation pack"
+git push origin main

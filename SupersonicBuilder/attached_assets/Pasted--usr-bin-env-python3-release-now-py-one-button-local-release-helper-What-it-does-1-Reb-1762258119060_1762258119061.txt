@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""
+release_now.py — one-button local release helper.
+
+What it does:
+  1) Rebuilds budgets artifacts (SVG + HTML).
+  2) Commits changes.
+  3) Creates a tag (auto or supplied).
+  4) Pushes to origin (+ tags).
+  5) Optional: creates a GitHub Release (so your Action can annotate it).
+
+Env (recommended):
+  GITHUB_REPOSITORY = "owner/repo" (e.g., "ChristopherElgin/SonicBuilderSupersonic")
+  GITHUB_TOKEN      = "<PAT-with-repo-scope>"  (only needed for --create-release)
+
+Usage:
+  python3 tools/release_now.py
+  python3 tools/release_now.py --version v4.1.0
+  python3 tools/release_now.py --create-release
+  python3 tools/release_now.py --dry-run
+"""
+
+import argparse
+import os
+import subprocess
+import sys
+import json
+from datetime import datetime
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
+
+def sh(cmd, check=True, capture=False):
+    print(f"$ {cmd}")
+    res = subprocess.run(cmd, shell=True, check=check, text=True,
+                         stdout=subprocess.PIPE if capture else None,
+                         stderr=subprocess.STDOUT if capture else None)
+    return res.stdout if capture else ""
+
+def build_budgets(dry=False):
+    cmds = [
+        "python3 tools/budgets_asset_history.py",
+        "python3 tools/budgets_history.py",
+        "python3 tools/budgets_report.py",
+    ]
+    for c in cmds:
+        if dry:
+            print(f"(dry-run) {c}")
+        else:
+            sh(c)
+
+def git_commit_and_tag(version: str, dry=False):
+    if dry:
+        print(f"(dry-run) git add -A && git commit && tag {version}")
+        return
+    sh("git add -A", check=False)
+    sh('git commit -m "chore(release): update budgets dashboard [skip ci]"', check=False)
+    sh(f'git tag -a {version} -m "Automated release {version}"')
+
+def git_push(dry=False):
+    if dry:
+        print("(dry-run) git push && git push --tags")
+        return
+    sh("git push")
+    sh("git push --tags")
+
+def gh_create_release(repo: str, token: str, version: str, body: str, draft=False, prerelease=False, dry=False):
+    url = f"https://api.github.com/repos/{repo}/releases"
+    payload = {
+        "tag_name": version,
+        "name": version,
+        "body": body,
+        "draft": draft,
+        "prerelease": prerelease,
+    }
+    if dry:
+        print("(dry-run) POST", url)
+        print(json.dumps(payload, indent=2))
+        return
+    data = json.dumps(payload).encode("utf-8")
+    req = Request(url, data=data, method="POST",
+                  headers={
+                      "Authorization": f"token {token}",
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "Content-Type": "application/json",
+                  })
+    try:
+        with urlopen(req) as r:
+            resp = json.loads(r.read().decode())
+            html = resp.get("html_url")
+            print("Release created:", html or resp)
+    except HTTPError as e:
+        print("GitHub API error:", e.read().decode(), file=sys.stderr)
+        raise
+    except URLError as e:
+        print("GitHub API network error:", e, file=sys.stderr)
+        raise
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--version", help="Tag to create (default: auto timestamped)")
+    ap.add_argument("--create-release", action="store_true",
+                    help="Also create a GitHub Release (requires GITHUB_TOKEN)")
+    ap.add_argument("--draft", action="store_true", help="Create draft release")
+    ap.add_argument("--prerelease", action="store_true", help="Mark as prerelease")
+    ap.add_argument("--dry-run", action="store_true", help="Print actions only")
+    args = ap.parse_args()
+
+    repo = os.environ.get("GITHUB_REPOSITORY", "").strip()
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+
+    version = args.version or ("v" + datetime.now().strftime("%Y.%m.%d.%H%M%S"))
+
+    # 1) Build artifacts
+    print("==> Building budgets dashboard…")
+    build_budgets(dry=args.dry_run)
+
+    # 2/3) Commit + tag
+    print(f"==> Committing and tagging: {version}")
+    git_commit_and_tag(version, dry=args.dry_run)
+
+    # 4) Push
+    print("==> Pushing to origin…")
+    git_push(dry=args.dry_run)
+
+    # 5) Optional release
+    if args.create_release:
+        if not repo:
+            print("ERROR: GITHUB_REPOSITORY is required for --create-release", file=sys.stderr)
+            sys.exit(2)
+        if not token:
+            print("ERROR: GITHUB_TOKEN is required for --create-release", file=sys.stderr)
+            sys.exit(2)
+        body = (
+            f"**Release size status:** (will be auto-annotated by the "
+            f"'Release Budgets & Badges' Action)\n\n"
+            f"Artifacts: `docs/budgets.html`, `docs/budgets_sparkline.svg`, "
+            f"`docs/budgets_history.json`"
+        )
+        print("==> Creating GitHub Release…")
+        gh_create_release(repo, token, version, body, draft=args.draft,
+                          prerelease=args.prerelease, dry=args.dry_run)
+
+    print("✅ Done!")
+
+if __name__ == "__main__":
+    main()

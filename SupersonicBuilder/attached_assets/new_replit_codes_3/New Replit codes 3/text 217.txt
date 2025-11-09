@@ -1,0 +1,73 @@
+# ==== EDIT THESE 6 LINES ====
+export GITHUB_OWNER="YourGitHubUserOrOrg"
+export GITHUB_REPO="SonicBuilder"
+export GIT_AUTHOR_NAME="Christopher Elgin"
+export GIT_AUTHOR_EMAIL="you@example.com"
+export VISIBILITY="private"            # or "public"
+export GITHUB_TOKEN=""                 # optional if 'gh auth login' is already set
+# ==== NOTHING BELOW HERE NEEDS EDITING ====
+
+set -euo pipefail
+
+echo "⚡ Supersonic one-shot deploy starting..."
+echo "OWNER=$GITHUB_OWNER REPO=$GITHUB_REPO"
+
+# 0) Sanity: python + git
+python3 --version
+git --version
+
+# 1) Ensure our bootstrap scripts exist (fail fast if missing)
+need() { [[ -f "$1" ]] || { echo "❌ Missing $1. Please add it to project root."; exit 1; }; }
+need supersonic_super_bootstrap.py
+need release_notes_bootstrap.py
+
+# 2) Stamp environment + write all support files
+python3 supersonic_super_bootstrap.py
+python3 release_notes_bootstrap.py
+
+# 3) Make helper scripts executable
+chmod +x replit_to_github.sh || true
+chmod +x tools/get_pdfjs.sh tools/get_jszip.sh || true
+
+# 4) Authenticate to GitHub (if token provided, configure; otherwise rely on gh/credential helper)
+if [[ -n "${GITHUB_TOKEN}" ]]; then
+  git config --global url."https://$GITHUB_TOKEN:@github.com/".insteadOf "https://github.com/"
+  echo "🔐 Using GITHUB_TOKEN for API/push."
+fi
+
+# 5) Vendor front-end libs (PDF.js / JSZip)
+./tools/get_pdfjs.sh
+./tools/get_jszip.sh
+
+# 6) Push repo (creates remote if needed, adds LFS, CI, Docs, Release workflows)
+./replit_to_github.sh
+
+# 7) Optional: first docs build will auto-run via Actions. You can tag a release now or later.
+echo
+echo "👉 To cut your first release with auto-notes, run:"
+echo "   git tag v1.0.0 && git push origin v1.0.0"
+echo
+
+# 8) Print quick links
+PAGES_URL="https://${GITHUB_OWNER}.github.io/${GITHUB_REPO}/"
+ACTIONS_URL="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/actions"
+RELEASES_URL="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases"
+REPO_URL="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}"
+
+cat <<EOF
+
+✅ Done! Your links:
+- Repo:      ${REPO_URL}
+- Actions:   ${ACTIONS_URL}
+- Releases:  ${RELEASES_URL}
+- Docs:      ${PAGES_URL}
+
+Check Actions for:
+  • "Supersonic CI" (build/artifacts)
+  • "Docs (MkDocs)" (publishes gh-pages)
+  • "Release Notes (Draft)" (keeps rolling notes)
+
+Tip:
+  - Set VISIBILITY=public if you want a public repo + public docs.
+  - Re-run this block any time; it’s idempotent.
+EOF

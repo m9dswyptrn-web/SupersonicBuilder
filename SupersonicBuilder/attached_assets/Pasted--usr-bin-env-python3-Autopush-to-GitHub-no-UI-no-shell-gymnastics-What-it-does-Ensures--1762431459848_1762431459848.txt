@@ -1,0 +1,223 @@
+#!/usr/bin/env python3
+"""
+Autopush to GitHub (no UI, no shell gymnastics)
+
+What it does:
+- Ensures a git repo & branch
+- Adds/updates .gitignore with sane defaults
+- Finds big files (>= 95 MB), untracks them, keeps them locally
+- Commits and pushes to GitHub
+- Creates the repo if missing
+
+Config via Replit Secrets (recommended):
+  GITHUB_TOKEN   -> required (classic token with `repo` scope)
+  REPO_NAME      -> default: "SupersonicBuilder"
+  GITHUB_OWNER   -> default: auto-detect via /user API
+  GIT_DEFAULT_BRANCH -> default: "main"
+  GITHUB_REPO_PRIVATE -> default: "true"  (set "false" for public)
+  GIT_COMMIT_MESSAGE  -> default message
+
+Run:
+  python autopush_to_github.py
+"""
+
+import os, sys, json, subprocess, urllib.request, urllib.error, shutil
+from pathlib import Path
+
+# ------------------ Config ------------------
+TOKEN = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN") or os.getenv("GIT_TOKEN")
+REPO_NAME = os.getenv("REPO_NAME", "SupersonicBuilder")
+OWNER = os.getenv("GITHUB_OWNER", "")
+BRANCH = os.getenv("GIT_DEFAULT_BRANCH", "main")
+PRIVATE = (os.getenv("GITHUB_REPO_PRIVATE", "true").lower() in ("1","true","yes"))
+COMMIT_MSG = os.getenv("GIT_COMMIT_MESSAGE", "Autopush: code only (ignore large artifacts)")
+
+# size threshold (MB) beyond which files are auto-untracked
+BIG_MB = float(os.getenv("BIGFILE_MB", "95"))
+
+GITIGNORE_SNIPPET = """\
+# --- Autopush defaults ---
+# Large/binary artifacts
+*.zip
+*.tar
+*.tar.gz
+*.7z
+*.rar
+*.iso
+
+# Build / output
+build/
+dist/
+release/
+exports/
+downloads/
+
+# General noise
+__pycache__/
+*.pyc
+.DS_Store
+.replit
+*.log
+"""
+
+# ------------------ Helpers ------------------
+def die(msg, code=1):
+    print("❌", msg)
+    sys.exit(code)
+
+def run(cmd, check=True, quiet=False):
+    if not quiet:
+        print("$", " ".join(cmd))
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if not quiet:
+        print(p.stdout.strip())
+    if check and p.returncode != 0:
+        die(f"Command failed ({p.returncode}): {' '.join(cmd)}")
+    return p.stdout.strip()
+
+def gh(path, method="GET", data=None):
+    if not TOKEN:
+        die("Missing GITHUB_TOKEN (classic token with `repo` scope). Add it in Replit Secrets.")
+    url = f"https://api.github.com{path}"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {TOKEN}",
+        "User-Agent": "autopush-replit",
+        "X-GitHub-Api-Version": "2022-11-28"
+    }
+    body = None
+    if data is not None:
+        body = json.dumps(data).encode()
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, method=method, headers=headers, data=body)
+    try:
+        with urllib.request.urlopen(req) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        txt = e.read().decode()
+        print("GitHub API error:", e.code, txt)
+        die(f"GitHub API error {e.code}")
+
+def ensure_repo_and_branch():
+    if not Path(".git").is_dir():
+        run(["git", "init"])
+    # make sure branch exists
+    run(["git", "checkout", "-B", BRANCH], check=False)
+    run(["git", "config", "user.name", os.getenv("GIT_USER_NAME", "replit-bot")], check=False)
+    run(["git", "config", "user.email", os.getenv("GIT_USER_EMAIL", "replit-bot@users.noreply.github.com")], check=False)
+
+def update_gitignore():
+    p = Path(".gitignore")
+    text = p.read_text() if p.exists() else ""
+    if "# --- Autopush defaults ---" not in text:
+        with p.open("a") as f:
+            if text and not text.endswith("\n"):
+                f.write("\n")
+            f.write(GITIGNORE_SNIPPET)
+        run(["git", "add", ".gitignore"], check=False)
+
+def list_big_files(root="."):
+    big = []
+    threshold = BIG_MB * 1024 * 1024
+    for path in Path(root).rglob("*"):
+        if ".git" in path.parts:  # skip git dir
+            continue
+        if path.is_file():
+            try:
+                sz = path.stat().st_size
+            except OSError:
+                continue
+            if sz >= threshold:
+                big.append((sz, str(path)))
+    big.sort(reverse=True)
+    return big
+
+def untrack_patterns():
+    # quietly untrack known dirs/patterns; keep files on disk
+    run(["git", "rm", "--cached", "-r", "*.zip", "*.tar", "*.tar.gz", "*.7z", "*.rar",
+         "build", "dist", "release", "exports", "downloads"], check=False)
+
+def ensure_remote(owner):
+    # prefer token URL for first push
+    url = f"https://{owner}:{TOKEN}@github.com/{owner}/{REPO_NAME}.git"
+    remotes = run(["git", "remote"], check=False, quiet=True).split()
+    if "origin" not in remotes:
+        run(["git", "remote", "add", "origin", url], check=False)
+    else:
+        run(["git", "remote", "set-url", "origin", url], check=False)
+    # bump http tolerance for flaky networks / big histories
+    run(["git", "config", "http.postBuffer", "524288000"], check=False)
+    run(["git", "config", "http.lowSpeedLimit", "0"], check=False)
+    run(["git", "config", "http.lowSpeedTime", "999999"], check=False)
+
+def main():
+    print("=== Autopush to GitHub ===")
+
+    # 1) Detect owner if not provided
+    owner = OWNER or gh("/user")["login"]
+    print("Owner:", owner)
+    print("Repo :", REPO_NAME, "(private)" if PRIVATE else "(public)")
+
+    # 2) Create repo if missing
+    need_create = False
+    try:
+        gh(f"/repos/{owner}/{REPO_NAME}")
+        print("Repo exists on GitHub.")
+    except SystemExit:
+        # if 404, we'll have exited already; try to detect with a probe:
+        pass
+    except Exception:
+        need_create = True
+
+    # Re-check existence without aborting:
+    try:
+        gh(f"/repos/{owner}/{REPO_NAME}")
+    except Exception:
+        need_create = True
+
+    if need_create:
+        payload = {"name": REPO_NAME, "private": PRIVATE, "auto_init": False}
+        if gh("/user")["login"].lower() != owner.lower():
+            gh(f"/orgs/{owner}/repos", method="POST", data=payload)
+        else:
+            gh("/user/repos", method="POST", data=payload)
+        print("Created repo on GitHub.")
+
+    # 3) Ensure local repo & branch
+    ensure_repo_and_branch()
+
+    # 4) Update .gitignore + untrack heavy patterns
+    update_gitignore()
+    untrack_patterns()
+
+    # 5) Find and untrack truly big files (>= BIG_MB)
+    big = list_big_files(".")
+    if big:
+        print("Big files (>= %.0f MB):" % BIG_MB)
+        for sz, p in big[:15]:
+            print("  %.2f MB  %s" % (sz/1048576, p))
+        # untrack each big file
+        for _, p in big:
+            run(["git", "rm", "--cached", "-f", p], check=False)
+
+    # 6) Stage & commit (only if needed)
+    run(["git", "add", "-A"], check=False)
+    status = run(["git", "status", "--porcelain"], check=False, quiet=True)
+    if status.strip():
+        run(["git", "commit", "-m", COMMIT_MSG], check=False)
+    else:
+        print("Nothing to commit.")
+
+    # 7) Ensure remote & push
+    ensure_remote(owner)
+    print("Pushing to origin/%s ..." % BRANCH)
+    run(["git", "push", "-u", "origin", BRANCH], check=False)
+    print("\n✅ Done. View: https://github.com/%s/%s" % (owner, REPO_NAME))
+    print("Tip: you can now switch the remote to a clean URL (no token):")
+    print("  git remote set-url origin https://github.com/%s/%s.git" % (owner, REPO_NAME))
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        die(str(e))

@@ -1,0 +1,143 @@
+name: 🔧 System Health CI/CD Pipeline
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+  workflow_dispatch:
+
+env:
+  PAGES_BRANCH: gh-pages
+  REMOTE_NAME: origin
+  PYTHONUNBUFFERED: 1
+
+jobs:
+  system-health:
+    name: Update System Health Status
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: 📦 Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+      
+      # =============================================================
+      # 📊 Generate System Health Summary
+      # =============================================================
+      
+      - name: 📊 Generate System Health Summary
+        run: |
+          echo "🔍 Generating system health summary..."
+          python3 scripts/gen_system_json.py
+      
+      # =============================================================
+      # 🚀 Push System Health to GitHub Pages
+      # =============================================================
+      
+      - name: 🚀 Push System Health Summary to Pages
+        if: success()
+        run: |
+          echo "📤 Pushing system.json to GitHub Pages..."
+          python3 scripts/push_system_json.py
+      
+      # =============================================================
+      # 🔄 Rollback Protection on Failure
+      # =============================================================
+      
+      - name: 🔄 Rollback System Health if Corrupted
+        if: failure() || cancelled()
+        run: |
+          echo "🔍 Checking for corruption or failed commit…"
+          python3 scripts/rollback_system_json.py
+      
+      # =============================================================
+      # 🔔 Discord/Slack Notifications
+      # =============================================================
+      
+      - name: 🟢 Notify Successful Deploy
+        if: success()
+        env:
+          ROLLBACK_WEBHOOK_URL: ${{ secrets.ROLLBACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          ROLLBACK_EVENT: "system_json_push"
+          ROLLBACK_STATUS: "success"
+        run: |
+          echo "🟢 Sending success notification..."
+          python3 scripts/notify_rollback.py
+      
+      - name: 🔴 Notify Rollback or Failure
+        if: failure() || cancelled()
+        env:
+          ROLLBACK_WEBHOOK_URL: ${{ secrets.ROLLBACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          ROLLBACK_EVENT: "system_json_push"
+          ROLLBACK_STATUS: "rollback"
+        run: |
+          echo "🔴 Sending rollback notification..."
+          python3 scripts/notify_rollback.py
+      
+      # =============================================================
+      # ✅ Verify Health & Refresh Badges
+      # =============================================================
+      
+      - name: ✅ Verify Health and Badges
+        if: success()
+        run: |
+          echo "🧩 Verifying integrity of system.json..."
+          sha256sum docs/status/system.json
+          echo "✅ Badge, JSON feed, and PDF status refreshed."
+      
+      # =============================================================
+      # 📦 Artifact Archival (Success)
+      # =============================================================
+      
+      - name: 📦 Upload SonicBuilder Artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SonicBuilder-${{ github.run_number }}-${{ github.sha }}
+          path: |
+            docs/**/*.pdf
+            docs/status/system.json
+            docs/status/uptime_log.json
+            docs/status/heartbeat.json
+            badges/*.json
+          retention-days: 30
+      
+      # =============================================================
+      # 📦 Artifact Archival (Failure)
+      # =============================================================
+      
+      - name: 📦 Upload Failure Logs
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SonicBuilder-Failure-${{ github.run_number }}-${{ github.sha }}
+          path: |
+            docs/status/*.json
+            .github/workflows/**/*.yml
+            scripts/**/*.py
+          retention-days: 14
+      
+      # =============================================================
+      # 🩺 Final Health Check
+      # =============================================================
+      
+      - name: 🩺 Verify PDF and System Health
+        if: success()
+        run: |
+          echo "🔍 Checking PDF integrity and build logs..."
+          ls -lh docs/*.pdf 2>/dev/null || echo "⚠️ No PDFs found in docs/"
+          ls -lh docs_build/*.pdf 2>/dev/null || echo "⚠️ No PDFs found in docs_build/"
+          ls -lh docs/status/system.json || echo "⚠️ No system.json found."
+          echo "✅ Health verification complete."

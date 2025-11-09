@@ -1,0 +1,30 @@
+<!-- inside #dp-preview-wrap -->
+<div class="dp-preview-toolbar">
+  <span id="dp-preview-label">Preview</span>
+  <div class="dp-preview-tools">
+    <button id="dp-first"   class="btn btn-mini">⏮</button>
+    <button id="dp-prev"    class="btn btn-mini">◀</button>
+    <span id="dp-page-info" class="muted" style="min-width:90px;display:inline-block;text-align:center">– / –</span>
+    <button id="dp-next"    class="btn btn-mini">▶</button>
+    <button id="dp-last"    class="btn btn-mini">⏭</button>
+    <span class="sep">|</span>
+    <button id="dp-zoomout" class="btn btn-mini">−</button>
+    <button id="dp-zoomfit" class="btn btn-mini">⤧</button>
+    <button id="dp-zoomin"  class="btn btn-mini">+</button>
+    <span class="sep">|</span>
+    <button id="dp-rotate"  class="btn btn-mini">⟳</button>
+    <button id="dp-refresh" class="btn btn-mini">↻</button>
+    <button id="dp-close"   class="btn btn-mini">✕</button>
+  </div>
+</div>
+
+<div class="dp-preview-surface">
+  <!-- NEW: PDF canvas -->
+  <canvas id="dp-canvas" hidden></canvas>
+  <!-- Existing image fallback -->
+  <img id="dp-image" alt="Diagram Preview (PNG)" hidden />
+  <!-- (Keep spinner) -->
+  <div id="dp-spinner" class="dp-spinner" hidden></div>
+</div>
+
+<!-- keep your "Open" / "Copy URL" buttons below -->

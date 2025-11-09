@@ -1,0 +1,11 @@
+# Add a Full Changelog link (used in notes & gh-draft)
+export SB_CHANGELOG_URL="https://github.com/OWNER/REPO/compare/v3.2.0...v3.2.1"
+
+# Stamp PDFs (needs pikepdf)
+python builder.py stamp-pdf-meta
+
+# QR labels (uses segno or qrcode)
+python builder.py qrstamp
+
+# Draft release notes for GitHub
+python builder.py gh-draft

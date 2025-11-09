@@ -1,0 +1,7 @@
+<div class="hr"></div>
+<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+  <button class="pill" onclick="exportSettings()">Export settings</button>
+  <input id="settingsFile" type="file" accept="application/json" style="display:none" />
+  <button class="pill" onclick="document.getElementById('settingsFile').click()">Import settings</button>
+  <span class="muted" style="font-size:12px;">(JSON)</span>
+</div>

@@ -1,0 +1,4 @@
+SETTINGS = Object.assign({
+  /* … */
+  volumes: { ready: 1.1, online: 1.0, error: 0.8, bench: 1.0, voice: 1.0 }
+}, SETTINGS || {});

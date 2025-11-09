@@ -1,0 +1,5 @@
+<span class="sep">|</span>
+<button id="dp-fitw" class="btn btn-mini" title="Fit to width">Fit W</button>
+<button id="dp-fith" class="btn btn-mini" title="Fit to height">Fit H</button>
+<span class="sep">|</span>
+<button id="dp-download-zip" class="btn btn-mini" title="Download all pages as PNG (ZIP)">⬇️ ZIP</button>

@@ -1,0 +1,23 @@
+function renderMuteBanner(mutated){
+  const row = document.getElementById('muteRow');
+  const quick = document.getElementById('muteQuickRow');
+  const dyn = document.getElementById('mutePresetRow');
+  const lbl = document.getElementById('muteStatus');
+  if (!row || !lbl) return;
+
+  const show = (mutated && mutated.muted);
+  row.style.display = show ? 'flex' : 'none';
+  if (quick) quick.style.display = show ? 'flex' : 'none';
+  if (dyn)   dyn.style.display   = show ? 'flex' : 'none';
+
+  if (!show) return;
+
+  const until = mutated.until_ts || 0;
+  const d = new Date(until * 1000);
+  const hh = String(d.getHours()).padStart(2,'0');
+  const mm = String(d.getMinutes()).padStart(2,'0');
+  lbl.textContent = `🔕 Muted until ${hh}:${mm}`;
+
+  // Ensure buttons reflect current presets & last
+  renderPresetButtons();
+}

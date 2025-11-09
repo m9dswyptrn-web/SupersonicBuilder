@@ -1,0 +1,4 @@
+@echo off
+REM If you use a venv:
+REM call .venv\Scripts\activate
+python supervisor.py -- python scripts\run_offline_llm.py

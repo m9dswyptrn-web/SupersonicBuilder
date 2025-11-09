@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+"""
+Upgrade the Flask /health endpoint to return:
+{
+  ok: true,
+  status: "ok" | "degraded",
+  uptime_sec: <float>,
+  started_at: <iso8601>,
+  disk: { total:int, used:int, free:int },
+  checks: { git_present:bool, make_present:bool },
+  python: <version>,
+  cwd: <path>
+}
+Targets: serve_pdfs.py (with earlier Supersonic block installed)
+"""
+
+import re, os, sys, json, shutil, datetime
+from pathlib import Path
+
+ROOT = Path(os.getcwd())
+SERVER = ROOT / "serve_pdfs.py"
+STAMP = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+
+def backup(p: Path):
+    dst = p.with_suffix(p.suffix + f".bak.{STAMP}")
+    shutil.copy2(p, dst)
+    print(f"🧾 Backup => {dst.name}")
+    return dst
+
+NEW_HEALTH_FUNC = r'''
+@app.route("/health")
+def supersonic_health():
+    # Enhanced CI-friendly health payload
+    from pathlib import Path as _Path
+    import os as _os, sys as _sys, json as _json, time as _time, shutil as _shutil, datetime as _dt
+
+    # Persist process start per-PID so uptime is accurate across hot reloads
+    _start_file = _Path(".supersonic_start.json")
+    _now = _time.time()
+    _pid = _os.getpid()
+    _start_ts = None
+    if _start_file.exists():
+        try:
+            data = _json.loads(_start_file.read_text(encoding="utf-8"))
+            if data.get("pid") == _pid and isinstance(data.get("ts"), (int, float)):
+                _start_ts = float(data["ts"])
+        except Exception:
+            _start_ts = None
+    if _start_ts is None:
+        _start_ts = _now
+        try:
+            _start_file.write_text(_json.dumps({"pid": _pid, "ts": _start_ts}), encoding="utf-8")
+        except Exception:
+            pass
+    _uptime = max(0.0, _now - _start_ts)
+
+    # Disk stats (of current working dir filesystem)
+    try:
+        _du = _shutil.disk_usage(".")
+        _disk = {"total": int(_du.total), "used": int(_du.used), "free": int(_du.free)}
+    except Exception as _e:
+        _disk = {"total": 0, "used": 0, "free": 0, "error": str(_e)}
+
+    # Tool checks
+    def _present(bin_name: str) -> bool:
+        try:
+            return _shutil.which(bin_name) is not None
+        except Exception:
+            return False
+
+    _checks = {
+        "git_present": _present("git"),
+        "make_present": _present("make"),
+    }
+
+    # Status policy (mirror CI Health Guard defaults)
+    _free_mb = _disk.get("free", 0) // (1024 * 1024)
+    _status = "ok"
+    if _free_mb < int(_os.getenv("HEALTH_MIN_FREE_MB", "500")):
+        _status = "degraded"
+    if not _checks["git_present"] or not _checks["make_present"]:
+        _status = "degraded"
+
+    return jsonify({
+        "ok": True,
+        "status": _status,
+        "uptime_sec": float(_uptime),
+        "started_at": _dt.datetime.utcfromtimestamp(_start_ts).isoformat() + "Z",
+        "disk": _disk,
+        "checks": _checks,
+        "python": _sys.version,
+        "cwd": _os.getcwd(),
+    })
+'''
+
+def patch_health(text: str) -> str:
+    """
+    Replace the existing /health route inside the Supersonic block.
+    We search for the decorator then replace up to the next @app.route or the block end marker.
+    """
+    # Work within the Supersonic block if present
+    block_start = text.find("# --- Supersonic Control Panel & Health Endpoints")
+    block_end   = text.find("# --- end Supersonic ---")
+    search_region = (block_start != -1 and block_end != -1)
+
+    region_text = text[block_start:block_end] if search_region else text
+
+    # Regex to capture the /health route function
+    rx = re.compile(
+        r'@app\.route\(\s*["\']\/health["\']\s*\)[\s\S]*?^def\s+\w+\s*\([^)]*\):[\s\S]*?(?=^\s*@app\.route|\Z|^#\s*---\s*end Supersonic\s*---)',
+        re.MULTILINE
+    )
+
+    if not rx.search(region_text):
+        # Try a broader pattern (route + function) if formatting differs
+        rx = re.compile(
+            r'@app\.route\(\s*["\']\/health["\']\s*\)[\s\S]*?(?=^\s*@app\.route|\Z|^#\s*---\s*end Supersonic\s*---)',
+            re.MULTILINE
+        )
+
+    def _do_replace(src: str) -> str:
+        m = rx.search(src)
+        if not m:
+            return None
+        start, end = m.span()
+        return src[:start] + NEW_HEALTH_FUNC + src[end:]
+
+    if search_region:
+        new_region = _do_replace(region_text)
+        if new_region is None:
+            print("⚠️ Couldn’t locate existing /health in Supersonic block; appending enhanced version inside the block.")
+            # Append right before block end
+            new_region = region_text.rstrip() + "\n" + NEW_HEALTH_FUNC + "\n"
+        # Rejoin
+        return text[:block_start] + new_region + text[block_end:]
+    else:
+        print("⚠️ Supersonic block markers not found; replacing first /health we can find globally.")
+        replaced = _do_replace(text)
+        if replaced is None:
+            print("⚠️ No /health found at all; appending enhanced version to end of file.")
+            return text.rstrip() + "\n\n" + NEW_HEALTH_FUNC + "\n"
+        return replaced
+
+def main():
+    if not SERVER.exists():
+        print("❌ serve_pdfs.py not found.")
+        sys.exit(1)
+
+    backup(SERVER)
+    src = SERVER.read_text(encoding="utf-8")
+
+    # Ensure we have jsonify & request imported (should already be from Supersonic block)
+    if "from flask import render_template, jsonify, request" not in src:
+        if "from flask import Flask" in src:
+            # naive inject of jsonify if missing
+            src = src.replace("from flask import Flask", "from flask import Flask, jsonify, request")
+
+    patched = patch_health(src)
+    SERVER.write_text(patched, encoding="utf-8")
+    print("✅ Upgraded /health endpoint.")
+
+    # Friendly hint: env override for thresholds
+    env_example = ROOT / "ENV.example"
+    if env_example.exists():
+        if "HEALTH_MIN_FREE_MB" not in env_example.read_text(encoding="utf-8", errors="ignore"):
+            with env_example.open("a", encoding="utf-8") as f:
+                f.write("HEALTH_MIN_FREE_MB=500\n")
+    else:
+        env_example.write_text("DOCTOR_KEY=change-me\nHEALTH_MIN_FREE_MB=500\n", encoding="utf-8")
+
+    print("\n🧪 Try:")
+    print("  curl -s -H \"X-Doctor-Key: $DOCTOR_KEY\" $APP_URL/health | jq .")
+    print("  (status will be 'degraded' if free disk < HEALTH_MIN_FREE_MB or git/make missing)")
+
+if __name__ == "__main__":
+    main()
