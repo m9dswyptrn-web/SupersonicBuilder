@@ -394,15 +394,6 @@ artifact-inventory:
 # --- Deployment Pipeline -----------------------------------------------------
 
 # Full deployment pipeline (with preflight)
-ship: preflight deploy verify notify
-	@echo "✅ SonicBuilder full deploy complete!"
-
-# Deploy everything to GitHub
-deploy:
-	@echo "🚀 Deploying everything to GitHub..."
-	$(PYTHON3) deploy_all_to_github.py
-
-# Verify GitHub Actions workflows
 verify:
 	@echo "🔍 Verifying workflows..."
 	@$(PYTHON3) -m pip install --quiet requests 2>/dev/null || true
@@ -488,6 +479,18 @@ release_bump:
 
 release_notes:
 	@python3 scripts/release/gen_changelog.py
+
+.PHONY: deploy ship
+
+# Use the deployment you already have working
+deploy:
+	$(PY) scripts/supersonic_deploy_pages.py
+
+# Ship = bump (if you pass VERSION) + full release
+ship:
+	@echo "== Ship VERSION=$(VERSION) =="
+	$(MAKE) supersonic-release VERSION=$(VERSION)
+
 
 release_tag:
 	@git tag v2.0.10 || true
