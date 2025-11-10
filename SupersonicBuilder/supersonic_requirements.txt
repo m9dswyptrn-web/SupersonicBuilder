@@ -14,7 +14,7 @@ Pillow==10.4.0
 
 # Data and utilities
 requests==2.32.3
-urllib3==2.2.3
+urllib3==2.5.0
 
 # Optional (for advanced verification and git integration)
 PyGithub==2.5.0
