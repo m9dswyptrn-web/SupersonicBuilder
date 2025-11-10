@@ -10,7 +10,7 @@ pikepdf==9.2.1
 # QR and code generation
 segno==1.6.1
 qrcode[pil]==7.4.2
-Pillow==10.4.0
+Pillow==12.0.0
 
 # Data and utilities
 requests==2.32.3

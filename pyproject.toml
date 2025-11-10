@@ -33,7 +33,7 @@ dependencies = [
   "pikepdf==9.2.1",
   "segno==1.6.1",
   "qrcode[pil]==7.4.2",
-  "Pillow==10.4.0",
+  "Pillow==12.0.0",
   "requests==2.32.3",
   "urllib3==2.2.3",
   "PyGithub==2.5.0",
