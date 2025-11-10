@@ -484,7 +484,7 @@ release_notes:
 
 # Use the deployment you already have working
 deploy:
-	$(PY) scripts/supersonic_deploy_pages.py
+	$(PY) supersonic_deploy_pages.py
 
 # Ship = bump (if you pass VERSION) + full release
 ship:
