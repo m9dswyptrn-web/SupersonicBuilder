@@ -1,0 +1,22 @@
+# ===== Supersonic One-Command Release =====
+# Included by main Makefile via: -include Makefile.supersonic-release
+
+VERSION ?= patch
+
+.PHONY: supersonic-release
+supersonic-release:
+	@echo "🔐 Checking GitHub token..."
+	@if [ -z "$${GH_PAT}" ]; then echo "❌ GH_PAT not set. Add it in Replit Secrets."; exit 1; fi
+	@echo "🧱 Building all PDFs and assets..."
+	@$(MAKE) supersonic-build-all
+	@echo "🚀 Deploying to GitHub Pages..."
+	@$(MAKE) supersonic-deploy
+	@echo "📝 Committing and pushing..."
+	@git add docs/ out/ || true
+	@git commit -m "release: automated Supersonic release [ci skip]" || echo "ℹ️ Nothing to commit."
+	@bash -c 'source tools/gh.sh && with_auth_remote git push origin main'
+	@echo "🏷️ Tagging new version..."
+	@BRANCH=main tools/release_now.sh --$(VERSION) --push-branch
+	@echo ""
+	@echo "✅ Release complete! Check your live hub:"
+	@echo "🌐 https://m9dswyptrn-web.github.io/SupersonicBuilder/"
