@@ -38,7 +38,7 @@ dependencies = [
   "urllib3==2.2.3",
   "PyGithub==2.5.0",
   "jsonschema==4.23.0",
-  "platformdirs==4.3.2"
+  "platformdirs==4.5.0"
 ]
 
 [project.urls]
