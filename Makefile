@@ -1,3 +1,4 @@
+SHELL := /bin/bash
 PY ?= python
 
 # SonicBuilder modular makefile (local helpers + CI-parity targets)
@@ -14,17 +15,17 @@ PY ?= python
 .PHONY: build_dark build_light release_local verify ingest_schematics index_diagrams two_up_raster parts_tools parts_tools_light release_notes seal certificate bump stamp_meta all i2s_index i2s_qr i2s_qr_2up appendix_pdf init build-docs verify-docs nextgen_appendix final_manual_pro pro_cover parts_sheet appendix_wiring build-all
 
 build_dark: index_diagrams
-        $(PY) scripts/builder.py
+	$(PY) scripts/builder.py
 
 build_light: index_diagrams
-        $(PY) scripts/builder.py --light
+	$(PY) scripts/builder.py --light
 
 release_local: build_dark build_light parts_tools parts_tools_light
-        @mkdir -p dist
-        @cp -f output/*.pdf dist/ 2>/dev/null || true
-        @cd dist && rm -f SHA256SUMS.txt && for f in *.pdf; do sha256sum "$$f" >> SHA256SUMS.txt 2>/dev/null; done || true
-        @$(MAKE) release_notes
-        @echo "[ok] dist ready with release notes"
+	@mkdir -p dist
+	@cp -f output/*.pdf dist/ 2>/dev/null || true
+	@cd dist && rm -f SHA256SUMS.txt && for f in *.pdf; do sha256sum "$$f" >> SHA256SUMS.txt 2>/dev/null; done || true
+	@$(MAKE) release_notes
+	@echo "[ok] dist ready with release notes"
 
 verify:
         @echo "== Verifying environment =="
@@ -161,34 +162,34 @@ docs_build_local:
 # Package artifacts (stamp, rename, zip, checksum)
 .PHONY: docs_package_local
 docs_package_local: docs_build_local
-        @echo "==> Stamping PDF metadata (commit: g$(COMMIT))"
-        @SB_VERSION="$(VERSION)" SB_COMMIT="$(COMMIT)" SB_BUILD_DATE="$(BUILD_DATE)" SB_REPO="$(REPO_URL)" \
-        $(PY) scripts/stamp_commit_meta.py $(OUTPUT_DIR)
-        @echo "==> Renaming PDFs to include commit hash"
-        @cd $(OUTPUT_DIR) && for f in *.pdf; do \
-        [ -f "$$f" ] || continue; \
-        base=$${f%.pdf}; \
-        mv "$$f" "$${base}_g$(COMMIT).pdf"; \
-        done 2>/dev/null || true
-        @echo "==> Creating zip archives"
-        @cd $(OUTPUT_DIR) && for d in */; do \
-        [ -d "$$d" ] || continue; \
-        name=$${d%/}; \
-        zip -rq "$${name}_g$(COMMIT).zip" "$$d"; \
-        done 2>/dev/null || true
-        @echo "==> Generating checksums"
-        @cd $(OUTPUT_DIR) && rm -f *.sha256 SHA256SUMS.txt && \
-        for f in *.pdf *.zip; do \
-        [ -f "$$f" ] && shasum -a 256 "$$f" | awk '{print $$1"  "$$2}' >> SHA256SUMS.txt; \
-        done 2>/dev/null || true
-        @echo "==> Artifacts packaged:"
-        @ls -lh $(OUTPUT_DIR)/*.pdf $(OUTPUT_DIR)/*.zip 2>/dev/null || true
+	@echo "==> Stamping PDF metadata (commit: g$(COMMIT))"
+	@SB_VERSION="$(VERSION)" SB_COMMIT="$(COMMIT)" SB_BUILD_DATE="$(BUILD_DATE)" SB_REPO="$(REPO_URL)" \
+	$(PY) scripts/stamp_commit_meta.py $(OUTPUT_DIR)
+	@echo "==> Renaming PDFs to include commit hash"
+	@cd $(OUTPUT_DIR) && for f in *.pdf; do \
+	[ -f "$$f" ] || continue; \
+	base=$${f%.pdf}; \
+	mv "$$f" "$${base}_g$(COMMIT).pdf"; \
+	done 2>/dev/null || true
+	@echo "==> Creating zip archives"
+	@cd $(OUTPUT_DIR) && for d in */; do \
+	[ -d "$$d" ] || continue; \
+	name=$${d%/}; \
+	zip -rq "$${name}_g$(COMMIT).zip" "$$d"; \
+	done 2>/dev/null || true
+	@echo "==> Generating checksums"
+	@cd $(OUTPUT_DIR) && rm -f *.sha256 SHA256SUMS.txt && \
+	for f in *.pdf *.zip; do \
+	[ -f "$$f" ] && shasum -a 256 "$$f" | awk '{print $$1"  "$$2}' >> SHA256SUMS.txt; \
+	done 2>/dev/null || true
+	@echo "==> Artifacts packaged:"
+	@ls -lh $(OUTPUT_DIR)/*.pdf $(OUTPUT_DIR)/*.zip 2>/dev/null || true
 
 # One-shot local release (with git guard)
 .PHONY: docs_release_local
 docs_release_local: git_guard docs_package_local
-        @echo "==> ✅ Local release ready in $(OUTPUT_DIR) for $(VERSION)"
-        @echo "    Total size: $$(du -sh $(OUTPUT_DIR) | awk '{print $$1}')"
+	@echo "==> ✅ Local release ready in $(OUTPUT_DIR) for $(VERSION)"
+	@echo "    Total size: $$(du -sh $(OUTPUT_DIR) | awk '{print $$1}')"
 
 # Preview Latest Docs README block
 .PHONY: docs_latest_block
@@ -328,7 +329,7 @@ support-bundle:
 
 # Full support flow: ids-flow -> support-bundle
 support-flow: ids-flow support-bundle
-        @echo "✅ Support flow complete: see support/support_bundle.zip"
+	@echo "✅ Support flow complete: see support/support_bundle.zip"
 
 # Auto mode: watch CAN logs and run full flow on changes
 support-auto:
@@ -393,7 +394,7 @@ artifact-inventory:
 
 # Full deployment pipeline (with preflight)
 ship: preflight deploy verify notify
-        @echo "✅ SonicBuilder full deploy complete!"
+	@echo "✅ SonicBuilder full deploy complete!"
 
 # Deploy everything to GitHub
 deploy:
@@ -419,8 +420,8 @@ dryrun:
 
 # Docs-only build and deploy (with preflight)
 docs: preflight build_dark
-        @echo "📚 Building docs with dark theme..."
-        @$(MAKE) deploy verify notify
+	@echo "📚 Building docs with dark theme..."
+	@$(MAKE) deploy verify notify
 
 # Initialize environment
 init:
@@ -463,10 +464,10 @@ PREVIEW_PAGES ?= 6
 
 .PHONY: build_dark_preview build_light_preview slice_preview
 build_dark_preview: build_dark slice_preview
-        @echo "Dark preview ready: dist/preview/"
+	@echo "Dark preview ready: dist/preview/"
 
 build_light_preview: build_light slice_preview
-        @echo "Light preview ready: dist/preview/"
+	@echo "Light preview ready: dist/preview/"
 
 slice_preview:
         @python3 scripts/tools/pdf_slice.py dist $(PREVIEW_PAGES) dist/preview
@@ -492,7 +493,7 @@ release_tag:
         @git push --tags || true
 
 release_all: release_bump
-        @echo "Release v2.0.10 queued."
+	@echo "Release v2.0.10 queued."
 
 # --- AutoBump Addon ---
 .PHONY: release_next_patch release_next_minor release_next_major release_next_explicit
@@ -719,7 +720,7 @@ addons-exactfit:
         @echo "✅ ExactFit addons ready"
 
 addons-all: addons-audio addons-manifest addons-exactfit
-        @echo "✅ All addon packages installed"
+	@echo "✅ All addon packages installed"
 
 
 # ============================================================
