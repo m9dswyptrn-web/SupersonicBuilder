@@ -1,0 +1,46 @@
+name: Release Preflight
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run basic sanity imports
+        run: |
+          python -c "import main"
+          python -c "import builder"
+          python -c "import serve_pdfs"
+
+      - name: Run metrics refresh (dry run)
+        run: |
+          if [ -f rs ]; then
+            chmod +x rs
+            ./rs health || true
+          fi
+
+      - name: Archive logs and metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: preflight-artifacts
+          path: |
+            logs/**
+            metrics/**
+            docs/RELEASE_NOTES_v2.4.0.md
