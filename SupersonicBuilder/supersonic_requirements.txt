@@ -36,7 +36,7 @@ pydot==2.0.0
 graphviz==0.20.3
 
 # PDF manipulation for branding
-pypdf==4.3.1
+pypdf==6.2.0
 
 # JSON & system tools (standard library safe versions)
 jsonschema==4.23.0
