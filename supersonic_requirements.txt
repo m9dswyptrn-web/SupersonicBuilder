@@ -20,7 +20,7 @@ urllib3==2.2.3
 PyGithub==2.5.0
 
 # Watch system & file monitoring
-watchdog==4.0.0
+watchdog==6.0.0
 
 # Desktop notifications (cross-platform)
 plyer==2.1.0
