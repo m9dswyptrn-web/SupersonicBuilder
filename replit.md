@@ -8,6 +8,41 @@ None documented yet. This is a new project.
 
 ## Recent Integrations (v2.4.0)
 
+### Supersonic Snapshot Engine (November 14, 2025)
+**Timestamped Snapshot System for Logs, Metrics, and Documentation**
+
+Creates immutable snapshots of critical system state for historical tracking and debugging.
+
+**Usage:**
+```bash
+# Via RS CLI (recommended)
+./rs snapshot
+
+# Or directly
+./rs-snapshot
+python3 tools/snapshot.py
+```
+
+**Features:**
+- Timestamped snapshot directories: `snapshots/snapshot-YYYYmmdd-HHMMSS/`
+- Captures: logs/, metrics/, docs/sonic/, version.txt
+- Creates snapshot.json metadata for each snapshot
+- Maintains index.jsonl journal for snapshot history
+- Idempotent and safe to run multiple times
+
+**Files:**
+- `tools/snapshot.py` - Main snapshot engine (120 lines)
+- `rs-snapshot` - Standalone wrapper script
+- `rs` - Integrated as `./rs snapshot` command (lines 466-469)
+- `snapshots/index.jsonl` - Snapshot history journal
+
+**Typical Workflow:**
+```bash
+./rs health         # Generate health data
+./rs metrics        # Refresh metrics
+./rs snapshot       # Capture snapshot
+```
+
 ### Console Bridge System (November 13, 2025)
 **Bidirectional Console-to-Shell-Root Command Executor**
 

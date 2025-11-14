@@ -206,6 +206,7 @@ Console Bridge (Bidirectional Command Executor):
 Monitoring:
   health        Health probe → logs/health.json
   metrics       Refresh badges from health data
+  snapshot      Create timestamped snapshot (logs, metrics, docs, version)
   diag          Full diagnostic (health→metrics→print)
   pulse         Health→metrics→GitHub Pages sync
 
@@ -457,6 +458,11 @@ case "$cmd" in
   metrics)
     echo "📈 rs metrics — refresh badges from latest health + release"
     python3 tools/metrics_refresh.py
+    ;;
+  
+  snapshot)
+    echo "📸 rs snapshot — create timestamped snapshot of logs/metrics/docs"
+    python3 tools/snapshot.py
     ;;
   
   diag)

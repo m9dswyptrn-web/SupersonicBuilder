@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Supersonic Snapshot helper
+# Usage:
+#   ./rs-snapshot
+# Creates a timestamped snapshot under snapshots/
+
+set -euo pipefail
+
+if [ ! -d "tools" ]; then
+  echo "⚠️  tools/ directory not found. Are you at repo root?"
+  echo "    (Expected ./tools/snapshot.py to exist.)"
+  exit 1
+fi
+
+if [ ! -f "tools/snapshot.py" ]; then
+  echo "⚠️  tools/snapshot.py missing. Re-run the installer patch."
+  exit 1
+fi
+
+echo "🚀 Running Supersonic Snapshot Engine..."
+python3 tools/snapshot.py
