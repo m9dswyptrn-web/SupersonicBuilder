@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time Audio Visualizer | 2000×1200 QLED</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            background: #0a0a0a;
+            color: #ffffff;
+        }
+
+        #visualizer-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+        }
+
+        #canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        #controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            max-width: 350px;
+            max-height: 90vh;
+            overflow-y: auto;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+
+        #controls.hidden {
+            transform: translateX(400px);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #toggle-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 255, 136, 0.2);
+            border: 2px solid #00ff88;
+            color: #00ff88;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            z-index: 100;
+        }
+
+        #toggle-controls:hover {
+            background: rgba(0, 255, 136, 0.3);
+            transform: scale(1.05);
+        }
+
+        h2 {
+            margin-bottom: 15px;
+            color: #00ff88;
+            font-size: 1.2em;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #aaddff;
+            font-size: 0.9em;
+        }
+
+        select, input[type="range"] {
+            width: 100%;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            color: #ffffff;
+            font-size: 0.95em;
+        }
+
+        input[type="range"] {
+            cursor: pointer;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            margin-top: 10px;
+            background: linear-gradient(135deg, #00ff88 0%, #00ddaa 100%);
+            border: none;
+            border-radius: 8px;
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .theme-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .theme-button {
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.85em;
+        }
+
+        .theme-button.active {
+            border-color: #00ff88;
+            background: rgba(0, 255, 136, 0.2);
+        }
+
+        .theme-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        #stats {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        #stats div {
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            color: #aaddff;
+        }
+
+        .stat-value {
+            color: #00ff88;
+            font-weight: bold;
+        }
+
+        #bpm-display {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 20px 40px;
+            border-radius: 12px;
+            border: 2px solid #00ff88;
+            font-size: 3em;
+            font-weight: bold;
+            color: #00ff88;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+
+        #bpm-display .label {
+            font-size: 0.4em;
+            color: #aaddff;
+            display: block;
+            margin-top: 5px;
+        }
+
+        .beat-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            width: 200px;
+            height: 200px;
+            border: 4px solid #00ff88;
+            border-radius: 50%;
+            pointer-events: none;
+            opacity: 0;
+        }
+
+        .beat-indicator.pulse {
+            animation: beatPulse 0.5s ease-out;
+        }
+
+        @keyframes beatPulse {
+            0% {
+                transform: translate(-50%, -50%) scale(0);
+                opacity: 1;
+            }
+            100% {
+                transform: translate(-50%, -50%) scale(3);
+                opacity: 0;
+            }
+        }
+
+        .fullscreen-hint {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.8em;
+        }
+
+        .value-display {
+            color: #00ff88;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(0, 255, 136, 0.5);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 255, 136, 0.7);
+        }
+    </style>
+</head>
+<body>
+    <div id="visualizer-container">
+        <canvas id="canvas"></canvas>
+
+        <button id="toggle-controls">⚙️ Settings</button>
+
+        <div id="controls">
+            <h2>🎵 Visualizer Controls</h2>
+
+            <div class="control-group">
+                <label for="viz-mode">Visualization Mode</label>
+                <select id="viz-mode">
+                    <option value="spectrum_bars">Spectrum Bars</option>
+                    <option value="spectrum_lines">Spectrum Lines</option>
+                    <option value="circular">Circular</option>
+                    <option value="waveform">Waveform</option>
+                    <option value="dual_waveform">Dual Waveform (L/R)</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="num-bands">Frequency Bands</label>
+                <select id="num-bands">
+                    <option value="31" selected>31-Band</option>
+                    <option value="64">64-Band</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>
+                    Theme
+                </label>
+                <div class="theme-grid">
+                    <div class="theme-button active" data-theme="dark">🌙 Dark</div>
+                    <div class="theme-button" data-theme="neon">⚡ Neon</div>
+                    <div class="theme-button" data-theme="retro">🕹️ Retro</div>
+                    <div class="theme-button" data-theme="minimal">⬜ Minimal</div>
+                    <div class="theme-button" data-theme="ocean">🌊 Ocean</div>
+                    <div class="theme-button" data-theme="fire">🔥 Fire</div>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label for="effect-intensity">
+                    Effect Intensity
+                    <span class="value-display" id="intensity-value">80%</span>
+                </label>
+                <input type="range" id="effect-intensity" min="0" max="100" value="80">
+            </div>
+
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="show-particles" checked>
+                    Show Particles
+                </label>
+            </div>
+
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="show-vu" checked>
+                    Show VU Meters
+                </label>
+            </div>
+
+            <div class="control-group">
+                <label>
+                    <input type="checkbox" id="rgb-sync" checked>
+                    Sync RGB Lighting
+                </label>
+            </div>
+
+            <h2>🧪 Test Signals</h2>
+
+            <button onclick="generateTestSignal('multitone')">🎵 Multi-Tone</button>
+            <button onclick="generateTestSignal('sweep')">📊 Frequency Sweep</button>
+            <button onclick="generateTestSignal('pink_noise')">🔊 Pink Noise</button>
+
+            <button onclick="toggleFullscreen()">🖥️ Fullscreen</button>
+        </div>
+
+        <div id="stats">
+            <div><span class="stat-label">FPS:</span> <span class="stat-value" id="fps">60</span></div>
+            <div><span class="stat-label">Mode:</span> <span class="stat-value" id="mode-display">Spectrum Bars</span></div>
+            <div><span class="stat-label">Bands:</span> <span class="stat-value" id="bands-display">31</span></div>
+            <div><span class="stat-label">Particles:</span> <span class="stat-value" id="particles-count">0</span></div>
+        </div>
+
+        <div id="bpm-display">
+            <span id="bpm-value">120</span>
+            <span class="label">BPM</span>
+        </div>
+
+        <div class="beat-indicator" id="beat-indicator"></div>
+
+        <div class="fullscreen-hint">Press F for fullscreen</div>
+    </div>
+
+    <script src="{{ url_for('static', filename='visualizer.js') }}"></script>
+</body>
+</html>
