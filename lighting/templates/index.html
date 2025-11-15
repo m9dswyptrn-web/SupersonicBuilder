@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RGB Ambient Lighting Controller</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='lighting.css') }}">
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🌈 RGB Ambient Lighting</h1>
+            <p class="subtitle">Music-Reactive Car Interior Lighting</p>
+        </header>
+
+        <div class="main-content">
+            <!-- Quick Controls -->
+            <section class="card quick-controls">
+                <h2>⚡ Quick Controls</h2>
+                <div class="quick-buttons">
+                    <button class="quick-btn" onclick="quickColor('red')">Red</button>
+                    <button class="quick-btn" onclick="quickColor('blue')">Blue</button>
+                    <button class="quick-btn" onclick="quickColor('green')">Green</button>
+                    <button class="quick-btn" onclick="quickColor('purple')">Purple</button>
+                    <button class="quick-btn" onclick="quickColor('white')">White</button>
+                    <button class="quick-btn" onclick="quickColor('orange')">Orange</button>
+                    <button class="quick-btn" onclick="quickColor('cyan')">Cyan</button>
+                    <button class="quick-btn" onclick="quickRainbow()">Rainbow</button>
+                </div>
+                <div class="quick-buttons">
+                    <button class="control-btn" onclick="fadeIn()">💡 Fade In</button>
+                    <button class="control-btn" onclick="fadeOut()">🌙 Fade Out</button>
+                    <button class="control-btn danger" onclick="turnOffAll()">⚫ All Off</button>
+                </div>
+            </section>
+
+            <!-- Global Brightness -->
+            <section class="card brightness-control">
+                <h2>🔆 Global Brightness</h2>
+                <div class="brightness-slider-container">
+                    <input type="range" id="globalBrightness" min="0" max="100" value="100" class="slider">
+                    <span id="brightnessValue" class="brightness-value">100%</span>
+                </div>
+                <div class="brightness-presets">
+                    <button onclick="setBrightness(25)">25%</button>
+                    <button onclick="setBrightness(50)">50%</button>
+                    <button onclick="setBrightness(75)">75%</button>
+                    <button onclick="setBrightness(100)">100%</button>
+                    <button onclick="autoDim()">Auto Dim</button>
+                </div>
+            </section>
+
+            <!-- Music Reactive Mode -->
+            <section class="card music-reactive">
+                <h2>🎵 Music Reactive Mode</h2>
+                <div class="mode-selector">
+                    <label>
+                        <input type="radio" name="musicMode" value="off" checked> Off
+                    </label>
+                    <label>
+                        <input type="radio" name="musicMode" value="bass_pulse"> Bass Pulse
+                    </label>
+                    <label>
+                        <input type="radio" name="musicMode" value="spectrum"> Spectrum
+                    </label>
+                    <label>
+                        <input type="radio" name="musicMode" value="beat_sync"> Beat Sync
+                    </label>
+                    <label>
+                        <input type="radio" name="musicMode" value="breathing"> Breathing
+                    </label>
+                    <label>
+                        <input type="radio" name="musicMode" value="party"> Party
+                    </label>
+                </div>
+                <div class="sensitivity-control">
+                    <label for="sensitivity">Sensitivity:</label>
+                    <input type="range" id="sensitivity" min="0" max="100" value="50" class="slider">
+                    <span id="sensitivityValue" class="sensitivity-value">50%</span>
+                </div>
+                <div class="music-status">
+                    <span id="musicStatus">Not connected to audio visualizer</span>
+                </div>
+            </section>
+
+            <!-- Scenes -->
+            <section class="card scenes">
+                <h2>🎭 Scenes</h2>
+                <div id="scenesList" class="scenes-grid">
+                    <!-- Scenes will be loaded here -->
+                </div>
+                <div class="scene-controls">
+                    <button onclick="showSaveSceneDialog()" class="btn-primary">💾 Save Current Scene</button>
+                    <button onclick="refreshScenes()" class="btn-secondary">🔄 Refresh</button>
+                </div>
+            </section>
+
+            <!-- Zone Preview -->
+            <section class="card zone-preview">
+                <h2>🚗 Zone Preview</h2>
+                <div class="car-visualization">
+                    <div class="zone zone-dashboard" id="preview-dashboard" title="Dashboard Underglow"></div>
+                    <div class="zone zone-door-left" id="preview-door_left" title="Door Left"></div>
+                    <div class="zone zone-door-right" id="preview-door_right" title="Door Right"></div>
+                    <div class="zone zone-footwell-driver" id="preview-footwell_driver" title="Footwell Driver"></div>
+                    <div class="zone zone-footwell-passenger" id="preview-footwell_passenger" title="Footwell Passenger"></div>
+                    <div class="zone zone-cupholder" id="preview-cupholder" title="Cup Holder"></div>
+                    <div class="zone zone-trunk" id="preview-trunk" title="Trunk"></div>
+                </div>
+            </section>
+
+            <!-- Individual Zone Controls -->
+            <section class="card zone-controls">
+                <h2>🎨 Individual Zone Colors</h2>
+                <div id="zoneControlsList" class="zones-list">
+                    <!-- Zone controls will be loaded here -->
+                </div>
+            </section>
+
+            <!-- Statistics -->
+            <section class="card stats">
+                <h2>📊 Statistics</h2>
+                <div id="statsDisplay" class="stats-grid">
+                    <!-- Stats will be loaded here -->
+                </div>
+            </section>
+        </div>
+
+        <footer class="footer">
+            <p>RGB Ambient Lighting Controller v1.0 | Port 8500</p>
+            <p id="connectionStatus" class="connection-status">🔴 Disconnected</p>
+        </footer>
+    </div>
+
+    <!-- Save Scene Dialog -->
+    <div id="saveSceneDialog" class="modal">
+        <div class="modal-content">
+            <h3>💾 Save Current Scene</h3>
+            <input type="text" id="sceneName" placeholder="Scene Name" class="input">
+            <textarea id="sceneDescription" placeholder="Description (optional)" class="textarea"></textarea>
+            <div class="modal-buttons">
+                <button onclick="saveScene()" class="btn-primary">Save</button>
+                <button onclick="hideSaveSceneDialog()" class="btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='lighting.js') }}"></script>
+</body>
+</html>
