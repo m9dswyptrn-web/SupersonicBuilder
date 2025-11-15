@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Climate Control</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #0f0f1e 100%);
+            color: #ffffff;
+            overflow: hidden;
+            width: 2000px;
+            height: 1200px;
+        }
+
+        .container {
+            display: grid;
+            grid-template-rows: 80px 1fr 100px;
+            height: 100vh;
+            padding: 20px;
+            gap: 20px;
+        }
+
+        header {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .logo {
+            font-size: 36px;
+            font-weight: bold;
+            background: linear-gradient(45deg, #00d4ff, #0099ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-indicators {
+            display: flex;
+            gap: 30px;
+            align-items: center;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            font-size: 18px;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #00ff00;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.offline {
+            background: #ff4444;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        main {
+            display: grid;
+            grid-template-columns: 1fr 500px;
+            gap: 20px;
+        }
+
+        .climate-panel {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 40px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            gap: 30px;
+        }
+
+        .zone-controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+        }
+
+        .zone {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 15px;
+            padding: 30px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .zone-title {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #00d4ff;
+        }
+
+        .temp-display {
+            font-size: 72px;
+            font-weight: bold;
+            text-align: center;
+            margin: 20px 0;
+            background: linear-gradient(45deg, #00d4ff, #0099ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .temp-slider {
+            width: 100%;
+            height: 10px;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.1);
+            outline: none;
+            margin: 20px 0;
+        }
+
+        .temp-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #00d4ff, #0099ff);
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+        }
+
+        .temp-slider::-moz-range-thumb {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #00d4ff, #0099ff);
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+        }
+
+        .temp-limits {
+            display: flex;
+            justify-content: space-between;
+            font-size: 18px;
+            color: #888;
+        }
+
+        .fan-control {
+            margin-top: 30px;
+        }
+
+        .fan-speed {
+            display: flex;
+            justify-content: space-between;
+            margin: 20px 0;
+        }
+
+        .fan-button {
+            width: 80px;
+            height: 80px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .fan-button:hover {
+            background: rgba(0, 212, 255, 0.2);
+            border-color: #00d4ff;
+        }
+
+        .fan-button.active {
+            background: linear-gradient(45deg, #00d4ff, #0099ff);
+            border-color: #00d4ff;
+            box-shadow: 0 0 30px rgba(0, 212, 255, 0.5);
+        }
+
+        .mode-controls {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }
+
+        .mode-button {
+            padding: 30px 20px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+        }
+
+        .mode-button:hover {
+            background: rgba(0, 212, 255, 0.2);
+            border-color: #00d4ff;
+        }
+
+        .mode-button.active {
+            background: linear-gradient(45deg, #00d4ff, #0099ff);
+            border-color: #00d4ff;
+            box-shadow: 0 0 30px rgba(0, 212, 255, 0.5);
+        }
+
+        .mode-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+
+        .mode-label {
+            font-size: 20px;
+        }
+
+        .side-panel {
+            display: grid;
+            grid-template-rows: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .control-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .section-title {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #00d4ff;
+        }
+
+        .toggle-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .toggle-button {
+            padding: 25px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+            font-size: 18px;
+        }
+
+        .toggle-button:hover {
+            background: rgba(0, 212, 255, 0.2);
+            border-color: #00d4ff;
+        }
+
+        .toggle-button.active {
+            background: linear-gradient(45deg, #00d4ff, #0099ff);
+            border-color: #00d4ff;
+            box-shadow: 0 0 30px rgba(0, 212, 255, 0.5);
+        }
+
+        .preset-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .preset-button {
+            padding: 25px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+        }
+
+        .preset-button:hover {
+            background: rgba(0, 212, 255, 0.2);
+            border-color: #00d4ff;
+            transform: translateY(-2px);
+        }
+
+        .preset-name {
+            font-size: 22px;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .preset-desc {
+            font-size: 14px;
+            color: #888;
+        }
+
+        footer {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .info-display {
+            display: flex;
+            gap: 40px;
+            font-size: 20px;
+        }
+
+        .info-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .info-label {
+            color: #888;
+        }
+
+        .info-value {
+            color: #00d4ff;
+            font-weight: bold;
+        }
+
+        .heated-seat-control {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .seat-level {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+        }
+
+        .seat-level:hover {
+            background: rgba(255, 100, 0, 0.2);
+            border-color: #ff6400;
+        }
+
+        .seat-level.active {
+            background: linear-gradient(45deg, #ff6400, #ff8800);
+            border-color: #ff6400;
+            box-shadow: 0 0 20px rgba(255, 100, 0, 0.5);
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .fan-animation {
+            display: inline-block;
+            animation: rotate 2s linear infinite;
+        }
+
+        .fan-animation.speed-0 { animation: none; }
+        .fan-animation.speed-1 { animation-duration: 4s; }
+        .fan-animation.speed-2 { animation-duration: 3s; }
+        .fan-animation.speed-3 { animation-duration: 2s; }
+        .fan-animation.speed-4 { animation-duration: 1.5s; }
+        .fan-animation.speed-5 { animation-duration: 1s; }
+        .fan-animation.speed-6 { animation-duration: 0.7s; }
+        .fan-animation.speed-7 { animation-duration: 0.5s; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">🌡️ ADVANCED CLIMATE CONTROL</div>
+            <div class="status-indicators">
+                <div class="status-badge">
+                    <div class="status-dot" id="maestro-status"></div>
+                    <span>Maestro RR2</span>
+                </div>
+                <div class="status-badge">
+                    <span id="outside-temp">--°C</span>
+                    <span>Outside</span>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <div class="climate-panel">
+                <div class="zone-controls">
+                    <div class="zone">
+                        <div class="zone-title">🚗 DRIVER</div>
+                        <div class="temp-display" id="driver-temp">72°F</div>
+                        <input type="range" class="temp-slider" id="driver-slider" min="60" max="86" value="72" step="1">
+                        <div class="temp-limits">
+                            <span>60°F</span>
+                            <span>86°F</span>
+                        </div>
+                        <div class="fan-control">
+                            <div class="section-title"><span class="fan-animation" id="fan-icon">💨</span> Fan Speed</div>
+                            <div class="fan-speed">
+                                <button class="fan-button" data-speed="0">OFF</button>
+                                <button class="fan-button" data-speed="1">1</button>
+                                <button class="fan-button" data-speed="2">2</button>
+                                <button class="fan-button" data-speed="3">3</button>
+                                <button class="fan-button" data-speed="4">4</button>
+                                <button class="fan-button" data-speed="5">5</button>
+                                <button class="fan-button" data-speed="6">6</button>
+                                <button class="fan-button" data-speed="7">7</button>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="section-title">🔥 Heated Seat</div>
+                            <div class="heated-seat-control">
+                                <div class="seat-level" data-seat="driver" data-level="0">OFF</div>
+                                <div class="seat-level" data-seat="driver" data-level="1">LOW</div>
+                                <div class="seat-level" data-seat="driver" data-level="2">MED</div>
+                                <div class="seat-level" data-seat="driver" data-level="3">HIGH</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="zone">
+                        <div class="zone-title">👤 PASSENGER</div>
+                        <div class="temp-display" id="passenger-temp">72°F</div>
+                        <input type="range" class="temp-slider" id="passenger-slider" min="60" max="86" value="72" step="1">
+                        <div class="temp-limits">
+                            <span>60°F</span>
+                            <span>86°F</span>
+                        </div>
+                        <div style="margin-top: 30px;">
+                            <div class="section-title">🔥 Heated Seat</div>
+                            <div class="heated-seat-control">
+                                <div class="seat-level" data-seat="passenger" data-level="0">OFF</div>
+                                <div class="seat-level" data-seat="passenger" data-level="1">LOW</div>
+                                <div class="seat-level" data-seat="passenger" data-level="2">MED</div>
+                                <div class="seat-level" data-seat="passenger" data-level="3">HIGH</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="section-title">📍 MODE SELECTION</div>
+                    <div class="mode-controls">
+                        <div class="mode-button" data-mode="face">
+                            <div class="mode-icon">😊</div>
+                            <div class="mode-label">Face</div>
+                        </div>
+                        <div class="mode-button" data-mode="feet">
+                            <div class="mode-icon">👣</div>
+                            <div class="mode-label">Feet</div>
+                        </div>
+                        <div class="mode-button" data-mode="defrost">
+                            <div class="mode-icon">❄️</div>
+                            <div class="mode-label">Defrost</div>
+                        </div>
+                        <div class="mode-button" data-mode="face_feet">
+                            <div class="mode-icon">🔄</div>
+                            <div class="mode-label">Both</div>
+                        </div>
+                        <div class="mode-button" data-mode="auto">
+                            <div class="mode-icon">⚡</div>
+                            <div class="mode-label">Auto</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="side-panel">
+                <div class="control-section">
+                    <div class="section-title">⚙️ CLIMATE CONTROLS</div>
+                    <div class="toggle-grid">
+                        <div class="toggle-button" id="ac-toggle">❄️<br>AC</div>
+                        <div class="toggle-button" id="max-ac-toggle">🧊<br>MAX AC</div>
+                        <div class="toggle-button" id="recirc-toggle">🔄<br>Recirc</div>
+                        <div class="toggle-button" id="auto-toggle">⚡<br>Auto</div>
+                        <div class="toggle-button" id="defrost-front-toggle">🪟<br>Front</div>
+                        <div class="toggle-button" id="defrost-rear-toggle">🔲<br>Rear</div>
+                        <div class="toggle-button" id="heated-mirrors-toggle">🪞<br>Mirrors</div>
+                        <div class="toggle-button" id="sync-toggle">🔗<br>Sync</div>
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <div class="section-title">⭐ PRESETS</div>
+                    <div class="preset-grid">
+                        <div class="preset-button" data-preset="Comfort">
+                            <div class="preset-name">Comfort</div>
+                            <div class="preset-desc">72°F, Auto</div>
+                        </div>
+                        <div class="preset-button" data-preset="Cool">
+                            <div class="preset-name">Cool</div>
+                            <div class="preset-desc">68°F, Max AC</div>
+                        </div>
+                        <div class="preset-button" data-preset="Warm">
+                            <div class="preset-name">Warm</div>
+                            <div class="preset-desc">76°F, Heat</div>
+                        </div>
+                        <div class="preset-button" data-preset="Defrost">
+                            <div class="preset-name">Defrost</div>
+                            <div class="preset-desc">Max Defrost</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <div class="info-display">
+                <div class="info-item">
+                    <span class="info-label">Mode:</span>
+                    <span class="info-value" id="current-mode">Auto</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Fan:</span>
+                    <span class="info-value" id="current-fan">Auto</span>
+                </div>
+            </div>
+            <div class="info-display">
+                <div class="info-item">
+                    <span class="info-label">Service:</span>
+                    <span class="info-value">Climate Control UI v1.0</span>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script src="/static/climate.js"></script>
+</body>
+</html>
