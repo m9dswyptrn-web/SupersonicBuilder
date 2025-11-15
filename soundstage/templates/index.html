@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sound Stage Optimizer - 2014 Chevy Sonic</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #e4e4e4;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        h1 {
+            color: #00d4ff;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+        }
+        
+        .subtitle {
+            color: #888;
+            font-size: 1.1em;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .panel {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .panel h2 {
+            color: #00d4ff;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+        
+        .visualizer-3d {
+            width: 100%;
+            height: 500px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 5px;
+            position: relative;
+            overflow: hidden;
+            border: 1px solid rgba(0, 212, 255, 0.3);
+        }
+        
+        .speaker-marker {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: #00d4ff;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.8);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .speaker-marker:hover {
+            width: 25px;
+            height: 25px;
+            background: #00ffff;
+        }
+        
+        .speaker-label {
+            position: absolute;
+            color: #fff;
+            font-size: 0.8em;
+            white-space: nowrap;
+            margin-top: 15px;
+            text-shadow: 0 0 5px rgba(0, 0, 0, 0.8);
+        }
+        
+        .listener-marker {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            background: #ff6b6b;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 20px rgba(255, 107, 107, 0.8);
+        }
+        
+        .controls {
+            margin-top: 20px;
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #aaa;
+            font-size: 0.9em;
+        }
+        
+        select, input[type="range"], button {
+            width: 100%;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 5px;
+            color: #fff;
+            font-size: 1em;
+        }
+        
+        input[type="range"] {
+            cursor: pointer;
+        }
+        
+        button {
+            cursor: pointer;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        button.primary {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        
+        button.success {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        
+        .meter {
+            height: 30px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 5px;
+            position: relative;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        
+        .meter-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00d4ff 0%, #7928ca 100%);
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-weight: bold;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .info-item {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 10px;
+            border-radius: 5px;
+            border-left: 3px solid #00d4ff;
+        }
+        
+        .info-label {
+            color: #888;
+            font-size: 0.8em;
+            margin-bottom: 5px;
+        }
+        
+        .info-value {
+            color: #fff;
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        
+        .recommendations {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .recommendation-item {
+            background: rgba(0, 212, 255, 0.1);
+            border-left: 3px solid #00d4ff;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+        
+        .recommendation-item.high {
+            border-left-color: #ff6b6b;
+        }
+        
+        .recommendation-item.medium {
+            border-left-color: #ffa500;
+        }
+        
+        .recommendation-item.low {
+            border-left-color: #4ade80;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 0.8em;
+            margin-right: 5px;
+        }
+        
+        .badge.high {
+            background: #ff6b6b;
+        }
+        
+        .badge.medium {
+            background: #ffa500;
+        }
+        
+        .badge.low {
+            background: #4ade80;
+        }
+        
+        .status-bar {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        
+        .status-indicator.online {
+            background: #4ade80;
+            box-shadow: 0 0 10px rgba(74, 222, 128, 0.8);
+        }
+        
+        .status-indicator.offline {
+            background: #ff6b6b;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .tab {
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .tab.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-color: #667eea;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .loading {
+            animation: pulse 1.5s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎵 Sound Stage Optimizer</h1>
+            <div class="subtitle">Perfect Acoustic Positioning for 2014 Chevy Sonic LTZ</div>
+            <div class="status-bar">
+                <div>
+                    <span class="status-indicator online"></span>
+                    <span id="serviceStatus">Service Online</span>
+                </div>
+                <div>
+                    <span id="aiStatus">AI: Loading...</span>
+                </div>
+            </div>
+        </header>
+        
+        <div class="grid">
+            <div class="panel">
+                <h2>3D Speaker Positioning</h2>
+                <div class="visualizer-3d" id="visualizer">
+                    <div id="speakerMarkers"></div>
+                </div>
+                <div class="controls">
+                    <div class="control-group">
+                        <label>Listening Position</label>
+                        <select id="listeningPosition">
+                            <option value="driver">Driver Seat</option>
+                            <option value="passenger">Passenger Seat</option>
+                            <option value="center">Center (All Seats)</option>
+                            <option value="rear_left">Rear Left</option>
+                            <option value="rear_right">Rear Right</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h2>Balance & Fader Control</h2>
+                <div class="control-group">
+                    <label>Left/Right Balance: <span id="balanceValue">0.0 dB</span></label>
+                    <input type="range" id="balanceSlider" min="-10" max="10" step="0.5" value="0">
+                    <div class="meter">
+                        <div class="meter-fill" id="balanceMeter" style="width: 50%">Centered</div>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <label>Front/Rear Fader: <span id="faderValue">0.0 dB</span></label>
+                    <input type="range" id="faderSlider" min="-10" max="10" step="0.5" value="0">
+                    <div class="meter">
+                        <div class="meter-fill" id="faderMeter" style="width: 50%">Centered</div>
+                    </div>
+                </div>
+                
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="info-label">Center Image Score</div>
+                        <div class="info-value" id="centerImageScore">--</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Soundstage Quality</div>
+                        <div class="info-value" id="soundstageQuality">--</div>
+                    </div>
+                </div>
+                
+                <button class="primary" onclick="calculateOptimal()" style="margin-top: 15px;">
+                    Calculate Optimal Settings
+                </button>
+            </div>
+        </div>
+        
+        <div class="grid">
+            <div class="panel">
+                <h2>Acoustic Corrections</h2>
+                <div class="tabs">
+                    <div class="tab active" onclick="switchTab('cabin')">Cabin Info</div>
+                    <div class="tab" onclick="switchTab('modes')">Room Modes</div>
+                    <div class="tab" onclick="switchTab('eq')">EQ Corrections</div>
+                </div>
+                
+                <div id="cabinTab" class="tab-content active">
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <div class="info-label">Cabin Volume</div>
+                            <div class="info-value">82.0 ft³</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">RT60 @ 1kHz</div>
+                            <div class="info-value" id="rt60Value">--</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Dimensions</div>
+                            <div class="info-value">68" × 55" × 38"</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Material Mix</div>
+                            <div class="info-value">Multi-surface</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="modesTab" class="tab-content">
+                    <div id="roomModesList"></div>
+                </div>
+                
+                <div id="eqTab" class="tab-content">
+                    <div id="eqCorrectionsList"></div>
+                </div>
+                
+                <button class="success" onclick="loadAcousticData()" style="margin-top: 15px;">
+                    Analyze Cabin Acoustics
+                </button>
+            </div>
+            
+            <div class="panel">
+                <h2>AI-Powered Tuning</h2>
+                <div class="recommendations" id="aiRecommendations">
+                    <div style="text-align: center; padding: 40px; color: #888;">
+                        Click "Get AI Recommendations" to analyze your setup
+                    </div>
+                </div>
+                
+                <div style="margin-top: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <button class="primary" onclick="getAIRecommendations()">
+                        Get AI Recommendations
+                    </button>
+                    <button class="success" onclick="autoTune()">
+                        One-Click Auto-Tune
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="grid">
+            <div class="panel">
+                <h2>Measurement Tools</h2>
+                <div class="control-group">
+                    <label>Test Signal Type</label>
+                    <select id="testSignal">
+                        <option value="sweep">Log Sweep (20Hz-20kHz)</option>
+                        <option value="pink_noise">Pink Noise</option>
+                        <option value="white_noise">White Noise</option>
+                        <option value="multitone">Multitone</option>
+                    </select>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px;">
+                    <button onclick="generateSweepTone()">Generate Sweep</button>
+                    <button onclick="showMeasurementGuide()">Measurement Guide</button>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h2>Presets</h2>
+                <div class="control-group">
+                    <label>Select Preset</label>
+                    <select id="presetSelect">
+                        <option value="">-- Choose Preset --</option>
+                        <option value="driver_optimal">Driver Seat Optimal</option>
+                        <option value="all_seats_balanced">All Seats Balanced</option>
+                        <option value="front_row_focus">Front Row Focus</option>
+                        <option value="rear_passengers">Rear Passengers</option>
+                    </select>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px;">
+                    <button onclick="loadPreset()">Load Preset</button>
+                    <button onclick="savePreset()">Save Current</button>
+                </div>
+                
+                <button class="primary" onclick="applyToDSP()" style="margin-top: 15px;">
+                    Apply to DSP System
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/static/soundstage.js"></script>
+</body>
+</html>
