@@ -1,1 +1,1 @@
-{ "schemaVersion": 1, "label": "pages deploy", "message": "built", "color": "brightgreen" }
+{ "schemaVersion": 1, "label": "pages deploy", "message": "building", "color": "blue" }
