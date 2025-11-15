@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SONIC COMMAND CENTER</title>
+    <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body class="dark-theme">
+    <div class="command-center">
+        <header class="header">
+            <div class="header-left">
+                <h1 class="logo">
+                    <span class="logo-icon">⚡</span>
+                    SONIC COMMAND CENTER
+                </h1>
+                <div class="system-health">
+                    <span id="health-indicator" class="health-dot offline"></span>
+                    <span id="health-text">Initializing...</span>
+                </div>
+            </div>
+            
+            <div class="header-center">
+                <div class="search-box">
+                    <input type="text" id="search-input" placeholder="Search services..." autocomplete="off">
+                    <div id="search-results" class="search-results hidden"></div>
+                </div>
+            </div>
+            
+            <div class="header-right">
+                <button class="header-btn" id="alerts-btn" title="Alerts">
+                    <span class="icon">🔔</span>
+                    <span class="badge" id="alert-count">0</span>
+                </button>
+                <button class="header-btn" id="theme-toggle" title="Toggle Theme">
+                    <span class="icon">🌙</span>
+                </button>
+                <button class="header-btn" id="settings-btn" title="Settings">
+                    <span class="icon">⚙️</span>
+                </button>
+            </div>
+        </header>
+
+        <div class="content-wrapper">
+            <aside class="sidebar">
+                <div class="quick-stats">
+                    <h3>System Status</h3>
+                    <div class="stat-grid">
+                        <div class="stat-card">
+                            <div class="stat-value" id="online-count">0</div>
+                            <div class="stat-label">Online</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="offline-count">0</div>
+                            <div class="stat-label">Offline</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="uptime-display">0h</div>
+                            <div class="stat-label">Uptime</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="quick-actions">
+                    <h3>Quick Actions</h3>
+                    <button class="action-btn primary" id="refresh-all-btn">
+                        <span class="icon">🔄</span>
+                        Refresh All
+                    </button>
+                    <button class="action-btn" id="view-alerts-btn">
+                        <span class="icon">📋</span>
+                        View Alerts
+                    </button>
+                </div>
+
+                <div class="live-widgets">
+                    <h3>Live Data</h3>
+                    
+                    <div class="widget" id="canbus-widget">
+                        <div class="widget-header">🔌 CAN Bus</div>
+                        <div class="widget-body">
+                            <div class="widget-row">
+                                <span>Speed:</span>
+                                <span id="speed-value">-- MPH</span>
+                            </div>
+                            <div class="widget-row">
+                                <span>RPM:</span>
+                                <span id="rpm-value">-- RPM</span>
+                            </div>
+                            <div class="widget-row">
+                                <span>Fuel:</span>
+                                <span id="fuel-value">--%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="widget" id="media-widget">
+                        <div class="widget-header">🎵 Now Playing</div>
+                        <div class="widget-body">
+                            <div class="now-playing">
+                                <div id="track-title">Not Playing</div>
+                                <div id="track-artist" class="text-muted"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="widget" id="climate-widget">
+                        <div class="widget-header">❄️ Climate</div>
+                        <div class="widget-body">
+                            <div class="widget-row">
+                                <span>Inside:</span>
+                                <span id="inside-temp">-- °F</span>
+                            </div>
+                            <div class="widget-row">
+                                <span>Outside:</span>
+                                <span id="outside-temp">-- °F</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="widget" id="tpms-widget">
+                        <div class="widget-header">🛞 Tire Pressure</div>
+                        <div class="widget-body">
+                            <div class="tire-grid">
+                                <div class="tire-pressure" id="fl-pressure">--</div>
+                                <div class="tire-pressure" id="fr-pressure">--</div>
+                                <div class="tire-pressure" id="rl-pressure">--</div>
+                                <div class="tire-pressure" id="rr-pressure">--</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="widget" id="battery-widget">
+                        <div class="widget-header">🔋 Wireless Charger</div>
+                        <div class="widget-body">
+                            <div class="battery-level">
+                                <div id="battery-bar" class="battery-bar" style="width: 0%"></div>
+                                <span id="battery-percent">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <main class="main-content">
+                <div class="category-tabs">
+                    <button class="tab active" data-category="all">All Services</button>
+                    <button class="tab" data-category="hardware">Hardware Tools</button>
+                    <button class="tab" data-category="audio">Premium Audio</button>
+                    <button class="tab" data-category="visual">Visual Upgrades</button>
+                    <button class="tab" data-category="smart">Smart Features</button>
+                </div>
+
+                <div id="services-grid" class="services-grid">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <p>Loading services...</p>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <div id="alerts-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>System Alerts</h2>
+                <button class="close-btn" id="close-alerts">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="alerts-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button class="close-btn" id="close-settings">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="settings-section">
+                    <h3>Display</h3>
+                    <label class="setting-item">
+                        <span>Theme</span>
+                        <select id="theme-select">
+                            <option value="dark">Dark Mode</option>
+                            <option value="light">Light Mode</option>
+                        </select>
+                    </label>
+                    <label class="setting-item">
+                        <span>Show Offline Services</span>
+                        <input type="checkbox" id="show-offline" checked>
+                    </label>
+                    <label class="setting-item">
+                        <span>Enable Animations</span>
+                        <input type="checkbox" id="enable-animations" checked>
+                    </label>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Updates</h3>
+                    <label class="setting-item">
+                        <span>Auto Refresh Interval</span>
+                        <select id="refresh-interval">
+                            <option value="3000">3 seconds</option>
+                            <option value="5000" selected>5 seconds</option>
+                            <option value="10000">10 seconds</option>
+                            <option value="30000">30 seconds</option>
+                        </select>
+                    </label>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Units</h3>
+                    <label class="setting-item">
+                        <span>Temperature</span>
+                        <select id="temp-unit">
+                            <option value="F">Fahrenheit</option>
+                            <option value="C">Celsius</option>
+                        </select>
+                    </label>
+                </div>
+
+                <button class="btn primary" id="save-settings">Save Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/dashboard.js"></script>
+</body>
+</html>
